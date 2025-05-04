@@ -3,6 +3,7 @@
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import { page } from '$app/stores';
 
 	// Definición de tipos para los elementos del menú
 	interface MenuItem {
@@ -41,6 +42,8 @@
 		}
 	];
 
+	let isLoginPage = $derived($page.url.pathname === '/login');
+
 	// Función para obtener la ruta actual (segura para SSR)
 	function isActive(path: string): boolean {
 		if (typeof window === 'undefined') return path === '/';
@@ -49,32 +52,17 @@
 </script>
 
 <div class="flex flex-col min-h-screen">
-	<!-- Header en la parte superior -->
-	<Header />
-
-	<!-- Contenido principal con sidebar -->
-	<div class="flex flex-1">
-		<Sidebar />
-		<!-- <aside
-			class="bg-[#1a1e2a] w-16 min-h-screen flex flex-col items-center py-4 shrink-0 border-r border-gray-800"
-		>
-			{#each menuItems as item}
-				<a
-					href={item.path}
-					class="w-full flex flex-col items-center py-4 text-center {isActive(item.path)
-						? 'text-amber-400'
-						: 'text-gray-400 hover:text-gray-200'}"
-				>
-					<div class="mb-1">
-						{@html item.icon}
-					</div>
-					<span class="text-xs">{item.label}</span>
-				</a>
-			{/each}
-		</aside> -->
-
+	{#if !isLoginPage}
+		<Header />
+		<div class="flex flex-1">
+			<Sidebar />
+			<main class="flex-1 overflow-x-auto">
+				{@render children()}
+			</main>
+		</div>
+	{:else}
 		<main class="flex-1 overflow-x-auto">
 			{@render children()}
 		</main>
-	</div>
+	{/if}
 </div>
