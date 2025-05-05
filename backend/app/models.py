@@ -1,0 +1,132 @@
+from __future__ import annotations
+from typing import Optional, List
+from datetime import datetime
+from sqlmodel import Field, SQLModel, Relationship
+from sqlalchemy.orm import Mapped
+
+
+class Province(SQLModel, table=True):
+    __tablename__ = "province"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+
+
+class District(SQLModel, table=True):
+    __tablename__ = "district"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    province_id: int = Field(foreign_key="province.id")
+
+
+class Locality(SQLModel, table=True):
+    __tablename__ = "locality"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    district_id: int = Field(foreign_key="district.id")
+
+class VideoStatus(SQLModel, table=True):
+    __tablename__ = "video_status"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+
+
+class VideoStatusHistory(SQLModel, table=True):
+    __tablename__ = "video_status_history"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    video_id: int = Field(foreign_key="video.id")
+    status_id: int = Field(foreign_key="video_status.id")
+    from_date: datetime
+    to_date: Optional[datetime]
+
+
+class Video(SQLModel, table=True):
+    __tablename__ = "video"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    url: str
+    uploaded_at: datetime
+    fps: int
+    duration: float
+    format: str
+    name: str
+    locality_id: int = Field(foreign_key="locality.id")
+
+
+class InferenceStatus(SQLModel, table=True):
+    __tablename__ = "inference_status"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+
+
+class InferenceStatusHistory(SQLModel, table=True):
+    __tablename__ = "inference_status_history"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    inference_id: int = Field(foreign_key="inference.id")
+    status_id: int = Field(foreign_key="inference_status.id")
+    from_date: datetime
+    to_date: Optional[datetime]
+
+
+class Inference(SQLModel, table=True):
+    __tablename__ = "inference"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    video_id: int = Field(foreign_key="video.id")
+    inferred_at: datetime
+    total_vehicles: int
+
+
+class VehicleType(SQLModel, table=True):
+    __tablename__ = "vehicle_type"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+
+
+class Route(SQLModel, table=True):
+    __tablename__ = "route"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    type: str  # 'national' or 'provincial'
+
+
+class Road(SQLModel, table=True):
+    __tablename__ = "road"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    route_id: int = Field(foreign_key="route.id")
+    direction: str
+    polygon: str
+    number: int
+    video_id: int = Field(foreign_key="video.id")
+
+
+class Vehicle(SQLModel, table=True):
+    __tablename__ = "vehicle"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    inference_id: int = Field(foreign_key="inference.id")
+    vehicle_type_id: int = Field(foreign_key="vehicle_type.id")
+    entry_road_id: int = Field(foreign_key="road.id")
+    exit_road_id: int = Field(foreign_key="road.id")
+
+
+class VehicleDetail(SQLModel, table=True):
+    __tablename__ = "vehicle_detail"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    frame_number: int
+    track_id: int
+    x1: float
+    y1: float
+    x2: float
+    y2: float
