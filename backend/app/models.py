@@ -1,9 +1,20 @@
 from __future__ import annotations
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
-from sqlmodel import Field, SQLModel, Relationship
-from sqlalchemy.orm import Mapped
+from sqlmodel import Field, SQLModel
+from app.schemas.user import Role
 
+class User(SQLModel, table=True):
+    __tablename__ = "user"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str
+    password: str
+    email: str
+    active: bool = Field(default=True)
+    first_name: str
+    last_name: str
+    role: Role
 
 class Province(SQLModel, table=True):
     __tablename__ = "province"
