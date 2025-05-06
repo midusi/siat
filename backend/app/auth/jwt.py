@@ -1,5 +1,6 @@
 import jwt
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 SECRET_KEY = "super-secret"
 ALGORITHM = "HS256"
@@ -9,7 +10,7 @@ def create_token(user: dict) -> str:
         "sub": str(user["id"]),
         "username": user["username"],
         "role": user["role"],
-        "exp": datetime.utcnow() + timedelta(hours=1),
+        "exp": datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")) + timedelta(hours=1),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 

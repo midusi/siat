@@ -1,6 +1,9 @@
-# crud/district.py
+# crud/user.py
 from sqlalchemy.orm import Session
 from app.models import User
+
+def get_all(db: Session) -> list[User]:
+    return db.query(User).all()
 
 def get_active_by_username(db: Session, username: str) -> list[User]:
     return db.query(User).filter(User.username == username, User.active == True).first()

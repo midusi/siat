@@ -35,6 +35,12 @@ class UserService(Base):
             raise HTTPException(status_code=status.HTTP_500_BAD_REQUEST, detail="Error al crear el usuario")
         return UserResponse.model_validate(user)
     
+    def get_list(self) -> list[UserResponse]:
+        users = user_crud.get_all(self.db)
+        return [
+            UserResponse.model_validate(u) for u in users
+        ]
+    
     def hash_password(self, password: str) -> str:
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         return self.pwd_context.hash(password)
