@@ -41,6 +41,26 @@ class UserService(Base):
             UserResponse.model_validate(u) for u in users
         ]
     
+    def disable(self, user_id: int) -> UserResponse:
+        user = user_crud.get_by_id(self.db, user_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+        
+        # Disable the user
+        user.active = False
+        self.commit_and_refresh(user)
+        return UserResponse.model_validate(user)
+    
+    def enable(self, user_id: int) -> UserResponse:
+        user = user_crud.get_by_id(self.db, user_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+        
+        # Enable the user
+        user.active = True
+        self.commit_and_refresh(user)
+        return UserResponse.model_validate(user)
+    
     def hash_password(self, password: str) -> str:
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         return self.pwd_context.hash(password)
