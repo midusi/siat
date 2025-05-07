@@ -10,3 +10,6 @@ def get_active_by_username(db: Session, username: str) -> list[User]:
 
 def get_by_username_email(db: Session, username: str, email: str) -> list[User]:
     return db.query(User).filter((User.username == username) | (User.email == email)).first()
+
+def get_by_id(db: Session, user_id: int) -> User:
+    return db.query(User).filter(User.id == user_id).first()
