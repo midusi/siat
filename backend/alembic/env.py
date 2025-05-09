@@ -4,6 +4,8 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
+from app.models import Base
+
 from sqlmodel import SQLModel
 from app import models  # importa tus modelos
 
@@ -32,7 +34,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # SQLModel metadata para autogeneración
-target_metadata = SQLModel.metadata
+target_metadata = Base.metadata
 
 def run_migrations_offline():
     """Generar el SQL de la migración sin ejecutar contra la base"""

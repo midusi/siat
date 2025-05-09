@@ -13,3 +13,7 @@ def get_localities_by_district(service: DistrictService = Depends(get_district_s
 @router.get("/{district_id}/locality")
 def get_localities_by_district(district_id: int, service: LocalityService = Depends(get_locality_service)):
     return service.get_localities_by_district(district_id)
+
+@router.get("/{district_id}/locality2")
+def get_localities_by_district(district_id: int, service: LocalityService = Depends(get_locality_service)):
+    return service.get_localities_by_district2(district_id)

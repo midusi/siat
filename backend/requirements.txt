@@ -6,3 +6,4 @@ alembic
 pandas
 PyJWT>=2.0.0
 passlib
+pymediainfo

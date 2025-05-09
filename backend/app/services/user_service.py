@@ -1,15 +1,18 @@
 # services/user_service.py
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
+from sqlalchemy.orm import sessionmaker
 
-from app.services.base import *
 from app.crud.district import *
 from app.crud import user as user_crud
 from app.schemas.user import UserCreateRequest, UserResponse
 from app.models import User
 
 
-class UserService(Base):
+class UserService:
+    def __init__(self, db: sessionmaker):
+        self.db = db
+        
     def create(self, user_request: UserCreateRequest) -> UserResponse:
         # Validate user data
         existing_user = self.user_exists(user_request.username, user_request.email)
@@ -18,22 +21,23 @@ class UserService(Base):
         if existing_user:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya existe un usuario con el mismo email o username")
         
-        # Create user
-        user_obj = User(
-            username=user_request.username,
-            password=self.hash_password(user_request.password),
-            email=user_request.email,
-            first_name=user_request.first_name,
-            last_name=user_request.last_name,
-            role=user_request.role,
-            active=True,
-        )
-        self.db.add(user_obj)
-        # Commit and refresh the user object to get the ID
-        user = self.commit_and_refresh(user_obj)
-        if not user:
-            raise HTTPException(status_code=status.HTTP_500_BAD_REQUEST, detail="Error al crear el usuario")
-        return UserResponse.model_validate(user)
+        try:
+            # Create user
+            user_obj = User(
+                username=user_request.username,
+                password=self.hash_password(user_request.password),
+                email=user_request.email,
+                first_name=user_request.first_name,
+                last_name=user_request.last_name,
+                role=user_request.role,
+                active=True,
+            )
+            self.db.add(user_obj)
+            self.db.commit()
+            return UserResponse.model_validate(user_obj)
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     
     def get_list(self) -> list[UserResponse]:
         users = user_crud.get_all(self.db)
@@ -48,7 +52,7 @@ class UserService(Base):
         
         # Disable the user
         user.active = False
-        self.commit_and_refresh(user)
+        self.db.commit()
         return UserResponse.model_validate(user)
     
     def enable(self, user_id: int) -> UserResponse:
@@ -58,7 +62,7 @@ class UserService(Base):
         
         # Enable the user
         user.active = True
-        self.commit_and_refresh(user)
+        self.db.commit()
         return UserResponse.model_validate(user)
     
     def hash_password(self, password: str) -> str:

@@ -17,11 +17,11 @@ async def get_users(service: UserService = Depends(get_user_service)):
     return {"users": users}
 
 @router.patch("/user/{user_id}/disable")
-async def get_users(user_id: int, service: UserService = Depends(get_user_service)):
+async def disable_user(user_id: int, service: UserService = Depends(get_user_service)):
     user = service.disable(user_id)
     return {"user": user}
 
 @router.patch("/user/{user_id}/enable")
-async def get_users(user_id: int, service: UserService = Depends(get_user_service)):
+async def enable_user(user_id: int, service: UserService = Depends(get_user_service)):
     user = service.enable(user_id)
     return {"user": user}

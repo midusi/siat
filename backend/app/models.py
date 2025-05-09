@@ -1,143 +1,85 @@
 from __future__ import annotations
-from typing import Optional
-from datetime import datetime
-from sqlmodel import Field, SQLModel
-from app.schemas.user import Role
+from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime
+from sqlalchemy.orm import DeclarativeBase, relationship
 
-class User(SQLModel, table=True):
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
     __tablename__ = "user"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    username: str
-    password: str
-    email: str
-    active: bool = Field(default=True)
-    first_name: str
-    last_name: str
-    role: Role
+    id= Column(Integer, primary_key=True)
+    username = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False, unique=True)
+    email = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    role = Column(String, nullable=False)
 
-class Province(SQLModel, table=True):
+class Province(Base):
     __tablename__ = "province"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
 
 
-class District(SQLModel, table=True):
+class District(Base):
     __tablename__ = "district"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    province_id = Column(Integer, ForeignKey("province.id"), nullable=False)
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    province_id: int = Field(foreign_key="province.id")
+    province = relationship("Province")
 
-
-class Locality(SQLModel, table=True):
+class Locality(Base):
     __tablename__ = "locality"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    district_id: int = Field(foreign_key="district.id")
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    district_id = Column(Integer, ForeignKey("district.id"), nullable=False)
 
-class VideoStatus(SQLModel, table=True):
-    __tablename__ = "video_status"
+    district = relationship("District")
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-
-
-class VideoStatusHistory(SQLModel, table=True):
-    __tablename__ = "video_status_history"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    video_id: int = Field(foreign_key="video.id")
-    status_id: int = Field(foreign_key="video_status.id")
-    from_date: datetime
-    to_date: Optional[datetime]
-
-
-class Video(SQLModel, table=True):
+class Video(Base):
     __tablename__ = "video"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    url: str
-    uploaded_at: datetime
-    fps: int
-    duration: float
-    format: str
-    name: str
-    locality_id: int = Field(foreign_key="locality.id")
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    format = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    fps = Column(Integer, nullable=False)
+    duration = Column(Float, nullable=False)
+    width = Column(Integer, nullable=False)
+    height = Column(Integer, nullable=False)
 
+class Task(Base):
+    __tablename__ = "task"
 
-class InferenceStatus(SQLModel, table=True):
-    __tablename__ = "inference_status"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    uploaded_at = Column(DateTime, nullable=False)
+    video_id = Column(Integer, ForeignKey("video.id"), nullable=False)
+    locality_id = Column(Integer, ForeignKey("locality.id"), nullable=False)
+    
+    video = relationship("Video")
+    locality = relationship("Locality")
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
+class TaskStatus(Base):
+    __tablename__ = "task_status"
 
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
 
-class InferenceStatusHistory(SQLModel, table=True):
-    __tablename__ = "inference_status_history"
+class TaskStatusHistory(Base):
+    __tablename__ = "task_status_history"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    inference_id: int = Field(foreign_key="inference.id")
-    status_id: int = Field(foreign_key="inference_status.id")
-    from_date: datetime
-    to_date: Optional[datetime]
-
-
-class Inference(SQLModel, table=True):
-    __tablename__ = "inference"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    video_id: int = Field(foreign_key="video.id")
-    inferred_at: datetime
-    total_vehicles: int
-
-
-class VehicleType(SQLModel, table=True):
-    __tablename__ = "vehicle_type"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-
-
-class Route(SQLModel, table=True):
-    __tablename__ = "route"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    type: str  # 'national' or 'provincial'
-
-
-class Road(SQLModel, table=True):
-    __tablename__ = "road"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    route_id: int = Field(foreign_key="route.id")
-    direction: str
-    polygon: str
-    number: int
-    video_id: int = Field(foreign_key="video.id")
-
-
-class Vehicle(SQLModel, table=True):
-    __tablename__ = "vehicle"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    inference_id: int = Field(foreign_key="inference.id")
-    vehicle_type_id: int = Field(foreign_key="vehicle_type.id")
-    entry_road_id: int = Field(foreign_key="road.id")
-    exit_road_id: int = Field(foreign_key="road.id")
-
-
-class VehicleDetail(SQLModel, table=True):
-    __tablename__ = "vehicle_detail"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
-    frame_number: int
-    track_id: int
-    x1: float
-    y1: float
-    x2: float
-    y2: float
+    id = Column(Integer, primary_key=True)
+    from_date = Column(DateTime, nullable=False)
+    to_date = Column(DateTime)
+    task_id = Column(Integer, ForeignKey("task.id"), nullable=False)
+    status_id = Column(String, ForeignKey("task_status.id"), nullable=False)
+    
+    task = relationship("Task")
+    task_status = relationship("TaskStatus")

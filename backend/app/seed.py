@@ -2,9 +2,9 @@ import csv
 import pandas as pd
 from sqlmodel import Session, select
 from models import (
-    VehicleType,
-    InferenceStatus,
-    VideoStatus,
+    # VehicleType,
+    # InferenceStatus,
+    TaskStatus,
     Province,
     District,
     Locality,
@@ -14,40 +14,40 @@ from db import engine
 
 def seed_static_data():
     with Session(engine) as session:
-        # VEHICLE TYPE
-        if not session.exec(select(VehicleType)).first():
-            session.add_all([
-                VehicleType(name="Auto"),
-                VehicleType(name="Moto"),
-                VehicleType(name="Camión"),
-            ])
-            print("✔ VehicleType cargado.")
-        else:
-            print("🔁 VehicleType ya tiene datos.")
+        # # VEHICLE TYPE
+        # if not session.exec(select(VehicleType)).first():
+        #     session.add_all([
+        #         VehicleType(name="Auto"),
+        #         VehicleType(name="Moto"),
+        #         VehicleType(name="Camión"),
+        #     ])
+        #     print("✔ VehicleType cargado.")
+        # else:
+        #     print("🔁 VehicleType ya tiene datos.")
 
-        # INFERENCE STATUS
-        if not session.exec(select(InferenceStatus)).first():
-            session.add_all([
-                InferenceStatus(name="Procesando"),
-                InferenceStatus(name="Pausado"),
-                InferenceStatus(name="Finalizado"),
-            ])
-            print("✔ InferenceStatus cargado.")
-        else:
-            print("🔁 InferenceStatus ya tiene datos.")
+        # # INFERENCE STATUS
+        # if not session.exec(select(InferenceStatus)).first():
+        #     session.add_all([
+        #         InferenceStatus(name="Procesando"),
+        #         InferenceStatus(name="Pausado"),
+        #         InferenceStatus(name="Finalizado"),
+        #     ])
+        #     print("✔ InferenceStatus cargado.")
+        # else:
+        #     print("🔁 InferenceStatus ya tiene datos.")
 
-        # VIDEO STATUS
-        if not session.exec(select(VideoStatus)).first():
+        # TASK STATUS
+        if not session.exec(select(TaskStatus)).first():
             session.add_all([
-                VideoStatus(name="Subido"),
-                VideoStatus(name="Anotado"),
-                VideoStatus(name="Procesando"),
-                VideoStatus(name="Revisión"),
-                VideoStatus(name="Aprobado"),
+                TaskStatus(id="VIDEO_UPLOADED", name="Video subido"),
+                TaskStatus(id="CONFIGURED", name="Configurada"),
+                TaskStatus(id="PROCESSING", name="Procesando"),
+                TaskStatus(id="REVIEW", name="Revisión"),
+                TaskStatus(id="APPROVED", name="Aprobada"),
             ])
-            print("✔ VideoStatus cargado.")
+            print("✔ TaskStatus cargado.")
         else:
-            print("🔁 VideoStatus ya tiene datos.")
+            print("🔁 TaskStatus ya tiene datos.")
 
         session.commit()
 
