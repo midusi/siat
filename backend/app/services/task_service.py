@@ -31,6 +31,7 @@ class TaskService:
         for task in tasks:
             history = task.status_history[0]
             task_response = TaskResponse.model_validate({
+                "id": task.id,
                 "name": task.name,
                 "locality": {
                     "id": task.locality.id,
@@ -50,6 +51,33 @@ class TaskService:
             })
             responses.append(task_response)
         return responses
+    
+    def get_task(self, task_id: int) -> TaskResponse:
+        task = task_crud.get_by_id(self.db, task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        
+        history = task.status_history[0]
+        task_response = TaskResponse.model_validate({
+            "id": task.id,
+            "name": task.name,
+            "locality": {
+                "id": task.locality.id,
+                "name": task.locality.name,
+                "district": {
+                    "id": task.locality.district.id,
+                    "name": task.locality.district.name
+                }
+            },
+            "name_video": task.video.name,
+            "duration": int(task.video.duration),
+            "status": {
+                "id": history.task_status.id,
+                "name": history.task_status.name
+            },
+            "uploaded_at": task.uploaded_at.isoformat()
+        })
+        return task_response
         
     def create(
         self, 
@@ -120,6 +148,7 @@ class TaskService:
                 })
             return TaskResponse.model_validate(
                 {
+                    "id": task_obj.id,
                     "name": task_obj.name,
                     "locality": locality_response,
                     "name_video": video_obj.name,

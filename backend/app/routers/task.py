@@ -11,6 +11,10 @@ router = APIRouter(prefix="/task", tags=["task"])
 def get_list(service: TaskService = Depends(get_task_service)):
     return service.get_list()
 
+@router.get("/{task_id}")
+def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
+    return service.get_task(task_id)
+
 @router.post("")
 async def create(
     name: str = Form(...),

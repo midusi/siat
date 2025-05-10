@@ -9,6 +9,7 @@ class TaskCreateRequest(BaseModel):
     uploaded_at: datetime
     
 class TaskResponse(BaseModel):
+    id: int
     name: str
     locality: LocalityWDistrictResponse
     name_video: str

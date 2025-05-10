@@ -23,3 +23,6 @@ def get_list(db: sessionmaker) -> list[Task]:
         .all()
     )
     return tasks
+
+def get_by_id(db: sessionmaker, task_id: int) -> Task | None:
+    return db.query(Task).filter(Task.id == task_id).first()
