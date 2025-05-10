@@ -10,23 +10,52 @@ from app.services.base import *
 from app.services.locality_service import LocalityService
 from app.services.video_service import VideoService
 from app.services.task_status_service import TaskStatusService
-from app.crud.district import *
-from app.schemas.task import TaskCreateRequest
+from app.crud import task as task_crud
+# from app.crud.district import *
+from app.schemas.task import TaskCreateRequest, TaskResponse
+from app.schemas.task_status import TaskStatusResponse
+from app.schemas.locality import LocalityWDistrictResponse
+from app.schemas.district import DistrictResponse
 from app.models import Task, Video, TaskStatus, TaskStatusHistory
 
-
-class TaskService(Base):
+class TaskService:
     def __init__(self, db: sessionmaker):
         self.db = db
         self.locality_service = LocalityService(db)
         self.video_service = VideoService(db)
         self.task_status_service = TaskStatusService(db)
         
+    def get_list(self) -> list[TaskResponse]:
+        tasks = task_crud.get_list(self.db)
+        responses = []
+        for task in tasks:
+            history = task.status_history[0]
+            task_response = TaskResponse.model_validate({
+                "name": task.name,
+                "locality": {
+                    "id": task.locality.id,
+                    "name": task.locality.name,
+                    "district": {
+                        "id": task.locality.district.id,
+                        "name": task.locality.district.name
+                    }
+                },
+                "name_video": task.video.name,
+                "duration": int(task.video.duration),
+                "status": {
+                    "id": history.task_status.id,
+                    "name": history.task_status.name
+                },
+                "uploaded_at": task.uploaded_at.isoformat()
+            })
+            responses.append(task_response)
+        return responses
+        
     def create(
         self, 
         task_request: TaskCreateRequest,
         file: UploadFile
-    ) -> bool:
+    ) -> TaskResponse:
         # Validate task data
         name = task_request.name
         locality_id = task_request.locality_id
@@ -79,20 +108,29 @@ class TaskService(Base):
             
             # Commit and refresh the task object to get the ID
             self.db.commit()
-            return True
+            
+            # Create schema for task
+            task_status_response = TaskStatusResponse.model_validate(task_status_pending)
+            district_response = DistrictResponse.model_validate(locality.district)
+            locality_response = LocalityWDistrictResponse.model_validate(
+                {
+                    "id": locality.id, 
+                    "name": locality.name, 
+                    "district": district_response
+                })
+            return TaskResponse.model_validate(
+                {
+                    "name": task_obj.name,
+                    "locality": locality_response,
+                    "name_video": video_obj.name,
+                    "duration": video_obj.duration,
+                    "status": task_status_response,
+                    "uploaded_at": task_obj.uploaded_at,
+                })
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
         # finally:
             # # Close the file after processing
             # file.file.close()
-        # return TaskResponse.model_validate(task)
-    
-    def get_data_video(self, video: UploadFile) -> list:
-        data_video = {
-            "name": video.filename,
-            "size": video.size,
-            "format": video.content_type
-        }
-        return data_video
         

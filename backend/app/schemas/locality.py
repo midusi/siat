@@ -11,9 +11,6 @@ class LocalityResponse(BaseModel):
 class LocalityWDistrictResponse(BaseModel):
     id: int
     name: str
-    district: dict[int, str] = {
-        "id": int,
-        "name": str
-    }
+    district: DistrictResponse
     
     model_config = ConfigDict(from_attributes=True)

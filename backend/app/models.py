@@ -65,6 +65,8 @@ class Task(Base):
     
     video = relationship("Video")
     locality = relationship("Locality")
+    
+    status_history = relationship("TaskStatusHistory", back_populates="task", order_by="TaskStatusHistory.id.desc()")
 
 class TaskStatus(Base):
     __tablename__ = "task_status"
@@ -81,5 +83,6 @@ class TaskStatusHistory(Base):
     task_id = Column(Integer, ForeignKey("task.id"), nullable=False)
     status_id = Column(String, ForeignKey("task_status.id"), nullable=False)
     
-    task = relationship("Task")
+    task = relationship("Task", back_populates="status_history")
     task_status = relationship("TaskStatus")
+    

@@ -7,6 +7,10 @@ from datetime import datetime
 
 router = APIRouter(prefix="/task", tags=["task"])
 
+@router.get("")
+def get_list(service: TaskService = Depends(get_task_service)):
+    return service.get_list()
+
 @router.post("")
 async def create(
     name: str = Form(...),
