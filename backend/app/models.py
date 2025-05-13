@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime
+from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime, Text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 class Base(DeclarativeBase):
@@ -85,4 +85,24 @@ class TaskStatusHistory(Base):
     
     task = relationship("Task", back_populates="status_history")
     task_status = relationship("TaskStatus")
+    
+class Route(Base):
+    __tablename__ = "route"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    
+class Road(Base):
+    __tablename__ = "road"
+
+    id = Column(Integer, primary_key=True)
+    number = Column(Integer, nullable=False)
+    polygon = Column(Text, nullable=False)
+    direction = Column(String, nullable=False)
+    video_id = Column(Integer, ForeignKey("video.id"), nullable=False)
+    route_id = Column(Integer, ForeignKey("route.id"), nullable=False)
+    
+    video = relationship("Video")
+    route = relationship("Route")
     
