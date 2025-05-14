@@ -10,13 +10,16 @@ from app.services.base import *
 from app.services.locality_service import LocalityService
 from app.services.video_service import VideoService
 from app.services.task_status_service import TaskStatusService
+from app.services.task_status_history_service import TaskStatusHistoryService
+from app.services.route_service import RouteService
+from app.services.road_service import RoadService
 from app.crud import task as task_crud
-# from app.crud.district import *
-from app.schemas.task import TaskCreateRequest, TaskResponse
+from app.schemas.task import TaskCreateRequest, TaskResponse, TaskConfigRequest
 from app.schemas.task_status import TaskStatusResponse
 from app.schemas.locality import LocalityWDistrictResponse
 from app.schemas.district import DistrictResponse
-from app.models import Task, Video, TaskStatus, TaskStatusHistory
+from app.models import Task, Video, TaskStatusHistory, Road
+from app.enums.road_direction import RoadDirection
 
 class TaskService:
     def __init__(self, db: sessionmaker):
@@ -24,6 +27,9 @@ class TaskService:
         self.locality_service = LocalityService(db)
         self.video_service = VideoService(db)
         self.task_status_service = TaskStatusService(db)
+        self.task_status_history_service = TaskStatusHistoryService(db)
+        self.route_service = RouteService(db)
+        self.road_service = RoadService(db)
         
     def get_list(self) -> list[TaskResponse]:
         tasks = task_crud.get_list(self.db)
@@ -55,7 +61,7 @@ class TaskService:
     def get_task(self, task_id: int) -> TaskResponse:
         task = task_crud.get_by_id(self.db, task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
         
         history = task.status_history[0]
         task_response = TaskResponse.model_validate({
@@ -163,3 +169,64 @@ class TaskService:
             # # Close the file after processing
             # file.file.close()
         
+
+    
+    def config(self, task_config_request: TaskConfigRequest, task_id: int):
+        task = task_crud.get_by_id(self.db, task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        
+        current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
+        if current_task_status_history.status_id != "VIDEO_UPLOADED" and current_task_status_history.status_id != "CONFIGURED":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no se puede configurar")
+        
+        currents_road = self.road_service.find_by_fields(video_id=task.video_id)
+        for road in currents_road:
+            self.db.delete(road)
+        
+        roads_in = task_config_request.roads_in
+        roads_out = task_config_request.roads_out
+        
+        try:
+            for i, road in enumerate(roads_in):
+                route = self.route_service.find_one_by_fields(id=road.route_id)
+                if not route:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La ruta no existe")
+                road = self.road_service.create(
+                    number=i+1,
+                    direction=RoadDirection.IN,
+                    polygon=road.polygon,
+                    video_id=task.video.id,
+                    route_id=route.id,
+                )
+                self.db.add(road)
+
+            for i, road in enumerate(roads_out):
+                route = self.route_service.find_one_by_fields(id=road.route_id)
+                road = Road(
+                    number=i+1,
+                    direction=RoadDirection.OUT,
+                    polygon=road.polygon,
+                    video_id=task.video.id,
+                    route_id=route.id,
+                )
+                self.db.add(road)
+                
+            # Change task status history
+            current_task_status_history.to_date = datetime.datetime.now()
+            self.db.flush()
+            
+            # Create task status history CONFIGURED
+            task_status_configured = self.task_status_service.get_by_id("CONFIGURED")
+            new_task_status_history = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=task_status_configured.id,
+            )
+            self.db.add(new_task_status_history)
+                
+            self.db.commit()
+            return task
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

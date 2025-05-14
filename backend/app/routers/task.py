@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, Form, File
 from app.auth.decorators import require_role
 from app.services.task_service import TaskService
-from app.schemas.task import TaskCreateRequest
+from app.schemas.task import TaskCreateRequest, TaskConfigRequest
 from app.services.dependencies import get_task_service
 from datetime import datetime
 
@@ -29,4 +29,13 @@ async def create(
         uploaded_at=uploaded_at
     )
     task = service.create(task_request, file)
+    return {"task": task}
+
+@router.post("/{task_id}/config")
+async def config(
+    task_config_request: TaskConfigRequest,
+    task_id: int,
+    service: TaskService = Depends(get_task_service)
+):
+    task = service.config(task_config_request, task_id)
     return {"task": task}

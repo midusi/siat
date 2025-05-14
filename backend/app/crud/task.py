@@ -1,4 +1,4 @@
-# crud/user.py
+# crud/task.py
 from sqlalchemy.orm import sessionmaker, joinedload
 from sqlalchemy.sql import and_, or_
 from app.models import Task, TaskStatusHistory, Locality
