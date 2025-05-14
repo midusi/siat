@@ -1,4 +1,5 @@
 # services/district_service.py
+from sqlalchemy.orm import sessionmaker
 from passlib.context import CryptContext
 
 from app.crud.district import *
@@ -6,7 +7,7 @@ from app.crud import user as user_crud
 from app.auth.jwt import create_token
 
 class AuthService:
-    def __init__(self, db: Session):
+    def __init__(self, db: sessionmaker):
         self.db = db
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         
