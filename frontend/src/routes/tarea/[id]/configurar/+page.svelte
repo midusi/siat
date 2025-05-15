@@ -73,7 +73,8 @@
           }
         ];
 
-      console.log('Polígono guardado:', poligonos[poligonos.length - 1]);
+      console.log('Todos los polígonos:', poligonos);
+          
 
       // Limpiamos el canvas y redibujamos todos los confirmados
       puntos = [];
@@ -83,28 +84,43 @@
   }
 
   function redrawConfirmedPolygons() {
-    if (!ctx || !canvas) return;
+  if (!ctx || !canvas) return;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (const poly of poligonos) {
-      ctx.beginPath();
-      ctx.moveTo(poly.vertices[0].x, poly.vertices[0].y);
-      for (let i = 1; i < poly.vertices.length; i++) {
-        ctx.lineTo(poly.vertices[i].x, poly.vertices[i].y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Marcar los vértices
-      for (const v of poly.vertices) {
-        ctx.fillStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
-        ctx.fillRect(v.x - 5, v.y - 5, 10, 10);
-      }
+  for (const poly of poligonos) {
+    // Dibujar contorno
+    ctx.beginPath();
+    ctx.moveTo(poly.vertices[0].x, poly.vertices[0].y);
+    for (let i = 1; i < poly.vertices.length; i++) {
+      ctx.lineTo(poly.vertices[i].x, poly.vertices[i].y);
     }
+    ctx.closePath();
+    ctx.strokeStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Dibujar vértices
+    for (const v of poly.vertices) {
+      ctx.fillStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
+      ctx.fillRect(v.x - 5, v.y - 5, 10, 10);
+    }
+
+    // Calcular centroide del polígono
+    const centro = poly.vertices.reduce(
+      (acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
+      { x: 0, y: 0 }
+    );
+    centro.x /= poly.vertices.length;
+    centro.y /= poly.vertices.length;
+
+    // Dibujar el texto centrado
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${poly.via} - ${poly.sentido}`, centro.x, centro.y - 10);
   }
+}
 
  function eliminarPoligono(index: number) {
   poligonos = poligonos.filter((_, i) => i !== index);
