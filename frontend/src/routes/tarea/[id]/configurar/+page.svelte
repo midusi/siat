@@ -20,11 +20,7 @@
   }> = [];
 
   function handleDraw() {
-    if (puntos.length >= 4) {
-      alert('Ya se han agregado los 4 puntos permitidos.');
-      puntos.length =0;
-      return;
-    }
+     puntos.length =0;
     showModal = true;
   }
 
