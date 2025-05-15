@@ -10,8 +10,8 @@ class RoadRequest(BaseModel):
     @field_validator("polygon")
     @classmethod
     def check_length_four(cls, v):
-        if len(v) != 2:
-            raise ValueError("Cada polígono debe tener 2 puntos.")
+        if len(v) != 4:
+            raise ValueError("Cada polígono debe tener 4 puntos.")
         if any(coord < 0 for coord in v):
             raise ValueError("Las coordenadas del polígono deben ser positivas.")
         return v
