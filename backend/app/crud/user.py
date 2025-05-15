@@ -1,15 +1,12 @@
 # crud/user.py
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 from app.models import User
 
-def get_all(db: Session) -> list[User]:
-    return db.query(User).all()
-
-def get_active_by_username(db: Session, username: str) -> list[User]:
-    return db.query(User).filter(User.username == username, User.active == True).first()
-
-def get_by_username_email(db: Session, username: str, email: str) -> list[User]:
+def get_by_username_email(db: sessionmaker, username: str, email: str) -> list[User]:
     return db.query(User).filter((User.username == username) | (User.email == email)).first()
 
-def get_by_id(db: Session, user_id: int) -> User:
-    return db.query(User).filter(User.id == user_id).first()
+def find_by_fields(db: sessionmaker, **filters) -> list[User] | None:
+    return db.query(User).filter_by(**filters).all()
+
+def find_one_by_fields(db: sessionmaker, **filters) -> list[User] | None:
+    return db.query(User).filter_by(**filters).first()

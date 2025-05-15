@@ -12,7 +12,7 @@ class DistrictService:
         self.db = db
         
     def get_list(self) -> list[DistrictResponse]:
-        districts = district_crud.get_list(self.db)
+        districts = district_crud.find_by_fields(self.db)
         return [
             DistrictResponse.model_validate(d) for d in districts
         ]

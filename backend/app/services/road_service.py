@@ -10,7 +10,7 @@ class RoadService:
         self.db = db
         
     def get_by_id(self, road_id: str) -> Road:
-        return road_crud.get_by_id(self.db, road_id)
+        return road_crud.find_one_by_fields(self.db, id=road_id)
         
     def find_by_fields(self, **filters) -> Road:
         return road_crud.find_by_fields(self.db, **filters)

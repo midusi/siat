@@ -1,6 +1,9 @@
 # crud/task_status.py
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 from app.models import TaskStatus
 
-def get_by_id(db: Session, task_status_id: int) -> TaskStatus:
-    return db.query(TaskStatus).filter(TaskStatus.id == task_status_id).first()
+def find_by_fields(db: sessionmaker, **filters) -> list[TaskStatus] | None:
+    return db.query(TaskStatus).filter_by(**filters).all()
+
+def find_one_by_fields(db: sessionmaker, **filters) -> list[TaskStatus] | None:
+    return db.query(TaskStatus).filter_by(**filters).first()

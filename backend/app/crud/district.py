@@ -2,5 +2,5 @@
 from sqlalchemy.orm import sessionmaker
 from app.models import District
 
-def get_list(db: sessionmaker) -> list[District]:
-    return db.query(District).all()
+def find_by_fields(db: sessionmaker, **filters) -> list[District] | None:
+    return db.query(District).filter_by(**filters).all()

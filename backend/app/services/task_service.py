@@ -32,7 +32,7 @@ class TaskService:
         self.road_service = RoadService(db)
         
     def get_list(self) -> list[TaskResponse]:
-        tasks = task_crud.get_list(self.db)
+        tasks = task_crud.find_by_fields(self.db, id=17)
         responses = []
         for task in tasks:
             history = task.status_history[0]
@@ -59,7 +59,7 @@ class TaskService:
         return responses
     
     def get_task(self, task_id: int) -> TaskResponse:
-        task = task_crud.get_by_id(self.db, task_id)
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
         
@@ -172,7 +172,7 @@ class TaskService:
 
     
     def config(self, task_config_request: TaskConfigRequest, task_id: int):
-        task = task_crud.get_by_id(self.db, task_id)
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
         

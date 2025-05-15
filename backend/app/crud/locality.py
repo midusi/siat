@@ -5,8 +5,8 @@ from app.models import Locality
 def get_localities_by_district(db: sessionmaker, district_id: int) -> list[Locality]:
     return db.query(Locality).filter(Locality.district_id == district_id).all()
 
-def get_by_id(db: sessionmaker, locality_id: int) -> Locality:
-    return db.query(Locality).filter(Locality.id == locality_id).first()
+def find_one_by_fields(db: sessionmaker, **filters) -> Locality:
+    return db.query(Locality).filter_by(**filters).first()
 
 def get_localities_by_district2(db: sessionmaker, district_id: int) -> list:
     return (

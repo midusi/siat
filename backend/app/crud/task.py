@@ -4,7 +4,7 @@ from sqlalchemy.sql import and_, or_
 from app.models import Task, TaskStatusHistory, Locality
 import datetime
 
-def get_list(db: sessionmaker) -> list[Task]:
+def find_by_fields(db: sessionmaker, **filters) -> list[Task]:
     now = datetime.datetime.now()
     tasks = (
         db.query(Task)
@@ -24,5 +24,5 @@ def get_list(db: sessionmaker) -> list[Task]:
     )
     return tasks
 
-def get_by_id(db: sessionmaker, task_id: int) -> Task | None:
-    return db.query(Task).filter(Task.id == task_id).first()
+def find_one_by_fields(db: sessionmaker, **filters) -> list[Task] | None:
+    return db.query(Task).filter_by(**filters).first()

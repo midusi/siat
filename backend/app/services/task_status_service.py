@@ -9,4 +9,4 @@ class TaskStatusService:
         self.db = db
         
     def get_by_id(self, task_status_id: str) -> TaskStatus:
-        return task_status_crud.get_by_id(self.db, task_status_id)
+        return task_status_crud.find_one_by_fields(self.db, id=task_status_id)

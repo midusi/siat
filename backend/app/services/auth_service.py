@@ -12,7 +12,7 @@ class AuthService:
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         
     def login(self, username: str, password: str):
-        user = user_crud.get_active_by_username(self.db, username)
+        user = user_crud.find_one_by_fields(self.db, username=username)
         if not user:
             return None
         if not self.verify_password(password, user.password):

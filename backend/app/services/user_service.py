@@ -40,13 +40,13 @@ class UserService:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     
     def get_list(self) -> list[UserResponse]:
-        users = user_crud.get_all(self.db)
+        users = user_crud.find_by_fields(self.db)
         return [
             UserResponse.model_validate(u) for u in users
         ]
     
     def disable(self, user_id: int) -> UserResponse:
-        user = user_crud.get_by_id(self.db, user_id)
+        user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
         
@@ -56,7 +56,7 @@ class UserService:
         return UserResponse.model_validate(user)
     
     def enable(self, user_id: int) -> UserResponse:
-        user = user_crud.get_by_id(self.db, user_id)
+        user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
         
