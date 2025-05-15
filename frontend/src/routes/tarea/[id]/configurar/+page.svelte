@@ -1,87 +1,95 @@
 <script lang="ts">
-import { tick } from 'svelte';
+  import { tick } from 'svelte';
 
-let canvas: HTMLCanvasElement | null = null;
-let ctx: CanvasRenderingContext2D | null = null;
-let drawing = false;
-let showModal = false;
+  let canvas: HTMLCanvasElement | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
+  let drawing = false;
+  let showModal = false;
 
-let modalVia = 'Ruta 2';
-let modalSentido = 'Entrada';
-let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
-let opcionesSentido = ['Entrada', 'Salida'];
+  let modalVia = 'Ruta 2';
+  let modalSentido = 'Entrada';
+  let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
+  let opcionesSentido = ['Entrada', 'Salida'];
 
-let puntos: Array<{ x: number, y: number }> = [];
+  let puntos: Array<{ x: number, y: number }> = [];
 
-let poligonos: Array<{
-  via: string;
-  sentido: string;
-  vertices: Array<{ x: number, y: number }>;
-}> = [];
+  let poligonos: Array<{
+    via: string;
+    sentido: string;
+    vertices: Array<{ x: number, y: number }>;
+  }> = [];
 
-function handleDraw() {
-  if (puntos.length >= 4) {
-    alert('Ya se han agregado los 4 puntos permitidos.');
-    return;
-  }
-  showModal = true;
-}
-
-function closeModal() {
-  showModal = false;
-}
-
-async function confirmDraw() {
-  showModal = false;
-  drawing = true;
-  await tick();
-
-  if (canvas) {
-    ctx = canvas.getContext('2d');
-    canvas.addEventListener('click', handleCanvasClick);
-    redrawConfirmedPolygons(); // Redibuja los anteriores
-  }
-}
-
-function handleCanvasClick(event: MouseEvent) {
-  if (!canvas || !ctx) return;
-
-  if (puntos.length >= 4) {
-    alert('Ya se marcaron los 4 vértices. Confirmá o inicia otro dibujo.');
-    return;
+  function handleDraw() {
+    if (puntos.length >= 4) {
+      alert('Ya se han agregado los 4 puntos permitidos.');
+      puntos.length =0;
+      return;
+    }
+    showModal = true;
   }
 
-  const rect = canvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-
-  puntos.push({ x, y });
-  console.log(`Vértice ${puntos.length}: ${Math.round(x)}, ${Math.round(y)}`);
-
-  ctx.fillStyle = modalSentido === 'Entrada' ? 'green' : 'red';
-  ctx.fillRect(x - 5, y - 5, 10, 10);
-
-  if (puntos.length === 4) {
-    // Guardamos el polígono
-    poligonos.push({
-      via: modalVia,
-      sentido: modalSentido,
-      vertices: [...puntos]
-    });
-
-    console.log('Polígono guardado:', poligonos[poligonos.length - 1]);
-
-    // Limpiamos el canvas y redibujamos todos los confirmados
-    puntos = [];
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    redrawConfirmedPolygons();
+  function closeModal() {
+    showModal = false;
   }
-}
 
-function redrawConfirmedPolygons() {
+  async function confirmDraw() {
+    showModal = false;
+    drawing = true;
+    await tick();
+
+    if (canvas) {
+      ctx = canvas.getContext('2d');
+      canvas.addEventListener('click', handleCanvasClick);
+      redrawConfirmedPolygons(); // Redibuja los anteriores
+    }
+  }
+
+  function handleCanvasClick(event: MouseEvent) {
+    if (!canvas || !ctx) return;
+
+    if (puntos.length >= 4) {
+      alert('Ya se marcaron los 4 vértices. Confirmá o inicia otro dibujo.');
+      puntos.length =0;
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    puntos.push({ x, y });
+    console.log(`Vértice ${puntos.length}: ${Math.round(x)}, ${Math.round(y)}`);
+
+    ctx.fillStyle = modalSentido === 'Entrada' ? 'green' : 'red';
+    ctx.fillRect(x - 5, y - 5, 10, 10);
+
+    if (puntos.length === 4) {
+      // Guardamos el polígono
+      poligonos = [...poligonos,
+          {
+            via: modalVia,
+            sentido: modalSentido,
+            vertices: [...puntos]
+          }
+        ];
+
+      console.log('Todos los polígonos:', poligonos);
+          
+
+      // Limpiamos el canvas y redibujamos todos los confirmados
+      puntos = [];
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      redrawConfirmedPolygons();
+    }
+  }
+
+  function redrawConfirmedPolygons() {
   if (!ctx || !canvas) return;
 
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   for (const poly of poligonos) {
+    // Dibujar contorno
     ctx.beginPath();
     ctx.moveTo(poly.vertices[0].x, poly.vertices[0].y);
     for (let i = 1; i < poly.vertices.length; i++) {
@@ -91,13 +99,34 @@ function redrawConfirmedPolygons() {
     ctx.strokeStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // Dibujar vértices
+    for (const v of poly.vertices) {
+      ctx.fillStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
+      ctx.fillRect(v.x - 5, v.y - 5, 10, 10);
+    }
+
+    // Calcular centroide del polígono
+    const centro = poly.vertices.reduce(
+      (acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
+      { x: 0, y: 0 }
+    );
+    centro.x /= poly.vertices.length;
+    centro.y /= poly.vertices.length;
+
+    // Dibujar el texto centrado
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${poly.via} - ${poly.sentido}`, centro.x, centro.y - 10);
   }
 }
 
-function confirmarCambios() {
-  console.log('Polígonos confirmados:', poligonos);
-  alert('Cambios confirmados.');
+ function eliminarPoligono(index: number) {
+  poligonos = poligonos.filter((_, i) => i !== index);
+  redrawConfirmedPolygons();
 }
+
 
 </script>
 
@@ -131,7 +160,7 @@ function confirmarCambios() {
     </div>
 
     <!-- Botón para abrir modal -->
-    <div class="flex justify-center mt-6">
+    <div class="flex justify-center mt-6 gap-4">
       <button
         on:click={handleDraw}
         class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-md"
@@ -139,6 +168,40 @@ function confirmarCambios() {
         Dibujar
       </button>
     </div>
+  </div>
+
+  <!-- Lista de polígonos confirmados -->
+  <div class="max-w-5xl mx-auto mt-10">
+    <h2 class="text-xl font-semibold mb-4">Polígonos confirmados</h2>
+
+    {#if poligonos.length === 0}
+      <p class="text-gray-400">Todavía no se han dibujado polígonos.</p>
+    {:else}
+      <div class="space-y-4">
+        {#each poligonos as poly, index}
+          <div class="bg-[#2d3748] p-4 rounded border border-gray-700">
+            <div class="flex justify-between items-center mb-2">
+              <div>
+                <p><strong>#{index + 1}</strong> - 
+                  <span class="text-blue-400">{poly.via}</span> - 
+                  <span class={poly.sentido === 'Entrada' ? 'text-green-400' : 'text-red-400'}>
+                    {poly.sentido}
+                  </span>
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button on:click={() => eliminarPoligono(index)} class="text-red-400 hover:underline text-sm">Eliminar</button>
+              </div>
+            </div>
+            <ul class="text-sm pl-4 list-disc">
+              {#each poly.vertices as v, vi}
+                <li>Vértice {vi + 1}: ({Math.round(v.x)}, {Math.round(v.y)})</li>
+              {/each}
+            </ul>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <!-- Modal -->
