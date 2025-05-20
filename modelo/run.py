@@ -243,12 +243,7 @@ get_final_results()
 # %%
 print(obj_in_for_zones.items())
 print(obj_out_for_zones.items())
-for zone, tracks in obj_in_for_zones.items():
-    for track in tracks:
-        print(track)
-        total_obj_zone_in[zone][track_results[track]["classification"]] += 1
-    # print(f"    {zone}: {tracks}")
-print(total_obj_zone_in)
+print(track_results.items())
 
 # %%
 for i, (zone) in enumerate(total_obj_zone_in):
