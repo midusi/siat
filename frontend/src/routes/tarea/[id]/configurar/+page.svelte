@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { goto } from '$app/navigation';
 
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
@@ -10,6 +11,9 @@
   let modalSentido = 'Entrada';
   let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
   let opcionesSentido = ['Entrada', 'Salida'];
+  let startX = 0;
+  let startY = 0;
+  let isDragging = false;
 
   let puntos: Array<{ x: number, y: number }> = [];
 
@@ -24,21 +28,111 @@
     showModal = true;
   }
 
+ async function confirmarYVolver() {
+  console.log('Guardando polígonos:', poligonos);
+
+  try {
+    const response = await fetch('http://127.0.0.1:8000/guardar_poligonos', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(poligonos)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Error en la petición: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('Respuesta del backend:', data);
+
+    // Volver a la página anterior
+    history.back();
+
+  } catch (error) {
+    console.error('Error enviando los polígonos:', error);
+  }
+}
+
+
+  function handleMouseDown(event: MouseEvent) {
+  if (!canvas) return;
+
+  const rect = canvas.getBoundingClientRect();
+  startX = event.clientX - rect.left;
+  startY = event.clientY - rect.top;
+  isDragging = true;
+}
+
+function handleMouseMove(event: MouseEvent) {
+  if (!canvas || !ctx || !isDragging) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const currentX = event.clientX - rect.left;
+  const currentY = event.clientY - rect.top;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  redrawConfirmedPolygons();
+
+  ctx.strokeStyle = modalSentido === 'Entrada' ? 'green' : 'red';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+}
+
+function handleMouseUp(event: MouseEvent) {
+  if (!canvas || !ctx || !isDragging) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const endX = event.clientX - rect.left;
+  const endY = event.clientY - rect.top;
+
+  isDragging = false;
+
+  const x1 = startX;
+  const y1 = startY;
+  const x2 = endX;
+  const y2 = endY;
+
+  // Generar los 4 vértices del rectángulo
+  puntos = [
+    { x: x1, y: y1 },
+    { x: x2, y: y1 },
+    { x: x2, y: y2 },
+    { x: x1, y: y2 }
+  ];
+
+  poligonos = [...poligonos, {
+    via: modalVia,
+    sentido: modalSentido,
+    vertices: [...puntos]
+  }];
+
+  puntos = [];
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  redrawConfirmedPolygons();
+}
+
   function closeModal() {
     showModal = false;
   }
 
-  async function confirmDraw() {
-    showModal = false;
-    drawing = true;
-    await tick();
+ function confirmDraw() {
+  showModal = false;
+  drawing = true;
+  puntos = [];
 
+  tick().then(() => {
     if (canvas) {
       ctx = canvas.getContext('2d');
-      canvas.addEventListener('click', handleCanvasClick);
-      redrawConfirmedPolygons(); // Redibuja los anteriores
+      redrawConfirmedPolygons();
+
+      canvas.addEventListener('mousedown', handleMouseDown);
+      canvas.addEventListener('mousemove', handleMouseMove);
+      canvas.addEventListener('mouseup', handleMouseUp);
     }
-  }
+  });
+}
 
   function handleCanvasClick(event: MouseEvent) {
     if (!canvas || !ctx) return;
@@ -115,6 +209,8 @@
     ctx.fillStyle = 'white';
     ctx.textAlign = 'center';
     ctx.fillText(`${poly.via} - ${poly.sentido}`, centro.x, centro.y - 10);
+
+    console.log('Polígonos confirmados:', poligonos);
   }
 }
 
@@ -154,6 +250,7 @@
         ></canvas>
       {/if}
     </div>
+    
 
     <!-- Botón para abrir modal -->
     <div class="flex justify-center mt-6 gap-4">
@@ -163,8 +260,21 @@
       >
         Dibujar
       </button>
+
+      <button
+    on:click={confirmarYVolver}
+    class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-md"
+  >
+    Confirmar cambios y volver
+  </button>
+
+
     </div>
   </div>
+  
+  
+
+
 
   <!-- Lista de polígonos confirmados -->
   <div class="max-w-5xl mx-auto mt-10">

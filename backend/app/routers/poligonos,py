@@ -1,0 +1,20 @@
+from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import List
+
+router = APIRouter()
+
+
+class Punto(BaseModel):
+    x: float
+    y: float
+
+class Poligono(BaseModel):
+    via: str
+    sentido: str
+    vertices: List[Punto]
+
+@router.post("/guardar_poligonos")
+async def guardar_poligonos(poligonos: List[Poligono]):
+    print("Polígonos recibidos:", poligonos)
+    return {"mensaje": f"Recibí {len(poligonos)} polígonos"}
