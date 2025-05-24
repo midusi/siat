@@ -17,6 +17,23 @@
 		{ id: 'mza', name: 'Mendoza' }
 	];
 
+
+	function
+		try {
+			const response = await fetch('http://127.0.0.1:8000/district' );
+
+			if (!response.ok) {
+			throw new Error(`Error en la petición: ${response.statusText}`);
+			}
+
+			const data = await response.json();
+			console.log('Respuesta del backend:', data);
+
+		} catch (error) {
+			console.error('Error enviando los distritos:', error);
+		}
+
+
 	const districts = [
 		{ id: 'lp', name: 'La Plata' },
 		{ id: 'quilmes', name: 'Quilmes' },
