@@ -6,8 +6,16 @@ from app.routers import all_routers  # tu lista de routers ya definidos
 from pydantic import BaseModel
 
 # Definición del modelo para los polígonos (ejemplo)
+
+class Punto(BaseModel):
+    x: float
+    y: float
+
+
 class Poligono(BaseModel):
-    vertices: List[List[float]]  # por ejemplo [[x1, y1], [x2, y2], ...]
+    via: str
+    sentido: str
+    vertices: List[Punto]
 
 # Crear router específico para los polígonos
 poligonos_router = APIRouter()
