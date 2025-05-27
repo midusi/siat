@@ -1,4 +1,3 @@
-# %%
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -7,6 +6,15 @@ import math
 from collections import Counter, defaultdict, deque
 from enum import Enum
 from typing import Optional, Dict, List, Tuple
+import sys # Importar sys para manejar la salida en la terminal
+
+# Importar torch para la detección de GPU
+try:
+    import torch
+except ImportError:
+    print("Advertencia: PyTorch no está instalado. Solo se podrá usar la CPU.")
+    torch = None
+
 from ultralytics.utils.plotting import Annotator, colors
 
 # --- CONFIGURACIÓN Y CONSTANTES ---
@@ -39,6 +47,9 @@ TRACK_HISTORY_LENGTH = 30
 
 # Mapeo de índices de zona a etiquetas (A, B, C, D) para el informe
 ZONE_LABELS = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+# Orden de las etiquetas de zona para iterar consistentemente
+ORDERED_ZONE_LABELS = ['A', 'B', 'C', 'D']
+
 
 # Mapeo de nombres de clases (del modelo) a nombres para el informe
 CLASS_DISPLAY_NAMES = {
@@ -50,6 +61,17 @@ CLASS_DISPLAY_NAMES = {
     "bicycle": "Bicicleta",
     "indeterminado": "Indeterminado" 
 }
+# Orden de las clases de vehículos para las filas de las tablas
+REPORT_VEHICLE_ORDER = [
+    "Auto", "Moto", "Camión liviano", "Camión pesado", "Colectivo", "Bicicleta", "Indeterminado"
+]
+
+
+# Configuración del dispositivo para el modelo YOLO:
+# "auto": Intenta usar GPU si está disponible (CUDA), de lo contrario, usa CPU.
+# "cpu": Fuerza el uso de la CPU.
+# "0", "1", ...: Usa la GPU con el índice especificado.
+DEVICE_TO_USE = "auto" # Puedes cambiar esto a "cpu", "0", etc.
 
 class ZoneType(Enum):
     """Enumeración para definir los tipos de zonas."""
@@ -64,7 +86,7 @@ class ObjectTracker:
     y la interacción con zonas predefinidas en un feed de video.
     """
 
-    def __init__(self, model_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray]):
+    def __init__(self, model_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None):
         """
         Inicializa el ObjectTracker.
 
@@ -72,14 +94,19 @@ class ObjectTracker:
             model_path (str): Ruta al archivo del modelo YOLO.
             zone_in_polygons (list[np.ndarray]): Lista de polígonos NumPy que definen las zonas de entrada.
             zone_out_polygons (list[np.ndarray]): Lista de polígonos NumPy que definen las zonas de salida.
+            device (Optional[str]): Dispositivo a usar para el modelo YOLO ("cpu", "cuda", "cuda:0", etc.).
+                                     Si es None, YOLO decidirá automáticamente.
         """
+        self.device = self._get_torch_device(device) # Determinar el dispositivo real
+
+        # Modificación clave: Cargar el modelo sin el argumento 'device' y luego moverlo
         self.model = YOLO(model_path)
+        self.model.to(str(self.device)) # Convertir a string porque model.to() lo espera así
+        
         self.class_names = self.model.model.names # Nombres de clases del modelo (ej: 'car', 'bus')
         
         # Lista de todos los nombres de clases conocidos, incluyendo 'indeterminado'
-        self.all_class_names = list(self.class_names.values()) 
-        if "indeterminado" not in self.all_class_names: # Asegura que se añada solo una vez si no existe
-            self.all_class_names.append("indeterminado")
+        self.all_class_names = list(self.class_names.values()) + ["indeterminado"]
         
         self.zone_in_polygons = zone_in_polygons
         self.zone_out_polygons = zone_out_polygons
@@ -105,10 +132,47 @@ class ObjectTracker:
         # Ejemplo: {track_id: [{"act_frame": 10, "class_id": 0, "confidence": 0.9}]}
         self.data_obj_history: defaultdict[int, List[Dict]] = defaultdict(list)
         
-        # Conteo final de transiciones por tipo de vehículo, zona de entrada y zona de salida
-        # Estructura: {vehicle_type_display_name: {in_zone_label: {out_zone_label: count}}}
+        # Contadores y matriz para el informe final
+        self.total_vehicles_by_class: Counter[str] = Counter()
+        self.entry_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.exit_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
         self.transition_counts: defaultdict[str, defaultdict[str, defaultdict[str, int]]] = \
             defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+            
+        print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
+
+    def _get_torch_device(self, preferred_device: Optional[str]) -> torch.device:
+        """
+        Determina el dispositivo PyTorch a usar (CPU o GPU) basado en la preferencia
+        y la disponibilidad del hardware.
+        """
+        if torch is None:
+            return torch.device("cpu") # PyTorch no está disponible, forzar CPU
+
+        if preferred_device == "cpu":
+            return torch.device("cpu")
+        elif preferred_device == "auto":
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            else:
+                return torch.device("cpu")
+        elif preferred_device and preferred_device.isdigit(): # Para "0", "1", etc.
+            if torch.cuda.is_available() and int(preferred_device) < torch.cuda.device_count():
+                return torch.device(f"cuda:{preferred_device}")
+            else:
+                print(f"Advertencia: GPU '{preferred_device}' no disponible o no válida. Usando CPU.")
+                return torch.device("cpu")
+        elif preferred_device and "cuda" in preferred_device: # Para "cuda", "cuda:0", etc.
+             if torch.cuda.is_available():
+                 return torch.device(preferred_device)
+             else:
+                 print(f"Advertencia: CUDA no disponible. Usando CPU.")
+                 return torch.device("cpu")
+        else: # Si es None o un valor inesperado
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            else:
+                return torch.device("cpu")
 
     def _get_center_bb(self, box: np.ndarray) -> Tuple[int, int]:
         """
@@ -299,26 +363,48 @@ class ObjectTracker:
                 "classification": classification
             }
 
-    def _compile_transition_data(self):
+    def _compile_report_data(self):
         """
-        Compila los datos de transición (entrada -> salida) para cada vehículo clasificado.
-        Popula el diccionario `self.transition_counts`.
+        Compila todos los datos necesarios para las tablas del informe.
+        Calcula:
+        - Conteo total de vehículos por categoría de clase.
+        - Conteo de entradas por zona y clase.
+        - Conteo de salidas por zona y clase.
+        - Matriz de transiciones (entrada -> salida) por clase, incluyendo "Salida Ind".
         """
+        self.total_vehicles_by_class = Counter()
+        self.entry_zone_counts = defaultdict(lambda: defaultdict(int))
+        self.exit_zone_counts = defaultdict(lambda: defaultdict(int))
+        self.transition_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+
         for track_id, result in self.track_results.items():
-            classification = result.get("classification")
-            
-            # Solo procesamos si el objeto tiene una clasificación válida y pasó por ambas zonas
-            if classification and track_id in self.track_first_in_zone and track_id in self.track_first_out_zone:
+            classification = result.get("classification", "indeterminado")
+            display_class = CLASS_DISPLAY_NAMES.get(classification, classification)
+
+            self.total_vehicles_by_class[display_class] += 1
+
+            # Conteo para la tabla "Entradas"
+            if track_id in self.track_first_in_zone:
                 in_zone_idx = self.track_first_in_zone[track_id]
-                out_zone_idx = self.track_first_out_zone[track_id]
-
                 in_zone_label = ZONE_LABELS.get(in_zone_idx, f"Zona {in_zone_idx}")
+                self.entry_zone_counts[display_class][in_zone_label] += 1
+
+            # Conteo para la tabla "Salidas"
+            if track_id in self.track_first_out_zone:
+                out_zone_idx = self.track_first_out_zone[track_id]
                 out_zone_label = ZONE_LABELS.get(out_zone_idx, f"Zona {out_zone_idx}")
+                self.exit_zone_counts[display_class][out_zone_label] += 1
 
-                # Usar los nombres amigables si están definidos, sino el nombre del modelo
-                display_class = CLASS_DISPLAY_NAMES.get(classification, classification)
-
-                self.transition_counts[display_class][in_zone_label][out_zone_label] += 1
+            # Conteo para la Matriz de Transiciones
+            if track_id in self.track_first_in_zone:
+                in_zone_label = ZONE_LABELS.get(self.track_first_in_zone[track_id], f"Zona {self.track_first_in_zone[track_id]}")
+                
+                if track_id in self.track_first_out_zone:
+                    out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
+                    self.transition_counts[display_class][in_zone_label][out_zone_label] += 1
+                else:
+                    # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
+                    self.transition_counts[display_class][in_zone_label]["Salida Ind"] += 1
 
 
     def process_frame(self, frame: np.ndarray, results: list, act_frame: int) -> np.ndarray:
@@ -341,13 +427,13 @@ class ObjectTracker:
             boxes = results[0].boxes.xyxy.cpu()
             class_ids = results[0].boxes.cls.cpu().tolist()
             track_ids = results[0].boxes.id.int().cpu().tolist()
-            confidences = results[0].boxes.conf.float().cpu().tolist()
+            confs = results[0].boxes.conf.float().cpu().tolist()
             
             # Inicializar el anotador de Ultralytics
             annotator = Annotator(frame, line_width=1)
 
             # Iterar sobre cada objeto detectado y rastreado
-            for box, class_id, track_id, confidence in zip(boxes, class_ids, track_ids, confidences):
+            for box, class_id, track_id, confidence in zip(boxes, class_ids, track_ids, confs):
                 # Registrar la primera entrada y salida en las zonas
                 self._register_zone_entry_exit(box, track_id)
                 
@@ -373,11 +459,19 @@ class ObjectTracker:
             return
 
         w, h, fps = (int(cap.get(x)) for x in (cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT, cv2.CAP_PROP_FPS))
+        
+        # Intentar obtener el número total de frames para el progreso
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frames_to_process = total_frames
+        if max_frames is not None:
+            frames_to_process = min(total_frames if total_frames > 0 else float('inf'), max_frames)
 
+        # Si el número de frames es incierto o 0, deshabilitar el progreso en porcentaje
+        progress_enabled = frames_to_process > 0 and frames_to_process != float('inf')
+        
         video_writer = None
         if output_video_path:
             try:
-                # Codec para MP4V (compatible con .avi o .mp4 dependiendo del sistema)
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
                 video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
                 if not video_writer.isOpened():
@@ -390,18 +484,34 @@ class ObjectTracker:
         act_frame = 0 # Contador de frames procesados
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
 
+        last_reported_percentage = -1
         while cap.isOpened():
             success, frame = cap.read()
 
             if not success:
-                print("Fin del video o error al leer frame.")
+                print("\nFin del video o error al leer frame.")
                 break
             
             act_frame += 1
 
+            # Mostrar progreso en la terminal
+            if progress_enabled:
+                current_percentage = int((act_frame / frames_to_process) * 100)
+                # Actualiza el progreso solo si ha cambiado al menos un 1% para evitar spam de terminal
+                # o cada 50 frames si el video es muy corto o el progreso es lento
+                if current_percentage > last_reported_percentage or (act_frame % 50 == 0 and last_reported_percentage < 100):
+                    sys.stdout.write(f"\rProgreso: {current_percentage}% completado ({act_frame}/{frames_to_process} frames)")
+                    sys.stdout.flush()
+                    last_reported_percentage = current_percentage
+            else:
+                if act_frame % 50 == 0: # Muestra un punto cada 50 frames si el progreso porcentual no es posible
+                    sys.stdout.write(".")
+                    sys.stdout.flush()
+
+
             # Si se especificó un número máximo de frames, detenerse al alcanzarlo
-            if max_frames and act_frame > max_frames:
-                print(f"Alcanzado el número máximo de frames ({max_frames}). Deteniendo.")
+            if max_frames is not None and act_frame > max_frames:
+                print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
                 break
 
             # Procesar solo cada segundo frame, como en el código original
@@ -419,17 +529,28 @@ class ObjectTracker:
                 processed_frame = self.process_frame(frame, results, act_frame)
                 
                 # Mostrar el frame procesado
-                cv2.imshow("Video", processed_frame)
+                # Comenta la siguiente línea si no quieres la ventana de video
+                # cv2.imshow("Video", processed_frame)
                 
                 # Escribir el frame en el archivo de salida si el VideoWriter está activo
                 if video_writer:
                     video_writer.write(processed_frame)
                 
                 # Salir si se presiona 'q'
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    print("Tecla 'q' presionada. Deteniendo.")
-                    break
+                # La lógica de waitKey ya fue comentada por el usuario en el último código.
+                # Si no se muestra la ventana de video, waitKey(1) no tiene efecto interactivo.
+                # if cv2.waitKey(1) & 0xFF == ord("q"):
+                #    print("\nTecla 'q' presionada. Deteniendo.")
+                #    break
         
+        # Asegurarse de una nueva línea al final del progreso
+        # Se imprime el 100% al finalizar, o una nueva línea si el progreso no fue en porcentaje
+        if progress_enabled:
+            sys.stdout.write(f"\rProgreso: 100% completado ({act_frame-1}/{frames_to_process} frames)\n")
+            sys.stdout.flush()
+        else:
+            print("\n") # Nueva línea después de los puntos de progreso si no se usó el progreso porcentual
+
         # Liberar recursos
         cap.release()
         if video_writer:
@@ -438,117 +559,142 @@ class ObjectTracker:
         
         # Una vez terminado el procesamiento de frames, calcular los resultados finales
         self._get_final_track_classifications()
-        self._compile_transition_data()
+        # Y luego compilar todos los datos para el informe
+        self._compile_report_data()
 
 
     def get_report(self):
         """
-        Imprime los resultados finales del seguimiento de objetos.
-        Incluye el conteo total de vehículos por categoría y la matriz de transiciones
-        (entrada a salida).
+        Imprime los resultados finales del seguimiento de objetos en el formato especificado.
+        Incluye el conteo total de vehículos por categoría (Entradas, Salidas) y la matriz de transiciones
+        (Entrada a Salida con 'Salida Ind').
         """
         print("\n--- INFORME FINAL ---")
 
-        # 1. Cuántos vehículos de cada categoría reconoció
-        total_vehicles_by_class = Counter()
-        for track_id, result in self.track_results.items():
-            classification = result.get("classification")
-            if classification and classification != "indeterminado": # Excluir indeterminados del total de vehículos clasificados
-                # Usar los nombres amigables para la visualización
-                display_class = CLASS_DISPLAY_NAMES.get(classification, classification)
-                total_vehicles_by_class[display_class] += 1
-        
-        print("\nTotal de vehículos reconocidos por categoría (clasificados):")
-        if not total_vehicles_by_class:
-            print("  Ningún vehículo clasificado reconocido.")
-        else:
-            # Ordenar las clases para una salida consistente
-            # Asegurarse de que todas las clases amigables estén en la lista, incluso si su cuenta es 0
-            all_display_names = sorted(list(CLASS_DISPLAY_NAMES.values()))
-            for cls_name in all_display_names:
-                # No imprimir indeterminados aquí si su cuenta es 0
-                if cls_name == "Indeterminado" and total_vehicles_by_class[cls_name] == 0:
-                    continue
-                print(f"  {cls_name}: {total_vehicles_by_class[cls_name]}")
+        # Ancho fijo para la primera columna "Vehículos" y las filas de datos
+        VEHICLE_COL_WIDTH = max(len("Vehículos"), max(len(v_type) for v_type in REPORT_VEHICLE_ORDER)) + 1 # +1 para espacio
+        # Ancho fijo para las columnas de conteo (ej: ' 62  ')
+        COUNT_COL_WIDTH = 4 # Suficiente para números de hasta 9999 + espacio
 
-        # 2. Matriz de transiciones entrada-salida por categoría
-        print("\nMatriz de Tránsito (Entrada -> Salida):")
-        
-        # Obtener las etiquetas de las zonas de entrada y salida
-        input_zone_labels = [ZONE_LABELS.get(i, f"Zona {i}") for i in range(len(self.zone_in_polygons))]
-        output_zone_labels = [ZONE_LABELS.get(i, f"Zona {i}") for i in range(len(self.zone_out_polygons))]
-        
-        # Obtener una lista ordenada de todas las clases de vehículos para las filas de la tabla
-        # Filtramos 'Indeterminado' porque no tiene sentido en una tabla de tránsito clasificado
-        all_vehicle_types = sorted([name for name in CLASS_DISPLAY_NAMES.values() if name != "Indeterminado"]) 
-        
-        # Calcular el ancho máximo de la primera columna ('Vehículos') para alinear
-        first_col_width = len("Vehículos")
-        for v_type in all_vehicle_types:
-            first_col_width = max(first_col_width, len(v_type))
-        first_col_width = max(first_col_width, len("Total")) # Para la fila 'Total'
+        # --- PRIMERA Y SEGUNDA TABLA: ENTRADAS Y SALIDAS ---
+        # Calculamos los totales para las tablas de Entradas/Salidas
+        total_entries_by_zone = defaultdict(int)
+        total_exits_by_zone = defaultdict(int)
 
-        # Imprimir encabezados
-        # Línea principal: "Vehículos" | "Entrada A" | "Entrada B" | ...
-        header_line_1_parts = [f"{'Vehículos':<{first_col_width}}"]
-        for in_label in input_zone_labels:
-            # Cada "Entrada X" abarcará el ancho de todas las "Salida" sub-columnas (num_out_zones * cell_width + (num_out_zones-1)*pipe_width)
-            # asumiendo cell_width es 8 y pipe_width es 1, entonces 4*8 + 3 = 35. Ajustamos a 37 para el pipe final
-            block_width = (len(output_zone_labels) * 8) + (len(output_zone_labels) - 1) * 1 + 1 # 8 chars per count, 1 for pipe. Last pipe is part of next block
-            header_line_1_parts.append(f"| {('Entrada ' + in_label):^{block_width-1}}")
-        print("".join(header_line_1_parts))
-        
-        # Línea de sub-encabezado: Vacío | "Salida A" | "Salida B" | ... (repetido para cada Entrada)
-        sub_header_line_2_parts = [f"{'':<{first_col_width}}"]
-        for _ in input_zone_labels:
-            for out_label in output_zone_labels:
-                sub_header_line_2_parts.append(f"| {('Salida ' + out_label):<8}") # 8 chars per 'Salida X'
-        print("".join(sub_header_line_2_parts))
+        # Imprimir encabezado de las dos tablas superiores
+        # "Vehículos    Entradas                Vehículos    Salidas"
+        header_line_1_parts = [
+            f"{'Vehículos':<{VEHICLE_COL_WIDTH}}",
+            f"Entradas",
+            "\t\t\t\t", # Espacio de tabulaciones entre Entradas y Salidas
+            f"Vehículos", # Esta parte no es como en el ejemplo, el ejemplo la quita
+            f"Salidas"
+        ]
+        # Replicando el formato exacto del ejemplo:
+        print(f"{'Vehículos':<{VEHICLE_COL_WIDTH}}\tEntradas\t\t\t\t{'Vehículos'}\tSalidas") # Header line 1
 
-        # Imprimir línea separadora
-        total_header_width = first_col_width + (len(input_zone_labels) * (len(output_zone_labels) * 9)) # first_col + (num_in_zones * (num_out_zones * 9))
-        print("-" * (total_header_width + len(input_zone_labels) * 2)) # Ajuste manual para la longitud de la línea.
+        # Imprimir sub-encabezados de las dos tablas superiores
+        # "           A    B    C    D               A    B    C    D"
+        zone_headers = "\t".join(ORDERED_ZONE_LABELS)
+        print(f"{'':<{VEHICLE_COL_WIDTH}}\t{zone_headers}\t\t\t\t{zone_headers}\t\t\t\t") # Header line 2 (note extra tabs for alignment)
 
-        # Pre-calcular totales por columna para la fila "Total"
-        # Esto es un diccionario donde la clave es (in_label, out_label) y el valor es el total
-        overall_column_totals: defaultdict[Tuple[str, str], int] = defaultdict(int)
 
         # Imprimir filas de datos
-        for vehicle_type in all_vehicle_types:
-            row_output_parts = [f"{vehicle_type:<{first_col_width}}"]
-            for in_label in input_zone_labels:
-                for out_label in output_zone_labels:
-                    count = self.transition_counts[vehicle_type][in_label][out_label]
-                    row_output_parts.append(f"| {count:<8}") # Cada celda de conteo: 8 caracteres para el número
-                    overall_column_totals[(in_label, out_label)] += count
-            print("".join(row_output_parts))
+        for v_type in REPORT_VEHICLE_ORDER:
+            row_output = f"{v_type:<{VEHICLE_COL_WIDTH}}"
 
-        # Imprimir línea separadora antes del total
-        print("-" * (total_header_width + len(input_zone_labels) * 2))
+            # Datos de Entradas
+            for zone_label in ORDERED_ZONE_LABELS:
+                count = self.entry_zone_counts[v_type][zone_label]
+                row_output += f"\t{count}"
+                total_entries_by_zone[zone_label] += count
+            
+            # Separador entre tablas
+            row_output += f"\t\t\t\t" # Ajusta las tabulaciones según sea necesario
 
-        # Imprimir fila "Total"
-        total_row_output_parts = [f"{'Total':<{first_col_width}}"]
-        for in_label in input_zone_labels:
-            for out_label in output_zone_labels:
-                total_count = overall_column_totals[(in_label, out_label)]
-                total_row_output_parts.append(f"| {total_count:<8}")
-        print("".join(total_row_output_parts))
+            # Datos de Salidas
+            for zone_label in ORDERED_ZONE_LABELS:
+                count = self.exit_zone_counts[v_type][zone_label]
+                row_output += f"\t{count}"
+                total_exits_by_zone[zone_label] += count
+            
+            # Asegurar la misma cantidad de tabs al final como en el ejemplo
+            row_output += f"\t\t\t\t\t\t"
+            print(row_output)
+        
+        # Fila Total para ambas tablas
+        total_line_output = f"{'Total':<{VEHICLE_COL_WIDTH}}"
+        for zone_label in ORDERED_ZONE_LABELS:
+            total_line_output += f"\t{total_entries_by_zone[zone_label]}"
+        
+        total_line_output += f"\t\t\t\t" # Separador
+
+        for zone_label in ORDERED_ZONE_LABELS:
+            total_line_output += f"\t{total_exits_by_zone[zone_label]}"
+        
+        total_line_output += f"\t\t\t\t\t\t"
+        print(total_line_output)
+
+        print("\n\n\n") # Líneas en blanco entre la primera sección y la matriz
+
+        # --- TERCERA TABLA: MATRIZ DE TRÁNSITO ---
+        
+        # Imprimir encabezado de la matriz
+        # "Vehículos    Entrada A                Entrada B                Entrada C                Entrada D"
+        matrix_header_line_1_parts = [f"{'Vehículos':<{VEHICLE_COL_WIDTH}}"]
+        for in_label in ORDERED_ZONE_LABELS:
+            # Calcular ancho para cada bloque "Entrada X" (Salida A...Salida Ind)
+            # 5 columnas de salida * (ancho de columna de conteo + 1 para tab)
+            block_width = (len(ORDERED_ZONE_LABELS) + 1) * (COUNT_COL_WIDTH + 1) # 4 Salida A-D + 1 Salida Ind
+            matrix_header_line_1_parts.append(f"\t{'Entrada ' + in_label:<{block_width-1}}")
+        print("".join(matrix_header_line_1_parts))
+
+        # Imprimir sub-encabezado de la matriz
+        # "           Salida A  Salida B  Salida C  Salida D  Salida Ind  Salida A..."
+        matrix_header_line_2_parts = [f"{'':<{VEHICLE_COL_WIDTH}}"]
+        for _ in ORDERED_ZONE_LABELS:
+            for out_label in ORDERED_ZONE_LABELS:
+                matrix_header_line_2_parts.append(f"\t{'Salida ' + out_label}")
+            matrix_header_line_2_parts.append(f"\tSalida Ind") # Columna para indeterminados
+        print("".join(matrix_header_line_2_parts))
+
+        # Imprimir filas de datos de la matriz
+        overall_matrix_column_totals = defaultdict(int) # Para los totales de la fila "Total" de la matriz
+
+        for v_type in REPORT_VEHICLE_ORDER:
+            row_output = f"{v_type:<{VEHICLE_COL_WIDTH}}"
+            for in_label in ORDERED_ZONE_LABELS:
+                for out_label in ORDERED_ZONE_LABELS:
+                    count = self.transition_counts[v_type][in_label][out_label]
+                    row_output += f"\t{count}"
+                    overall_matrix_column_totals[(in_label, out_label)] += count
+                # Agregar la columna "Salida Ind"
+                ind_count = self.transition_counts[v_type][in_label]["Salida Ind"]
+                row_output += f"\t{ind_count}"
+                overall_matrix_column_totals[(in_label, "Salida Ind")] += ind_count
+            print(row_output)
+        
+        # Fila Total para la matriz
+        total_matrix_line_output = f"{'Total':<{VEHICLE_COL_WIDTH}}"
+        for in_label in ORDERED_ZONE_LABELS:
+            for out_label in ORDERED_ZONE_LABELS:
+                total_matrix_line_output += f"\t{overall_matrix_column_totals[(in_label, out_label)]}"
+            total_matrix_line_output += f"\t{overall_matrix_column_totals[(in_label, 'Salida Ind')]}"
+        print(total_matrix_line_output)
         
         print("\n--- Fin del informe ---")
 
-# %%
+
 if __name__ == "__main__":
     # Ruta del video de entrada
     VIDEO_INPUT_PATH = "vuelo03_1080p.mp4"
     # Ruta opcional para guardar el video de salida
     VIDEO_OUTPUT_PATH = "object_tracking_refactored_output.mp4" 
     # Número de frames a procesar (None para todo el video, 500 para limitar)
-    # Se recomienda None si el video es corto o quieres procesarlo completo.
-    # Si quieres replicar el comportamiento del log anterior que "terminó" el video, déjalo en None.
     MAX_FRAMES_TO_PROCESS = None 
 
     # 1. Crear una instancia del ObjectTracker
-    tracker = ObjectTracker(MODEL_PATH, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS)
+    tracker = ObjectTracker(MODEL_PATH, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
 
     # 2. Ejecutar el proceso de seguimiento
     tracker.run(
