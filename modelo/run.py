@@ -7,6 +7,8 @@ from collections import Counter, defaultdict, deque
 from enum import Enum
 from typing import Optional, Dict, List, Tuple
 import sys # Importar sys para manejar la salida en la terminal
+import argparse # Importar argparse para manejar argumentos de línea de comandos
+import os # Importar os para operaciones de sistema de archivos (rutas)
 
 # Importar torch para la detección de GPU
 try:
@@ -38,9 +40,6 @@ ZONE_OUT_POLYGONS = [
     np.array([[1063, 290], [1156, 271], [1138, 197], [1029, 207]]),
     np.array([[462, 452], [456, 366], [624, 347], [607, 434]]),
 ]
-
-# Ruta del modelo YOLO pre-entrenado
-MODEL_PATH = "model-v5.pt"
 
 # Longitud máxima del historial de seguimiento de un objeto
 TRACK_HISTORY_LENGTH = 30 
@@ -99,9 +98,10 @@ class ObjectTracker:
         """
         self.device = self._get_torch_device(device) # Determinar el dispositivo real
 
-        # Modificación clave: Cargar el modelo sin el argumento 'device' y luego moverlo
+        # Cargar el modelo YOLO
         self.model = YOLO(model_path)
-        self.model.to(str(self.device)) # Convertir a string porque model.to() lo espera así
+        # Mover el modelo al dispositivo especificado
+        self.model.to(str(self.device))
         
         self.class_names = self.model.model.names # Nombres de clases del modelo (ej: 'car', 'bus')
         
@@ -390,12 +390,14 @@ class ObjectTracker:
                 self.entry_zone_counts[display_class][in_zone_label] += 1
 
             # Conteo para la tabla "Salidas"
+            # Un vehículo se cuenta como "salida" si en algún momento fue detectado en cualquier zona OUT.
+            # No necesariamente tiene que haber pasado por una zona IN antes.
             if track_id in self.track_first_out_zone:
                 out_zone_idx = self.track_first_out_zone[track_id]
                 out_zone_label = ZONE_LABELS.get(out_zone_idx, f"Zona {out_zone_idx}")
                 self.exit_zone_counts[display_class][out_zone_label] += 1
 
-            # Conteo para la Matriz de Transiciones
+            # Conteo para la Matriz de Transiciones (solo si tiene una zona IN inicial)
             if track_id in self.track_first_in_zone:
                 in_zone_label = ZONE_LABELS.get(self.track_first_in_zone[track_id], f"Zona {self.track_first_in_zone[track_id]}")
                 
@@ -481,7 +483,7 @@ class ObjectTracker:
                 print(f"Error al inicializar VideoWriter: {e}. El video no se guardará.")
                 video_writer = None
 
-        act_frame = 0 # Contador de frames procesados
+        act_frame = 0 # Contador de frames leídos (no de frames procesados por YOLO)
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
 
         last_reported_percentage = -1
@@ -498,7 +500,7 @@ class ObjectTracker:
             if progress_enabled:
                 current_percentage = int((act_frame / frames_to_process) * 100)
                 # Actualiza el progreso solo si ha cambiado al menos un 1% para evitar spam de terminal
-                # o cada 50 frames si el video es muy corto o el progreso es lento
+                # o cada 50 frames (para videos cortos o progreso lento)
                 if current_percentage > last_reported_percentage or (act_frame % 50 == 0 and last_reported_percentage < 100):
                     sys.stdout.write(f"\rProgreso: {current_percentage}% completado ({act_frame}/{frames_to_process} frames)")
                     sys.stdout.flush()
@@ -536,17 +538,16 @@ class ObjectTracker:
                 if video_writer:
                     video_writer.write(processed_frame)
                 
-                # Salir si se presiona 'q'
-                # La lógica de waitKey ya fue comentada por el usuario en el último código.
-                # Si no se muestra la ventana de video, waitKey(1) no tiene efecto interactivo.
-                # if cv2.waitKey(1) & 0xFF == ord("q"):
-                #    print("\nTecla 'q' presionada. Deteniendo.")
-                #    break
+                # Salir si se presiona 'q' (solo si la ventana de video está activa)
+                if 'cv2.imshow' in locals() and cv2.waitKey(1) & 0xFF == ord("q"): # Verifica si imshow está activo
+                   print("\nTecla 'q' presionada. Deteniendo.")
+                   break
         
         # Asegurarse de una nueva línea al final del progreso
-        # Se imprime el 100% al finalizar, o una nueva línea si el progreso no fue en porcentaje
         if progress_enabled:
-            sys.stdout.write(f"\rProgreso: 100% completado ({act_frame-1}/{frames_to_process} frames)\n")
+            # El -1 en act_frame es porque act_frame se incrementa antes de la verificación de fin de video
+            # Si el bucle termina por "not success", act_frame ya está un paso más allá del último frame válido.
+            sys.stdout.write(f"\rProgreso: 100% completado ({act_frame-1 if not success else act_frame}/{frames_to_process} frames)\n")
             sys.stdout.flush()
         else:
             print("\n") # Nueva línea después de los puntos de progreso si no se usó el progreso porcentual
@@ -582,22 +583,13 @@ class ObjectTracker:
         total_exits_by_zone = defaultdict(int)
 
         # Imprimir encabezado de las dos tablas superiores
-        # "Vehículos    Entradas                Vehículos    Salidas"
-        header_line_1_parts = [
-            f"{'Vehículos':<{VEHICLE_COL_WIDTH}}",
-            f"Entradas",
-            "\t\t\t\t", # Espacio de tabulaciones entre Entradas y Salidas
-            f"Vehículos", # Esta parte no es como en el ejemplo, el ejemplo la quita
-            f"Salidas"
-        ]
-        # Replicando el formato exacto del ejemplo:
         print(f"{'Vehículos':<{VEHICLE_COL_WIDTH}}\tEntradas\t\t\t\t{'Vehículos'}\tSalidas") # Header line 1
 
         # Imprimir sub-encabezados de las dos tablas superiores
-        # "           A    B    C    D               A    B    C    D"
         zone_headers = "\t".join(ORDERED_ZONE_LABELS)
-        print(f"{'':<{VEHICLE_COL_WIDTH}}\t{zone_headers}\t\t\t\t{zone_headers}\t\t\t\t") # Header line 2 (note extra tabs for alignment)
-
+        # Ajustamos los tabs para que quede como el ejemplo. Es un poco manual porque las tabulaciones
+        # no siempre se alinean perfectamente dependiendo de la terminal.
+        print(f"{'':<{VEHICLE_COL_WIDTH}}\t{zone_headers}\t\t\t\t{zone_headers}\t\t\t\t\t\t") # Header line 2
 
         # Imprimir filas de datos
         for v_type in REPORT_VEHICLE_ORDER:
@@ -609,8 +601,8 @@ class ObjectTracker:
                 row_output += f"\t{count}"
                 total_entries_by_zone[zone_label] += count
             
-            # Separador entre tablas
-            row_output += f"\t\t\t\t" # Ajusta las tabulaciones según sea necesario
+            # Separador entre tablas. Se ajusta con tabulaciones para la alineación visual.
+            row_output += f"\t\t\t\t"
 
             # Datos de Salidas
             for zone_label in ORDERED_ZONE_LABELS:
@@ -618,8 +610,7 @@ class ObjectTracker:
                 row_output += f"\t{count}"
                 total_exits_by_zone[zone_label] += count
             
-            # Asegurar la misma cantidad de tabs al final como en el ejemplo
-            row_output += f"\t\t\t\t\t\t"
+            row_output += f"\t\t\t\t\t\t" # Tabs adicionales para alinear el final de la línea
             print(row_output)
         
         # Fila Total para ambas tablas
@@ -632,7 +623,7 @@ class ObjectTracker:
         for zone_label in ORDERED_ZONE_LABELS:
             total_line_output += f"\t{total_exits_by_zone[zone_label]}"
         
-        total_line_output += f"\t\t\t\t\t\t"
+        total_line_output += f"\t\t\t\t\t\t" # Tabs adicionales
         print(total_line_output)
 
         print("\n\n\n") # Líneas en blanco entre la primera sección y la matriz
@@ -644,9 +635,11 @@ class ObjectTracker:
         matrix_header_line_1_parts = [f"{'Vehículos':<{VEHICLE_COL_WIDTH}}"]
         for in_label in ORDERED_ZONE_LABELS:
             # Calcular ancho para cada bloque "Entrada X" (Salida A...Salida Ind)
-            # 5 columnas de salida * (ancho de columna de conteo + 1 para tab)
-            block_width = (len(ORDERED_ZONE_LABELS) + 1) * (COUNT_COL_WIDTH + 1) # 4 Salida A-D + 1 Salida Ind
-            matrix_header_line_1_parts.append(f"\t{'Entrada ' + in_label:<{block_width-1}}")
+            # Cada columna de salida ocupa un espacio de una tabulación en el ejemplo.
+            # Una tabulación no es un ancho fijo, pero se usa para replicar el formato.
+            # Añadimos 5 tabulaciones por cada "Entrada X" (para Salida A-D y Salida Ind)
+            matrix_header_line_1_parts.append(f"\t{'Entrada ' + in_label}") # Solo una tab aquí para el título
+            matrix_header_line_1_parts.append("\t\t\t\t") # 4 tabs adicionales para estirar el encabezado
         print("".join(matrix_header_line_1_parts))
 
         # Imprimir sub-encabezado de la matriz
@@ -654,7 +647,7 @@ class ObjectTracker:
         matrix_header_line_2_parts = [f"{'':<{VEHICLE_COL_WIDTH}}"]
         for _ in ORDERED_ZONE_LABELS:
             for out_label in ORDERED_ZONE_LABELS:
-                matrix_header_line_2_parts.append(f"\t{'Salida ' + out_label}")
+                matrix_header_line_2_parts.append(f"\tSalida {out_label}")
             matrix_header_line_2_parts.append(f"\tSalida Ind") # Columna para indeterminados
         print("".join(matrix_header_line_2_parts))
 
@@ -686,21 +679,45 @@ class ObjectTracker:
 
 
 if __name__ == "__main__":
-    # Ruta del video de entrada
-    VIDEO_INPUT_PATH = "vuelo03_1080p.mp4"
-    # Ruta opcional para guardar el video de salida
-    VIDEO_OUTPUT_PATH = "object_tracking_refactored_output.mp4" 
-    # Número de frames a procesar (None para todo el video, 500 para limitar)
-    MAX_FRAMES_TO_PROCESS = None 
+    # --- Configuración de Argumentos de Línea de Comandos ---
+    parser = argparse.ArgumentParser(
+        description="Realiza seguimiento de objetos en videos y genera un informe de tránsito."
+    )
+    parser.add_argument(
+        '--input_video_path', '-i', type=str, required=True,
+        help='Ruta al archivo de video de entrada. Obligatorio.'
+    )
+    parser.add_argument(
+        '--model_path', '-m', type=str, required=True,
+        help='Ruta al archivo del modelo YOLO (.pt). Obligatorio.'
+    )
+    parser.add_argument(
+        '--output_video_path', '-o', type=str, default=None,
+        help='Ruta opcional para guardar el video de salida. Por defecto, se guarda '
+             'en el mismo directorio que el video de entrada con el sufijo "_processed".'
+    )
+    parser.add_argument(
+        '--max_frames', '-f', type=int, default=None,
+        help='Número máximo de frames a procesar. Por defecto, se procesa el video completo.'
+    )
+
+    args = parser.parse_args()
+
+    # Determinar la ruta de salida del video si no se proporcionó
+    final_output_video_path = args.output_video_path
+    if final_output_video_path is None:
+        input_dir = os.path.dirname(args.input_video_path)
+        input_filename_without_ext, input_ext = os.path.splitext(os.path.basename(args.input_video_path))
+        final_output_video_path = os.path.join(input_dir, f"{input_filename_without_ext}_processed{input_ext}")
 
     # 1. Crear una instancia del ObjectTracker
-    tracker = ObjectTracker(MODEL_PATH, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
+    tracker = ObjectTracker(args.model_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
 
     # 2. Ejecutar el proceso de seguimiento
     tracker.run(
-        video_path=VIDEO_INPUT_PATH, 
-        max_frames=MAX_FRAMES_TO_PROCESS, 
-        output_video_path=VIDEO_OUTPUT_PATH
+        video_path=args.input_video_path, 
+        max_frames=args.max_frames, 
+        output_video_path=final_output_video_path
     )
 
     # 3. Imprimir el informe final
