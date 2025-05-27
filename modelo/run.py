@@ -19,7 +19,7 @@ except ImportError:
 
 from ultralytics.utils.plotting import Annotator, colors
 
-# --- CONFIGURACIÓN Y CONSTANTES ---
+# --- CONFIGURACIÓN Y CONSTANTES (internas del script, no de línea de comandos) ---
 
 # Paleta de colores para las zonas: [verde para entrada, rojo para salida]
 ZONE_COLORS = sv.ColorPalette.from_hex(["#00FF00", "#FF0000"])
@@ -452,7 +452,7 @@ class ObjectTracker:
             video_path (str): Ruta al archivo de video de entrada.
             max_frames (int, optional): Número máximo de frames a procesar. Por defecto, None (todo el video).
             output_video_path (str, optional): Ruta donde guardar el video de salida.
-                                               Por defecto, None (no guarda el video).
+                                               Si es None, se usa la lógica de generación por defecto.
             display_video (bool): Si es True, muestra la ventana del video. Por defecto: True.
         """
         cap = cv2.VideoCapture(video_path)
@@ -473,7 +473,8 @@ class ObjectTracker:
         progress_enabled = frames_to_process > 0 and frames_to_process != float('inf')
         
         video_writer = None
-        if output_video_path:
+        # Solo intentar crear el VideoWriter si output_video_path no es None
+        if output_video_path is not None:
             try:
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
                 video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
@@ -486,6 +487,10 @@ class ObjectTracker:
 
         act_frame = 0 # Contador de frames leídos (no de frames procesados por YOLO)
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
+        if output_video_path:
+            print(f"Guardando video procesado en: {output_video_path}")
+        else:
+            print(f"No se guardará el video procesado (output_video_path no especificado y no se pudo determinar un valor por defecto).")
 
         last_reported_percentage = -1
         while cap.isOpened():
@@ -698,8 +703,10 @@ if __name__ == "__main__":
     parser.add_argument(
         '--output_video_path', '-o', type=str, default=None,
         help='Ruta opcional para guardar el video de salida. \n'
-             'Por defecto, se guarda en el mismo directorio que el video de entrada \n'
-             'con el sufijo "_processed".'
+             'Por defecto, el video se guarda en la misma ubicación del video de entrada, \n'
+             'dentro de una subcarpeta con el nombre del modelo (sin .pt), \n'
+             'y con el nombre original del video + "_processed". Ejemplo: si el video es \n'
+             '"video.mp4" y el modelo es "model.pt", la salida será "video_dir/model/video_processed.mp4".'
     )
     parser.add_argument(
         '--max_frames', '-f', type=int, default=None,
@@ -713,12 +720,31 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Determinar la ruta de salida del video si no se proporcionó
+    # --- Determinar la ruta de salida del video ---
     final_output_video_path = args.output_video_path
+    
+    # Si no se proporcionó una ruta de salida, generar la por defecto
     if final_output_video_path is None:
         input_dir = os.path.dirname(args.input_video_path)
+        # Si input_dir es vacío (video en el directorio actual), os.path.dirname("") devuelve "". Usar "." en su lugar.
+        if not input_dir:
+            input_dir = "."
+        
         input_filename_without_ext, input_ext = os.path.splitext(os.path.basename(args.input_video_path))
-        final_output_video_path = os.path.join(input_dir, f"{input_filename_without_ext}_processed{input_ext}")
+        
+        model_base_name = os.path.splitext(os.path.basename(args.model_path))[0]
+        
+        # Construir el directorio de salida: input_video_dir/model_name_without_ext/
+        output_dir = os.path.join(input_dir, model_base_name)
+        
+        # Crear el directorio si no existe (exist_ok=True evita errores si ya existe)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Construir el nombre del archivo de video procesado
+        output_filename = f"{input_filename_without_ext}_processed{input_ext}"
+        
+        # Ruta completa del archivo de salida
+        final_output_video_path = os.path.join(output_dir, output_filename)
     
     # Determinar si se debe mostrar el video
     show_video_window = not args.no_display
