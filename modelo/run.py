@@ -444,7 +444,7 @@ class ObjectTracker:
         
         return frame
 
-    def run(self, video_path: str, max_frames: Optional[int] = None, output_video_path: Optional[str] = None):
+    def run(self, video_path: str, max_frames: Optional[int] = None, output_video_path: Optional[str] = None, display_video: bool = True):
         """
         Ejecuta el proceso de seguimiento de objetos en un video.
 
@@ -453,6 +453,7 @@ class ObjectTracker:
             max_frames (int, optional): Número máximo de frames a procesar. Por defecto, None (todo el video).
             output_video_path (str, optional): Ruta donde guardar el video de salida.
                                                Por defecto, None (no guarda el video).
+            display_video (bool): Si es True, muestra la ventana del video. Por defecto: True.
         """
         cap = cv2.VideoCapture(video_path)
 
@@ -530,18 +531,17 @@ class ObjectTracker:
                 # Procesar el frame (dibujar zonas, BBs, etc.)
                 processed_frame = self.process_frame(frame, results, act_frame)
                 
-                # Mostrar el frame procesado
-                # Comenta la siguiente línea si no quieres la ventana de video
-                # cv2.imshow("Video", processed_frame)
-                
                 # Escribir el frame en el archivo de salida si el VideoWriter está activo
                 if video_writer:
                     video_writer.write(processed_frame)
-                
-                # Salir si se presiona 'q' (solo si la ventana de video está activa)
-                if 'cv2.imshow' in locals() and cv2.waitKey(1) & 0xFF == ord("q"): # Verifica si imshow está activo
-                   print("\nTecla 'q' presionada. Deteniendo.")
-                   break
+
+                # Mostrar el frame procesado SOLO SI display_video es True
+                if display_video:
+                    cv2.imshow("Video", processed_frame)
+                    # Salir si se presiona 'q' (solo si la ventana de video está activa)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                       print("\nTecla 'q' presionada. Deteniendo.")
+                       break
         
         # Asegurarse de una nueva línea al final del progreso
         if progress_enabled:
@@ -556,7 +556,10 @@ class ObjectTracker:
         cap.release()
         if video_writer:
             video_writer.release()
-        cv2.destroyAllWindows()
+        
+        # Destruir ventanas SOLO si se mostraron
+        if display_video:
+            cv2.destroyAllWindows()
         
         # Una vez terminado el procesamiento de frames, calcular los resultados finales
         self._get_final_track_classifications()
@@ -681,7 +684,8 @@ class ObjectTracker:
 if __name__ == "__main__":
     # --- Configuración de Argumentos de Línea de Comandos ---
     parser = argparse.ArgumentParser(
-        description="Realiza seguimiento de objetos en videos y genera un informe de tránsito."
+        description="Realiza seguimiento de objetos en videos y genera un informe de tránsito.",
+        formatter_class=argparse.RawTextHelpFormatter # Permite formatear el texto de ayuda
     )
     parser.add_argument(
         '--input_video_path', '-i', type=str, required=True,
@@ -693,12 +697,18 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--output_video_path', '-o', type=str, default=None,
-        help='Ruta opcional para guardar el video de salida. Por defecto, se guarda '
-             'en el mismo directorio que el video de entrada con el sufijo "_processed".'
+        help='Ruta opcional para guardar el video de salida. \n'
+             'Por defecto, se guarda en el mismo directorio que el video de entrada \n'
+             'con el sufijo "_processed".'
     )
     parser.add_argument(
         '--max_frames', '-f', type=int, default=None,
         help='Número máximo de frames a procesar. Por defecto, se procesa el video completo.'
+    )
+    parser.add_argument(
+        '--no_display', action='store_true',
+        help='Si se incluye este flag, NO se mostrará la ventana del video durante el procesamiento. \n'
+             'Por defecto (sin el flag), el video SÍ se muestra.'
     )
 
     args = parser.parse_args()
@@ -709,6 +719,9 @@ if __name__ == "__main__":
         input_dir = os.path.dirname(args.input_video_path)
         input_filename_without_ext, input_ext = os.path.splitext(os.path.basename(args.input_video_path))
         final_output_video_path = os.path.join(input_dir, f"{input_filename_without_ext}_processed{input_ext}")
+    
+    # Determinar si se debe mostrar el video
+    show_video_window = not args.no_display
 
     # 1. Crear una instancia del ObjectTracker
     tracker = ObjectTracker(args.model_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
@@ -717,7 +730,8 @@ if __name__ == "__main__":
     tracker.run(
         video_path=args.input_video_path, 
         max_frames=args.max_frames, 
-        output_video_path=final_output_video_path
+        output_video_path=final_output_video_path,
+        display_video=show_video_window # Pasar el nuevo argumento
     )
 
     # 3. Imprimir el informe final
