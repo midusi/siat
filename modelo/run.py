@@ -632,7 +632,7 @@ class ObjectTracker:
         
         total_line_output += f"\t\t\t" # Separador
 
-        total_line_output = f"{'Total':<{VEHICLE_COL_WIDTH}}"
+        total_line_output += f"{'Total':<{VEHICLE_COL_WIDTH}}"
         for zone_label in ORDERED_ZONE_LABELS:
             total_line_output += f"\t{total_exits_by_zone[zone_label]}"
         
