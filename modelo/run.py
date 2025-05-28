@@ -580,6 +580,9 @@ class ObjectTracker:
         """
         print("\n--- INFORME FINAL ---")
 
+        # Información del modelo
+        print(f"Datos del modelo {os.path.splitext(os.path.basename(args.model_path))[0]}\n")
+
         # Ancho fijo para la primera columna "Vehículos" y las filas de datos
         VEHICLE_COL_WIDTH = max(len("Vehículos"), max(len(v_type) for v_type in REPORT_VEHICLE_ORDER)) + 1 # +1 para espacio
         # Ancho fijo para las columnas de conteo (ej: ' 62  ')
@@ -591,13 +594,13 @@ class ObjectTracker:
         total_exits_by_zone = defaultdict(int)
 
         # Imprimir encabezado de las dos tablas superiores
-        print(f"{'Vehículos':<{VEHICLE_COL_WIDTH}}\tEntradas\t\t\t\t{'Vehículos'}\tSalidas") # Header line 1
+        print(f"{'Vehículos':<{VEHICLE_COL_WIDTH}}\tEntradas\t\t\t\t\t\t{'Vehículos'}\tSalidas") # Header line 1
 
         # Imprimir sub-encabezados de las dos tablas superiores
         zone_headers = "\t".join(ORDERED_ZONE_LABELS)
         # Ajustamos los tabs para que quede como el ejemplo. Es un poco manual porque las tabulaciones
         # no siempre se alinean perfectamente dependiendo de la terminal.
-        print(f"{'':<{VEHICLE_COL_WIDTH}}\t{zone_headers}\t\t\t\t{zone_headers}\t\t\t\t\t\t") # Header line 2
+        print(f"{'':<{VEHICLE_COL_WIDTH}}\t{zone_headers}\t\t\t\t{zone_headers}\t\t\t\t\t") # Header line 2
 
         # Imprimir filas de datos
         for v_type in REPORT_VEHICLE_ORDER:
@@ -610,7 +613,8 @@ class ObjectTracker:
                 total_entries_by_zone[zone_label] += count
             
             # Separador entre tablas. Se ajusta con tabulaciones para la alineación visual.
-            row_output += f"\t\t\t\t"
+            row_output += f"\t\t\t"
+            row_output += f"{v_type:<{VEHICLE_COL_WIDTH}}"
 
             # Datos de Salidas
             for zone_label in ORDERED_ZONE_LABELS:
@@ -626,15 +630,16 @@ class ObjectTracker:
         for zone_label in ORDERED_ZONE_LABELS:
             total_line_output += f"\t{total_entries_by_zone[zone_label]}"
         
-        total_line_output += f"\t\t\t\t" # Separador
+        total_line_output += f"\t\t\t" # Separador
 
+        total_line_output = f"{'Total':<{VEHICLE_COL_WIDTH}}"
         for zone_label in ORDERED_ZONE_LABELS:
             total_line_output += f"\t{total_exits_by_zone[zone_label]}"
         
         total_line_output += f"\t\t\t\t\t\t" # Tabs adicionales
         print(total_line_output)
 
-        print("\n\n\n") # Líneas en blanco entre la primera sección y la matriz
+        print("\n\n") # Líneas en blanco entre la primera sección y la matriz
 
         # --- TERCERA TABLA: MATRIZ DE TRÁNSITO ---
         
