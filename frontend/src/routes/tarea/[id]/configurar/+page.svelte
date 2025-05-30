@@ -250,7 +250,16 @@ function handleMouseUp(event: MouseEvent) {
         ></canvas>
       {/if}
     </div>
-    
+        <!-- Instrucciones -->
+   <div class="bg-[#2d3748] text-gray-200 border border-gray-600 rounded p-4 mb-4 max-w-5xl mx-auto text-sm">
+      <p class="mb-2 font-semibold">Instrucciones para marcar una vía:</p>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>El polígono debe encerrar completamente la intersección o el tramo de vía correspondiente.</li>
+        <li>Asegurate de incluir todos los bordes visibles de la vía que quieras marcar.</li>
+        <li>Seleccioná la vía y el sentido (Entrada o Salida) antes de empezar a dibujar.</li>
+        <li>Podés eliminar una vía ya dibujada desde la lista inferior.</li>
+      </ul>
+    </div>
 
     <!-- Botón para abrir modal -->
     <div class="flex justify-center mt-6 gap-4">
