@@ -141,7 +141,7 @@ class ObjectTracker:
             
         print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
 
-    def _get_torch_device(self, preferred_device: Optional[str]) -> torch.device:
+    def _get_torch_device(self, preferred_device: Optional[str]) -> torch.device: # type: ignore
         """
         Determina el dispositivo PyTorch a usar (CPU o GPU) basado en la preferencia
         y la disponibilidad del hardware.
@@ -639,7 +639,7 @@ class ObjectTracker:
         total_line_output += f"\t\t\t\t\t\t" # Tabs adicionales
         print(total_line_output)
 
-        print("\n\n") # Líneas en blanco entre la primera sección y la matriz
+        print("") # Línea en blanco entre la primera sección y la matriz
 
         # --- TERCERA TABLA: MATRIZ DE TRÁNSITO ---
         
