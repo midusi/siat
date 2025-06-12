@@ -57,12 +57,11 @@ CLASS_DISPLAY_NAMES = {
     "light_truck": "Camión liviano",
     "heavy_truck": "Camión pesado",
     "motorbike": "Moto",
-    "bicycle": "Bicicleta",
-    "indeterminado": "Indeterminado" 
+    "bicycle": "Bicicleta"
 }
 # Orden de las clases de vehículos para las filas de las tablas
 REPORT_VEHICLE_ORDER = [
-    "Auto", "Moto", "Camión liviano", "Camión pesado", "Colectivo", "Bicicleta", "Indeterminado"
+    "Auto", "Moto", "Camión liviano", "Camión pesado", "Colectivo", "Bicicleta"
 ]
 
 
@@ -379,6 +378,10 @@ class ObjectTracker:
 
         for track_id, result in self.track_results.items():
             classification = result.get("classification", "indeterminado")
+            
+            if classification == "indeterminado":
+                continue
+
             display_class = CLASS_DISPLAY_NAMES.get(classification, classification)
 
             self.total_vehicles_by_class[display_class] += 1
@@ -390,8 +393,6 @@ class ObjectTracker:
                 self.entry_zone_counts[display_class][in_zone_label] += 1
 
             # Conteo para la tabla "Salidas"
-            # Un vehículo se cuenta como "salida" si en algún momento fue detectado en cualquier zona OUT.
-            # No necesariamente tiene que haber pasado por una zona IN antes.
             if track_id in self.track_first_out_zone:
                 out_zone_idx = self.track_first_out_zone[track_id]
                 out_zone_label = ZONE_LABELS.get(out_zone_idx, f"Zona {out_zone_idx}")
@@ -575,119 +576,101 @@ class ObjectTracker:
     def get_report(self):
         """
         Imprime los resultados finales del seguimiento de objetos en el formato especificado.
-        Incluye el conteo total de vehículos por categoría (Entradas, Salidas) y la matriz de transiciones
-        (Entrada a Salida con 'Salida Ind').
+        Incluye el conteo de Entradas/Salidas y la matriz de transiciones, con un bloque
+        separado para "Salidas Indeterminadas".
         """
         print("\n--- INFORME FINAL ---")
 
-        # Información del modelo
-        print(f"Datos del modelo {os.path.splitext(os.path.basename(args.model_path))[0]}\n")
+        print(f"Datos del modelo\n")
+        
+        # --- TABLAS 1 Y 2: ENTRADAS Y SALIDAS ---
+        # Se usan tabs (\t) para alinear, lo cual funciona bien en la mayoría de terminales.
+        print("Vehículos\tEntradas\t\t\t\t\t\tVehículos\tSalidas")
+        zone_headers = "\t".join(ORDERED_ZONE_LABELS)
+        print(f"\t{zone_headers}\t\t\t{zone_headers}")
 
-        # Ancho fijo para la primera columna "Vehículos" y las filas de datos
-        VEHICLE_COL_WIDTH = max(len("Vehículos"), max(len(v_type) for v_type in REPORT_VEHICLE_ORDER)) + 1 # +1 para espacio
-        # Ancho fijo para las columnas de conteo (ej: ' 62  ')
-        COUNT_COL_WIDTH = 4 # Suficiente para números de hasta 9999 + espacio
-
-        # --- PRIMERA Y SEGUNDA TABLA: ENTRADAS Y SALIDAS ---
-        # Calculamos los totales para las tablas de Entradas/Salidas
         total_entries_by_zone = defaultdict(int)
         total_exits_by_zone = defaultdict(int)
 
-        # Imprimir encabezado de las dos tablas superiores
-        print(f"{'Vehículos':<{VEHICLE_COL_WIDTH}}\tEntradas\t\t\t\t\t\t{'Vehículos'}\tSalidas") # Header line 1
-
-        # Imprimir sub-encabezados de las dos tablas superiores
-        zone_headers = "\t".join(ORDERED_ZONE_LABELS)
-        # Ajustamos los tabs para que quede como el ejemplo. Es un poco manual porque las tabulaciones
-        # no siempre se alinean perfectamente dependiendo de la terminal.
-        print(f"{'':<{VEHICLE_COL_WIDTH}}\t{zone_headers}\t\t\t\t{zone_headers}\t\t\t\t\t") # Header line 2
-
-        # Imprimir filas de datos
         for v_type in REPORT_VEHICLE_ORDER:
-            row_output = f"{v_type:<{VEHICLE_COL_WIDTH}}"
-
-            # Datos de Entradas
+            # Construir la parte de Entradas
+            entry_parts = [v_type]
             for zone_label in ORDERED_ZONE_LABELS:
                 count = self.entry_zone_counts[v_type][zone_label]
-                row_output += f"\t{count}"
+                entry_parts.append(str(count))
                 total_entries_by_zone[zone_label] += count
             
-            # Separador entre tablas. Se ajusta con tabulaciones para la alineación visual.
-            row_output += f"\t\t\t"
-            row_output += f"{v_type:<{VEHICLE_COL_WIDTH}}"
-
-            # Datos de Salidas
+            # Construir la parte de Salidas
+            exit_parts = [v_type]
             for zone_label in ORDERED_ZONE_LABELS:
                 count = self.exit_zone_counts[v_type][zone_label]
-                row_output += f"\t{count}"
+                exit_parts.append(str(count))
                 total_exits_by_zone[zone_label] += count
             
-            row_output += f"\t\t\t\t\t\t" # Tabs adicionales para alinear el final de la línea
-            print(row_output)
-        
-        # Fila Total para ambas tablas
-        total_line_output = f"{'Total':<{VEHICLE_COL_WIDTH}}"
-        for zone_label in ORDERED_ZONE_LABELS:
-            total_line_output += f"\t{total_entries_by_zone[zone_label]}"
-        
-        total_line_output += f"\t\t\t" # Separador
+            # Imprimir la línea completa combinando ambas partes
+            entry_str = "\t".join(entry_parts)
+            exit_str = "\t".join(exit_parts)
+            print(f'{entry_str}\t\t\t{exit_str}')
 
-        total_line_output += f"{'Total':<{VEHICLE_COL_WIDTH}}"
-        for zone_label in ORDERED_ZONE_LABELS:
-            total_line_output += f"\t{total_exits_by_zone[zone_label]}"
+        # Fila de Totales para Entradas/Salidas
+        total_entry_parts = ["Total"] + [str(total_entries_by_zone[z]) for z in ORDERED_ZONE_LABELS]
+        total_exit_parts = ["Total"] + [str(total_exits_by_zone[z]) for z in ORDERED_ZONE_LABELS]
+        total_entry_str = "\t".join(total_entry_parts)
+        total_exit_str = "\t".join(total_exit_parts)
+        print(f'{total_entry_str}\t\t\t{total_exit_str}')
         
-        total_line_output += f"\t\t\t\t\t\t" # Tabs adicionales
-        print(total_line_output)
+        print("") # Línea en blanco
 
-        print("") # Línea en blanco entre la primera sección y la matriz
+        # --- TABLA 3: MATRIZ DE TRÁNSITO (Nuevo formato) ---
 
-        # --- TERCERA TABLA: MATRIZ DE TRÁNSITO ---
-        
-        # Imprimir encabezado de la matriz
-        # "Vehículos    Entrada A                Entrada B                Entrada C                Entrada D"
-        matrix_header_line_1_parts = [f"{'Vehículos':<{VEHICLE_COL_WIDTH}}"]
+        # Encabezado 1
+        header1_parts = ["Vehículos"]
         for in_label in ORDERED_ZONE_LABELS:
-            # Calcular ancho para cada bloque "Entrada X" (Salida A...Salida Ind)
-            # Cada columna de salida ocupa un espacio de una tabulación en el ejemplo.
-            # Una tabulación no es un ancho fijo, pero se usa para replicar el formato.
-            # Añadimos 5 tabulaciones por cada "Entrada X" (para Salida A-D y Salida Ind)
-            matrix_header_line_1_parts.append(f"\t{'Entrada ' + in_label}") # Solo una tab aquí para el título
-            matrix_header_line_1_parts.append("\t\t\t\t") # 4 tabs adicionales para estirar el encabezado
-        print("".join(matrix_header_line_1_parts))
+            # Cada bloque "Entrada X" tiene 4 sub-columnas, por lo que necesita 4 tabs de espacio.
+            header1_parts.append(f"Entrada {in_label}\t\t\t")
+        header1_parts.append("Salidas Indeterminadas")
+        print("\t".join(header1_parts))
 
-        # Imprimir sub-encabezado de la matriz
-        # "           Salida A  Salida B  Salida C  Salida D  Salida Ind  Salida A..."
-        matrix_header_line_2_parts = [f"{'':<{VEHICLE_COL_WIDTH}}"]
+        # Encabezado 2
+        header2_parts = [""] # Espacio para la columna "Vehículos"
+        # Sub-columnas para transiciones (Entrada -> Salida)
         for _ in ORDERED_ZONE_LABELS:
             for out_label in ORDERED_ZONE_LABELS:
-                matrix_header_line_2_parts.append(f"\tSalida {out_label}")
-            matrix_header_line_2_parts.append(f"\tSalida Ind") # Columna para indeterminados
-        print("".join(matrix_header_line_2_parts))
+                header2_parts.append(f"Salida {out_label}")
+        # Sub-columnas para salidas indeterminadas (por zona de entrada)
+        for in_label in ORDERED_ZONE_LABELS:
+            header2_parts.append(f"Entrada {in_label}")
+        print("\t".join(header2_parts))
 
-        # Imprimir filas de datos de la matriz
-        overall_matrix_column_totals = defaultdict(int) # Para los totales de la fila "Total" de la matriz
+        # Filas de datos de la matriz
+        overall_matrix_totals = defaultdict(int) # (in_label, out_label) -> total_count
 
         for v_type in REPORT_VEHICLE_ORDER:
-            row_output = f"{v_type:<{VEHICLE_COL_WIDTH}}"
+            row_parts = [v_type]
+            # Parte 1: Transiciones Entrada -> Salida
             for in_label in ORDERED_ZONE_LABELS:
                 for out_label in ORDERED_ZONE_LABELS:
                     count = self.transition_counts[v_type][in_label][out_label]
-                    row_output += f"\t{count}"
-                    overall_matrix_column_totals[(in_label, out_label)] += count
-                # Agregar la columna "Salida Ind"
-                ind_count = self.transition_counts[v_type][in_label]["Salida Ind"]
-                row_output += f"\t{ind_count}"
-                overall_matrix_column_totals[(in_label, "Salida Ind")] += ind_count
-            print(row_output)
+                    row_parts.append(str(count))
+                    overall_matrix_totals[(in_label, out_label)] += count
+            # Parte 2: Salidas Indeterminadas por zona de Entrada
+            for in_label in ORDERED_ZONE_LABELS:
+                count = self.transition_counts[v_type][in_label]["Salida Ind"]
+                row_parts.append(str(count))
+                overall_matrix_totals[(in_label, "Salida Ind")] += count
+            print("\t".join(row_parts))
         
         # Fila Total para la matriz
-        total_matrix_line_output = f"{'Total':<{VEHICLE_COL_WIDTH}}"
+        total_matrix_parts = ["Total"]
+        # Parte 1: Totales de transiciones
         for in_label in ORDERED_ZONE_LABELS:
             for out_label in ORDERED_ZONE_LABELS:
-                total_matrix_line_output += f"\t{overall_matrix_column_totals[(in_label, out_label)]}"
-            total_matrix_line_output += f"\t{overall_matrix_column_totals[(in_label, 'Salida Ind')]}"
-        print(total_matrix_line_output)
-        
+                total_matrix_parts.append(str(overall_matrix_totals[(in_label, out_label)]))
+        # Parte 2: Totales de salidas indeterminadas
+        for in_label in ORDERED_ZONE_LABELS:
+            total_matrix_parts.append(str(overall_matrix_totals[(in_label, "Salida Ind")]))
+        print("\t".join(total_matrix_parts))
+
         print("\n--- Fin del informe ---")
 
 
@@ -731,7 +714,6 @@ if __name__ == "__main__":
     # Si no se proporcionó una ruta de salida, generar la por defecto
     if final_output_video_path is None:
         input_dir = os.path.dirname(args.input_video_path)
-        # Si input_dir es vacío (video en el directorio actual), os.path.dirname("") devuelve "". Usar "." en su lugar.
         if not input_dir:
             input_dir = "."
         
@@ -739,19 +721,12 @@ if __name__ == "__main__":
         
         model_base_name = os.path.splitext(os.path.basename(args.model_path))[0]
         
-        # Construir el directorio de salida: input_video_dir/model_name_without_ext/
         output_dir = os.path.join(input_dir, model_base_name)
-        
-        # Crear el directorio si no existe (exist_ok=True evita errores si ya existe)
         os.makedirs(output_dir, exist_ok=True)
         
-        # Construir el nombre del archivo de video procesado
         output_filename = f"{input_filename_without_ext}_processed{input_ext}"
-        
-        # Ruta completa del archivo de salida
         final_output_video_path = os.path.join(output_dir, output_filename)
     
-    # Determinar si se debe mostrar el video
     show_video_window = not args.no_display
 
     # 1. Crear una instancia del ObjectTracker
@@ -762,7 +737,7 @@ if __name__ == "__main__":
         video_path=args.input_video_path, 
         max_frames=args.max_frames, 
         output_video_path=final_output_video_path,
-        display_video=show_video_window # Pasar el nuevo argumento
+        display_video=show_video_window
     )
 
     # 3. Imprimir el informe final
