@@ -26,20 +26,36 @@ ZONE_COLORS = sv.ColorPalette.from_hex(["#00FF00", "#FF0000"])
 
 # Definición de las zonas de entrada (polígonos)
 # Cada polígono es un array de puntos [x, y]
+# Vuelo06
 ZONE_IN_POLYGONS = [
-    np.array([[1021, 969], [1154, 982], [1218, 825], [1088, 808]]),
-    np.array([[1510, 514], [1583, 459], [1378, 402], [1359, 453]]),
-    np.array([[995, 227], [923, 211], [834, 268], [921, 288]]),
-    np.array([[393, 540], [449, 467], [549, 507], [480, 593]]),
+    np.array([[544, 913], [617, 1005], [824, 939], [705, 839]]),
+    np.array([[1398, 620], [1438, 559], [1583, 629], [1582, 719]]),
+    np.array([[1161, 345], [1109, 305], [1203, 248], [1271, 284]]),
+    np.array([[662, 381], [602, 380], [602, 321], [664, 319]]),
 ]
 
 # Definición de las zonas de salida (polígonos)
 ZONE_OUT_POLYGONS = [
-    np.array([[759, 962], [921, 951], [863, 806], [714, 823]]),
-    np.array([[1419, 562], [1433, 654], [1586, 619], [1547, 536]]),
-    np.array([[1063, 290], [1156, 271], [1138, 197], [1029, 207]]),
-    np.array([[462, 452], [456, 366], [624, 347], [607, 434]]),
+    np.array([[516, 890], [433, 837], [497, 735], [625, 773]]),
+    np.array([[1373, 692], [1358, 781], [1551, 820], [1538, 721]]),
+    np.array([[1223, 371], [1326, 395], [1360, 309], [1256, 301]]),
+    np.array([[769, 344], [816, 314], [752, 265], [694, 292]]),
 ]
+
+# ZONE_IN_POLYGONS = [
+#     np.array([[1021, 969], [1154, 982], [1218, 825], [1088, 808]]),
+#     np.array([[1510, 514], [1583, 459], [1378, 402], [1359, 453]]),
+#     np.array([[995, 227], [923, 211], [834, 268], [921, 288]]),
+#     np.array([[393, 540], [449, 467], [549, 507], [480, 593]]),
+# ]
+
+# # Definición de las zonas de salida (polígonos)
+# ZONE_OUT_POLYGONS = [
+#     np.array([[759, 962], [921, 951], [863, 806], [714, 823]]),
+#     np.array([[1419, 562], [1433, 654], [1586, 619], [1547, 536]]),
+#     np.array([[1063, 290], [1156, 271], [1138, 197], [1029, 207]]),
+#     np.array([[462, 452], [456, 366], [624, 347], [607, 434]]),
+# ]
 
 # Longitud máxima del historial de seguimiento de un objeto
 TRACK_HISTORY_LENGTH = 30 
@@ -532,7 +548,7 @@ class ObjectTracker:
                 # frame = cv2.resize(frame, (ancho_nuevo, alto_nuevo))
 
                 # Realizar seguimiento de objetos
-                results = self.model.track(frame, persist=True, verbose=False, agnostic_nms=True)
+                results = self.model.track(frame, persist=True, verbose=False, agnostic_nms=True, tracker="botsort_custom.yaml")
                 
                 # Procesar el frame (dibujar zonas, BBs, etc.)
                 processed_frame = self.process_frame(frame, results, act_frame)
