@@ -5,10 +5,10 @@
 # For BoT-SORT source code see https://github.com/NirAharon/BoT-SORT
 
 tracker_type: botsort # tracker type, ['botsort', 'bytetrack']
-track_high_thresh: 0.8 # threshold for the first association
+track_high_thresh: 0.6 # threshold for the first association
 track_low_thresh: 0.3 # threshold for the second association
-new_track_thresh: 0.8 # threshold for init new track if the detection does not match any tracks
-track_buffer: 120 # buffer to calculate the time when to remove tracks
+new_track_thresh: 0.6 # threshold for init new track if the detection does not match any tracks
+track_buffer: 150 # buffer to calculate the time when to remove tracks
 match_thresh: 0.8 # threshold for matching tracks
 fuse_score: True # Whether to fuse confidence scores with the iou distances before matching
 # min_box_area: 10  # threshold for min box areas(for tracker evaluation, not used for now)
@@ -16,7 +16,7 @@ fuse_score: True # Whether to fuse confidence scores with the iou distances befo
 # BoT-SORT settings
 gmc_method: sparseOptFlow # method of global motion compensation
 # ReID model related thresh
-proximity_thresh: 0.5 # minimum IoU for valid match with ReID
-appearance_thresh: 0.7 # minimum appearance similarity for ReID
+proximity_thresh: 0.4 # minimum IoU for valid match with ReID
+appearance_thresh: 0.2 # minimum appearance similarity for ReID
 with_reid: True
 model: auto # uses native features if detector is YOLO else yolo11n-cls.pt
