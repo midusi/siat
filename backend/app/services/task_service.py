@@ -32,7 +32,7 @@ class TaskService:
         self.road_service = RoadService(db)
         
     def get_list(self) -> list[TaskResponse]:
-        tasks = task_crud.find_by_fields(self.db, id=17)
+        tasks = task_crud.find_all(self.db)
         responses = []
         for task in tasks:
             history = task.status_history[0]
