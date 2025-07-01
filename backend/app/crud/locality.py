@@ -2,6 +2,10 @@
 from sqlalchemy.orm import sessionmaker, joinedload
 from app.models import Locality
 
+def find_all(db: sessionmaker) -> list[Locality]:
+    return db.query(Locality).all()
+
+
 def get_localities_by_district(db: sessionmaker, district_id: int) -> list[Locality]:
     return db.query(Locality).filter(Locality.district_id == district_id).all()
 

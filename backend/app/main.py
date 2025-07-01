@@ -44,7 +44,7 @@ app.add_middleware(
 )
 
 # Middleware de autenticación
-app.add_middleware(AuthMiddleware)
+# app.add_middleware(AuthMiddleware)
 
 # Incluir routers
 app.include_router(poligonos_router)

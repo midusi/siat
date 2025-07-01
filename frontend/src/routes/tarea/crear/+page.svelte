@@ -1,6 +1,7 @@
 <!-- src/routes/crear/+page.svelte -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 
 	// Estado para el archivo seleccionado
 	let selectedFile = $state<File | null>(null);
@@ -10,42 +11,39 @@
 	let selectedDistrict = $state('');
 
 	// Datos de localidades y distritos
-	const localities = [
-		{ id: 'bsas', name: 'Buenos Aires' },
-		{ id: 'cba', name: 'Córdoba' },
-		{ id: 'stafe', name: 'Santa Fe' },
-		{ id: 'mza', name: 'Mendoza' }
-	];
+	let localities = $state<{ id: number; name: string }[]>([]);
+	let districts = $state<{ id: number; name: string }[]>([]);
 
-	// Ejemplo de función para obtener distritos (no se usa actualmente)
-	async function fetchDistricts() {
+	async function fetchLocalities() {
 		try {
-			const response = await fetch('http://127.0.0.1:8000/district');
-
+			const response = await fetch('http://127.0.0.1:8000/locality');
 			if (!response.ok) {
-				throw new Error(`Error en la petición: ${response.statusText}`);
+				throw new Error(`Error fetching localities: ${response.statusText}`);
 			}
-
-			const data = await response.json();
-			console.log('Respuesta del backend:', data);
+			localities = await response.json();
 		} catch (error) {
-			console.error('Error enviando los distritos:', error);
+			console.error(error);
+			alert('Error al cargar las localidades.');
 		}
 	}
 
-	const districts = [
-		{ id: 'lp', name: 'La Plata' },
-		{ id: 'quilmes', name: 'Quilmes' },
-		{ id: 'lomas', name: 'Lomas de Zamora' },
-		{ id: 'moron', name: 'Morón' },
-		{ id: 'capital', name: 'Capital' },
-		{ id: 'vcp', name: 'Villa Carlos Paz' },
-		{ id: 'rio4', name: 'Río Cuarto' },
-		{ id: 'rosario', name: 'Rosario' },
-		{ id: 'venado', name: 'Venado Tuerto' },
-		{ id: 'godoy', name: 'Godoy Cruz' },
-		{ id: 'lujan', name: 'Luján de Cuyo' }
-	];
+	async function fetchDistricts() {
+		try {
+			const response = await fetch('http://127.0.0.1:8000/district');
+			if (!response.ok) {
+				throw new Error(`Error fetching districts: ${response.statusText}`);
+			}
+			districts = await response.json();
+		} catch (error) {
+			console.error(error);
+			alert('Error al cargar los distritos.');
+		}
+	}
+
+	onMount(() => {
+		fetchLocalities();
+		fetchDistricts();
+	});
 
 	// Función para manejar la selección de archivos
 	function handleFileSelect(event: Event): void {
@@ -61,16 +59,44 @@
 	}
 
 	// Función para iniciar la subida
-	function handleSubmit(): void {
-		// Aquí iría la lógica para subir el archivo y crear la tarea
-		console.log('Datos del formulario:', {
-			fecha: (document.getElementById('fecha') as HTMLInputElement).value,
-			localidad: selectedLocality,
-			distrito: selectedDistrict,
-			archivo: selectedFile
-		});
-		// Después de subir, redirigir a la página principal
-		// goto('/');
+	async function handleSubmit(): Promise<void> {
+		const fecha = (document.getElementById('fecha') as HTMLInputElement).value;
+		const localidad = selectedLocality;
+		const distritoId = selectedDistrict;
+		const archivo = selectedFile;
+
+		if (!fecha || !localidad || !distritoId || !archivo) {
+			alert('Por favor complete todos los campos y seleccione un archivo.');
+			return;
+		}
+
+		const formData = new FormData();
+		const districtName =
+			districts.find((d) => d.id.toString() === distritoId)?.name || 'Tarea sin nombre';
+
+		formData.append('name', districtName);
+		formData.append('locality_id', localidad); // El id de la localidad (string, backend espera int)
+		formData.append('uploaded_at', fecha); // Fecha en formato YYYY-MM-DD
+		formData.append('file', archivo);
+
+		try {
+			const response = await fetch('http://127.0.0.1:8000/task', {
+				method: 'POST',
+				body: formData
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Error en la subida: ${errorText}`);
+			}
+
+			const data = await response.json();
+			console.log('Tarea creada:', data);
+			goto('/');
+		} catch (error) {
+			console.error('Error al crear la tarea:', error);
+			alert('Hubo un error al crear la tarea.');
+		}
 	}
 </script>
 
