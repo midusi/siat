@@ -1,6 +1,5 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { goto } from '$app/navigation';
 
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
@@ -11,9 +10,6 @@
   let modalSentido = 'Entrada';
   let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
   let opcionesSentido = ['Entrada', 'Salida'];
-  let startX = 0;
-  let startY = 0;
-  let isDragging = false;
 
   let puntos: Array<{ x: number, y: number }> = [];
 
@@ -24,115 +20,29 @@
   }> = [];
 
   function handleDraw() {
-     puntos.length =0;
+    if (puntos.length >= 4) {
+      alert('Ya se han agregado los 4 puntos permitidos.');
+      puntos.length =0;
+      return;
+    }
     showModal = true;
   }
-
- async function confirmarYVolver() {
-  console.log('Guardando polígonos:', poligonos);
-
-  try {
-    const response = await fetch('http://127.0.0.1:8000/guardar_poligonos', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(poligonos)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Error en la petición: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('Respuesta del backend:', data);
-
-    // Volver a la página anterior
-    history.back();
-
-  } catch (error) {
-    console.error('Error enviando los polígonos:', error);
-  }
-}
-
-
-  function handleMouseDown(event: MouseEvent) {
-  if (!canvas) return;
-
-  const rect = canvas.getBoundingClientRect();
-  startX = event.clientX - rect.left;
-  startY = event.clientY - rect.top;
-  isDragging = true;
-}
-
-function handleMouseMove(event: MouseEvent) {
-  if (!canvas || !ctx || !isDragging) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const currentX = event.clientX - rect.left;
-  const currentY = event.clientY - rect.top;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  redrawConfirmedPolygons();
-
-  ctx.strokeStyle = modalSentido === 'Entrada' ? 'green' : 'red';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
-}
-
-function handleMouseUp(event: MouseEvent) {
-  if (!canvas || !ctx || !isDragging) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const endX = event.clientX - rect.left;
-  const endY = event.clientY - rect.top;
-
-  isDragging = false;
-
-  const x1 = startX;
-  const y1 = startY;
-  const x2 = endX;
-  const y2 = endY;
-
-  // Generar los 4 vértices del rectángulo
-  puntos = [
-    { x: x1, y: y1 },
-    { x: x2, y: y1 },
-    { x: x2, y: y2 },
-    { x: x1, y: y2 }
-  ];
-
-  poligonos = [...poligonos, {
-    via: modalVia,
-    sentido: modalSentido,
-    vertices: [...puntos]
-  }];
-
-  puntos = [];
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  redrawConfirmedPolygons();
-}
 
   function closeModal() {
     showModal = false;
   }
 
- function confirmDraw() {
-  showModal = false;
-  drawing = true;
-  puntos = [];
+  async function confirmDraw() {
+    showModal = false;
+    drawing = true;
+    await tick();
 
-  tick().then(() => {
     if (canvas) {
       ctx = canvas.getContext('2d');
-      redrawConfirmedPolygons();
-
-      canvas.addEventListener('mousedown', handleMouseDown);
-      canvas.addEventListener('mousemove', handleMouseMove);
-      canvas.addEventListener('mouseup', handleMouseUp);
+      canvas.addEventListener('click', handleCanvasClick);
+      redrawConfirmedPolygons(); // Redibuja los anteriores
     }
-  });
-}
+  }
 
   function handleCanvasClick(event: MouseEvent) {
     if (!canvas || !ctx) return;
@@ -209,8 +119,6 @@ function handleMouseUp(event: MouseEvent) {
     ctx.fillStyle = 'white';
     ctx.textAlign = 'center';
     ctx.fillText(`${poly.via} - ${poly.sentido}`, centro.x, centro.y - 10);
-
-    console.log('Polígonos confirmados:', poligonos);
   }
 }
 
@@ -250,16 +158,6 @@ function handleMouseUp(event: MouseEvent) {
         ></canvas>
       {/if}
     </div>
-        <!-- Instrucciones -->
-   <div class="bg-[#2d3748] text-gray-200 border border-gray-600 rounded p-4 mb-4 max-w-5xl mx-auto text-sm">
-      <p class="mb-2 font-semibold">Instrucciones para marcar una vía:</p>
-      <ul class="list-disc pl-5 space-y-1">
-        <li>El polígono debe encerrar completamente la intersección o el tramo de vía correspondiente.</li>
-        <li>Asegurate de incluir todos los bordes visibles de la vía que quieras marcar.</li>
-        <li>Seleccioná la vía y el sentido (Entrada o Salida) antes de empezar a dibujar.</li>
-        <li>Podés eliminar una vía ya dibujada desde la lista inferior.</li>
-      </ul>
-    </div>
 
     <!-- Botón para abrir modal -->
     <div class="flex justify-center mt-6 gap-4">
@@ -269,21 +167,8 @@ function handleMouseUp(event: MouseEvent) {
       >
         Dibujar
       </button>
-
-      <button
-    on:click={confirmarYVolver}
-    class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-md"
-  >
-    Confirmar cambios y volver
-  </button>
-
-
     </div>
   </div>
-  
-  
-
-
 
   <!-- Lista de polígonos confirmados -->
   <div class="max-w-5xl mx-auto mt-10">
