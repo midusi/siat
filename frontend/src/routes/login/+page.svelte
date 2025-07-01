@@ -7,15 +7,21 @@
 	let password = $state('');
 
 	// Función para manejar el inicio de sesión
-	function handleLogin(): void {
-		// Aquí iría la lógica de autenticación
-		console.log('Intentando iniciar sesión con:', { email, password });
-
-		// Simulación de inicio de sesión exitoso
-		if (email === 'm@gmail.com' && password === '1234') {
-			goto('/');
+	async function handleLogin(): Promise<void> {
+		const response = await fetchApi('/api/login', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ email, password })
+		});
+		
+		if (response.ok) {
+			const user = await response.json();
+			console.log('Login exitoso:', user);
+			goto('/'); // Redirigir al dashboard
 		} else {
-			alert('Credenciales incorrectas');
+			console.error('Error en login');
 		}
 	}
 

@@ -13,7 +13,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = request.cookies.get("access_token")
         if token:
             user_data = decode_token(token)
-            print(user_data)
             if user_data:
                 request.state.user = user_data
         return await call_next(request)

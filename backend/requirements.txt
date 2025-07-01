@@ -8,3 +8,4 @@ PyJWT>=2.0.0
 passlib
 pymediainfo
 psycopg2-binary
+bcrypt
