@@ -17,22 +17,21 @@
 		{ id: 'mza', name: 'Mendoza' }
 	];
 
-
-	function
+	// Ejemplo de función para obtener distritos (no se usa actualmente)
+	async function fetchDistricts() {
 		try {
-			const response = await fetch('http://127.0.0.1:8000/district' );
+			const response = await fetch('http://127.0.0.1:8000/district');
 
 			if (!response.ok) {
-			throw new Error(`Error en la petición: ${response.statusText}`);
+				throw new Error(`Error en la petición: ${response.statusText}`);
 			}
 
 			const data = await response.json();
 			console.log('Respuesta del backend:', data);
-
 		} catch (error) {
 			console.error('Error enviando los distritos:', error);
 		}
-
+	}
 
 	const districts = [
 		{ id: 'lp', name: 'La Plata' },
@@ -110,11 +109,10 @@
 			<div class="flex flex-col space-y-2">
 				<label for="fecha" class="text-lg">Fecha</label>
 				<input
-					type="text"
+					type="date"
 					id="fecha"
-					placeholder="DD/MM/AA"
-					value="25/05/03"
 					class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					value={new Date().toISOString().split('T')[0]}
 				/>
 				<div class="border-t border-gray-700 mt-2"></div>
 			</div>
@@ -189,7 +187,7 @@
 						{selectedFile ? selectedFile.name : 'Ningún archivo seleccionado'}
 					</span>
 				</div>
-				<p class="text-xs text-gray-400 mt-1">Formatos aceptados: MP4, AVI, MOV. Máximo 300MB.</p>
+				<p class="text-xs text-gray-400 mt-1">Formatos aceptados: MP4, AVI, MOV.</p>
 				<div class="border-t border-gray-700 mt-2"></div>
 			</div>
 
