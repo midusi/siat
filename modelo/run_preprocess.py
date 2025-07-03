@@ -581,7 +581,7 @@ if __name__ == "__main__":
         output_dir = os.path.join(input_dir, model_base_name)
         os.makedirs(output_dir, exist_ok=True)
         
-        output_filename = f"{input_filename_without_ext}_processed{input_ext}"
+        output_filename = f"{input_filename_without_ext}_preprocessed{input_ext}"
         final_output_video_path = os.path.join(output_dir, output_filename)
     
     show_video_window = not args.no_display
