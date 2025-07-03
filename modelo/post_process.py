@@ -65,17 +65,17 @@ class ObjectDisplayer:
         
         self.track_history: defaultdict[int, deque] = defaultdict(lambda: deque(maxlen=TRACK_HISTORY_LENGTH))
         
-    def _load_data(self):
+    def _load_data(self, output_dir: str):
         """
         Carga los datos de los archivos JSON y los procesa para obtener el diccionario de frames.
         Crea un diccionario donde cada clave sea el "act_frame" y su valor sea una lista de objetos con ese act_frame.
         También carga los datos de transiciones de objetos determinados y no determinados.
         """
-        with open('data_obj_history.json', 'r') as f:
+        with open(f'{output_dir}/data_obj_history.json', 'r') as f:
             data_obj_history = json.load(f)
-        with open('transition_determined_object.json', 'r') as f:
+        with open(f'{output_dir}/transition_determined_object.json', 'r') as f:
             self.transition_determined_object = json.load(f)
-        with open('transition_undetermined_object.json', 'r') as f:
+        with open(f'{output_dir}/transition_undetermined_object.json', 'r') as f:
             self.transition_undetermined_object = json.load(f)
             
         for track_id, obj_list in data_obj_history.items():
@@ -398,10 +398,10 @@ if __name__ == "__main__":
         
         input_filename_without_ext, input_ext = os.path.splitext(os.path.basename(args.input_video_path))
         
-        output_dir = input_dir
+        output_dir = os.path.join(input_dir, input_filename_without_ext)
         os.makedirs(output_dir, exist_ok=True)
         
-        output_filename = f"{input_filename_without_ext}_postprocessed{input_ext}"
+        output_filename = f"postprocessed{input_ext}"
         final_output_video_path = os.path.join(output_dir, output_filename)
     
     show_video_window = not args.no_display
@@ -425,7 +425,7 @@ if __name__ == "__main__":
     displayer = ObjectDisplayer(ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS)
     
     # 3. Cargar los datos
-    displayer._load_data()
+    displayer._load_data(output_dir)
 
     # 4. Ejecutar el proceso de display
     displayer.run(

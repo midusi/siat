@@ -114,8 +114,13 @@ class ObjectTracker:
         # Ejemplo: {track_id: [{"act_frame": 10, "class_id": 0, "confidence": 0.9}]}
         self.data_obj_history: defaultdict[int, List[Dict]] = defaultdict(list)
         
+        # Contador de transiciones de objetos
+        self.total_vehicles_by_class: Counter[str] = Counter()
+        self.entry_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.exit_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.transition_counts: defaultdict[str, defaultdict[str, defaultdict[str, int]]] = \
+            defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         # Matriz de transición de zonas
-        self.transition_object: defaultdict[int, list[str, str]] = defaultdict(list)
         self.transition_determined_object: defaultdict[int, list[str, str]] = defaultdict(list)
         self.transition_undetermined_object: defaultdict[int, list[str, str]] = defaultdict(list)
             
@@ -345,25 +350,41 @@ class ObjectTracker:
             if classification == "indeterminado":
                 continue
 
+            display_class = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(classification, classification)
+            
+            self.total_vehicles_by_class[display_class] += 1
+            
+            # Conteo para la tabla "Entradas"
+            if track_id in self.track_first_in_zone:
+                in_zone_idx = self.track_first_in_zone[track_id]
+                in_zone_label = ZONE_LABELS.get(in_zone_idx, f"Zona {in_zone_idx}")
+                self.entry_zone_counts[display_class][in_zone_label] += 1
+
+            # Conteo para la tabla "Salidas"
+            if track_id in self.track_first_out_zone:
+                out_zone_idx = self.track_first_out_zone[track_id]
+                out_zone_label = ZONE_LABELS.get(out_zone_idx, f"Zona {out_zone_idx}")
+                self.exit_zone_counts[display_class][out_zone_label] += 1          
+                  
             # Cálculo de la Matriz de Transiciones para cada objeto
             if track_id in self.track_first_in_zone:
                 in_zone_label = ZONE_LABELS.get(self.track_first_in_zone[track_id], f"Zona {self.track_first_in_zone[track_id]}")
                 
                 if track_id in self.track_first_out_zone:
                     out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
-                    self.transition_object[track_id].append((in_zone_label, out_zone_label))
                     self.transition_determined_object[track_id].append((in_zone_label, out_zone_label))
+                    self.transition_counts[display_class][in_zone_label][out_zone_label] += 1
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
-                    self.transition_object[track_id].append((in_zone_label, "IND"))
                     self.transition_undetermined_object[track_id].append((in_zone_label, "IND"))
+                    self.transition_counts[display_class][in_zone_label]["IND"] += 1
             elif track_id in self.track_first_out_zone:
                 out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
-                self.transition_object[track_id].append(("IND", out_zone_label))
                 self.transition_undetermined_object[track_id].append(("IND", out_zone_label))
+                self.transition_counts[display_class]["IND"][out_zone_label] += 1
             else:
-                self.transition_object[track_id].append(("IND", "IND"))
                 self.transition_undetermined_object[track_id].append(("IND", "IND"))
+                self.transition_counts[display_class]["IND"]["IND"] += 1
 
 
     def process_frame(self, frame: np.ndarray, results: list, act_frame: int) -> np.ndarray:
@@ -575,10 +596,10 @@ if __name__ == "__main__":
         
         model_base_name = os.path.splitext(os.path.basename(args.model_path))[0]
         
-        output_dir = os.path.join(input_dir, model_base_name)
+        output_dir = os.path.join(input_dir, input_filename_without_ext)
         os.makedirs(output_dir, exist_ok=True)
         
-        output_filename = f"{input_filename_without_ext}_processed{input_ext}"
+        output_filename = f"processed{input_ext}"
         final_output_video_path = os.path.join(output_dir, output_filename)
     
     show_video_window = not args.no_display
@@ -609,26 +630,19 @@ if __name__ == "__main__":
         display_video=show_video_window
     )
 
-    # 4. Imprimir el informe final
-    # tracker.get_report()
-    
-    # Guardar tracker.data_obj_history en un archivo JSON
-    with open("data_obj_history.json", "w", encoding="utf-8") as f:
-        # Convertir las claves a str para que sea serializable en JSON
+    # 4. Guardar resultados en archivos JSON
+    with open(f"{output_dir}/data_obj_history.json", "w", encoding="utf-8") as f:
         serializable_dict = {str(k): v for k, v in tracker.data_obj_history.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
         
-    with open("transition_object.json", "w", encoding="utf-8") as f:
-        # Convertir las claves a str para que sea serializable en JSON
-        serializable_dict = {str(k): v for k, v in tracker.transition_object.items()}
-        json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
-        
-    with open("transition_determined_object.json", "w", encoding="utf-8") as f:
-        # Convertir las claves a str para que sea serializable en JSON
+    with open(f"{output_dir}/transition_determined_object.json", "w", encoding="utf-8") as f:
         serializable_dict = {str(k): v for k, v in tracker.transition_determined_object.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
         
-    with open("transition_undetermined_object.json", "w", encoding="utf-8") as f:
-        # Convertir las claves a str para que sea serializable en JSON
+    with open(f"{output_dir}/transition_undetermined_object.json", "w", encoding="utf-8") as f:
         serializable_dict = {str(k): v for k, v in tracker.transition_undetermined_object.items()}
+        json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
+    
+    with open(f"{output_dir}/transition_counts.json", "w", encoding="utf-8") as f:
+        serializable_dict = {str(k): v for k, v in tracker.transition_counts.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
