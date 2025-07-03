@@ -116,6 +116,8 @@ class ObjectTracker:
         
         # Matriz de transición de zonas
         self.transition_object: defaultdict[int, list[str, str]] = defaultdict(list)
+        self.transition_determined_object: defaultdict[int, list[str, str]] = defaultdict(list)
+        self.transition_undetermined_object: defaultdict[int, list[str, str]] = defaultdict(list)
             
         print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
 
@@ -270,15 +272,6 @@ class ObjectTracker:
             "box": box.tolist()
         })
 
-        # Almacenar punto central del bounding box para dibujar el trazado
-        center_x, center_y = self._get_center_bb(box)
-        self.track_history[track_id].append((center_x, center_y))
-        
-        # Dibujar el bounding box (bbox) del objeto
-        label = self.class_names.get(class_id, "indeterminado")
-        annotator = Annotator(frame, line_width=1)
-        annotator.box_label(box, f"{track_id} - {label}")
-
     def _calculate_entropy(self, track_data: List[Dict]) -> Tuple[Counter, float]:
         """
         Calcula la entropía de Shanon para las clasificaciones de un objeto a lo largo de su seguimiento.
@@ -359,14 +352,18 @@ class ObjectTracker:
                 if track_id in self.track_first_out_zone:
                     out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
                     self.transition_object[track_id].append((in_zone_label, out_zone_label))
+                    self.transition_determined_object[track_id].append((in_zone_label, out_zone_label))
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
                     self.transition_object[track_id].append((in_zone_label, "IND"))
+                    self.transition_undetermined_object[track_id].append((in_zone_label, "IND"))
             elif track_id in self.track_first_out_zone:
                 out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
                 self.transition_object[track_id].append(("IND", out_zone_label))
+                self.transition_undetermined_object[track_id].append(("IND", out_zone_label))
             else:
                 self.transition_object[track_id].append(("IND", "IND"))
+                self.transition_undetermined_object[track_id].append(("IND", "IND"))
 
 
     def process_frame(self, frame: np.ndarray, results: list, act_frame: int) -> np.ndarray:
@@ -581,7 +578,7 @@ if __name__ == "__main__":
         output_dir = os.path.join(input_dir, model_base_name)
         os.makedirs(output_dir, exist_ok=True)
         
-        output_filename = f"{input_filename_without_ext}_preprocessed{input_ext}"
+        output_filename = f"{input_filename_without_ext}_processed{input_ext}"
         final_output_video_path = os.path.join(output_dir, output_filename)
     
     show_video_window = not args.no_display
@@ -626,3 +623,12 @@ if __name__ == "__main__":
         serializable_dict = {str(k): v for k, v in tracker.transition_object.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
         
+    with open("transition_determined_object.json", "w", encoding="utf-8") as f:
+        # Convertir las claves a str para que sea serializable en JSON
+        serializable_dict = {str(k): v for k, v in tracker.transition_determined_object.items()}
+        json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
+        
+    with open("transition_undetermined_object.json", "w", encoding="utf-8") as f:
+        # Convertir las claves a str para que sea serializable en JSON
+        serializable_dict = {str(k): v for k, v in tracker.transition_undetermined_object.items()}
+        json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
