@@ -450,19 +450,6 @@ class ObjectTracker:
         # Si el número de frames es incierto o 0, deshabilitar el progreso en porcentaje
         progress_enabled = frames_to_process > 0 and frames_to_process != float('inf')
         
-        video_writer = None
-        # Solo intentar crear el VideoWriter si output_video_path no es None
-        if output_video_path is not None:
-            try:
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
-                video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
-                if not video_writer.isOpened():
-                    print(f"Advertencia: No se pudo abrir VideoWriter para {output_video_path}. El video no se guardará.")
-                    video_writer = None
-            except Exception as e:
-                print(f"Error al inicializar VideoWriter: {e}. El video no se guardará.")
-                video_writer = None
-
         act_frame = 0 # Contador de frames leídos (no de frames procesados por YOLO)
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
         if output_video_path:
@@ -509,14 +496,10 @@ class ObjectTracker:
                 # frame = cv2.resize(frame, (ancho_nuevo, alto_nuevo))
 
                 # Realizar seguimiento de objetos
-                results = self.model.track(frame, persist=True, verbose=False, agnostic_nms=True, tracker="botsort_custom.yaml")
+                results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker="botsort_custom.yaml")
                 
                 # Procesar el frame (dibujar zonas, BBs, etc.)
                 processed_frame = self.process_frame(frame, results, act_frame)
-                
-                # Escribir el frame en el archivo de salida si el VideoWriter está activo
-                if video_writer:
-                    video_writer.write(processed_frame)
 
                 # Mostrar el frame procesado SOLO SI display_video es True
                 if display_video:
@@ -537,8 +520,6 @@ class ObjectTracker:
 
         # Liberar recursos
         cap.release()
-        if video_writer:
-            video_writer.release()
         
         # Destruir ventanas SOLO si se mostraron
         if display_video:
