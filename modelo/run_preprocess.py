@@ -621,7 +621,6 @@ if __name__ == "__main__":
         serializable_dict = {str(k): v for k, v in tracker.data_obj_history.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
         
-    print(tracker.transition_object)
     with open("transition_object.json", "w", encoding="utf-8") as f:
         # Convertir las claves a str para que sea serializable en JSON
         serializable_dict = {str(k): v for k, v in tracker.transition_object.items()}
