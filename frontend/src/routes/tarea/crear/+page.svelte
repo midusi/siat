@@ -11,27 +11,29 @@
 	// Estado para localidad y distrito
 	let selectedLocality = $state('');
 	let selectedDistrict = $state('');
+	let selectedProvince = $state(1);
 
 	// Datos de localidades y distritos
 	let localities = $state<{ id: number; name: string }[]>([]);
 	let districts = $state<{ id: number; name: string }[]>([]);
+	let provinces = $state<{ id: number; name: string }[]>([]);
 
-	async function fetchLocalities() {
+	async function fetchProvinces() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/locality`);
+			const response = await fetch(`${BACKEND_URL}/province`);
 			if (!response.ok) {
-				throw new Error(`Error fetching localities: ${response.statusText}`);
+				throw new Error(`Error fetching provinces: ${response.statusText}`);
 			}
-			localities = await response.json();
+			provinces = await response.json();
 		} catch (error) {
 			console.error(error);
-			alert('Error al cargar las localidades.');
+			alert('Error al cargar las provincias.');
 		}
 	}
 
 	async function fetchDistricts() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/district`);
+			const response = await fetch(`${BACKEND_URL}/province/1/district`);
 			if (!response.ok) {
 				throw new Error(`Error fetching districts: ${response.statusText}`);
 			}
@@ -42,9 +44,33 @@
 		}
 	}
 
+	async function fetchLocalities() {
+		try {
+			const response = await fetch(`${BACKEND_URL}/district/${selectedDistrict}/locality`);
+			if (!response.ok) {
+				throw new Error(`Error fetching localities: ${response.statusText}`);
+			}
+			localities = await response.json();
+		} catch (error) {
+			console.error(error);
+			alert('Error al cargar las localidades.');
+		}
+	}
+
+	$effect(() => {
+		if (selectedProvince) {
+			fetchDistricts();
+		}
+	});
+
+	$effect(() => {
+		if (selectedDistrict) {
+			fetchLocalities();
+		}
+	});
+
 	onMount(() => {
-		fetchLocalities();
-		fetchDistricts();
+		fetchProvinces();
 	});
 
 	// Función para manejar la selección de archivos
@@ -147,22 +173,21 @@
 
 			<!-- Campos Localidad y Distrito (como selects independientes) -->
 			<div class="flex flex-col space-y-6">
-				<!-- Select de Localidad -->
+				<!-- Select de Provincia -->
 				<div class="flex flex-col space-y-2">
-					<label for="localidad" class="text-lg">Localidad</label>
+					<label for="provincia" class="text-lg">Provincia</label>
 					<select
-						id="localidad"
-						bind:value={selectedLocality}
+						id="provincia"
+						bind:value={selectedProvince}
 						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
 					>
 						<option value="" disabled selected>Seleccione una provincia</option>
-						{#each localities as locality}
-							<option value={locality.id}>{locality.name}</option>
+						{#each provinces as province}
+							<option value={province.id}>{province.name}</option>
 						{/each}
 					</select>
 					<div class="border-t border-gray-700 mt-2"></div>
 				</div>
-
 				<!-- Select de Distrito -->
 				<div class="flex flex-col space-y-2">
 					<label for="distrito" class="text-lg">Distrito</label>
@@ -174,6 +199,21 @@
 						<option value="" disabled selected>Seleccione un distrito</option>
 						{#each districts as district}
 							<option value={district.id}>{district.name}</option>
+						{/each}
+					</select>
+					<div class="border-t border-gray-700 mt-2"></div>
+				</div>
+				<!-- Select de Localidad -->
+				<div class="flex flex-col space-y-2">
+					<label for="localidad" class="text-lg">Localidad</label>
+					<select
+						id="localidad"
+						bind:value={selectedLocality}
+						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+					>
+						<option value="" disabled selected>Seleccione una provincia</option>
+						{#each localities as locality}
+							<option value={locality.id}>{locality.name}</option>
 						{/each}
 					</select>
 					<div class="border-t border-gray-700 mt-2"></div>
