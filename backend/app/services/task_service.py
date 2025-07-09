@@ -11,7 +11,6 @@ from app.services.locality_service import LocalityService
 from app.services.video_service import VideoService
 from app.services.task_status_service import TaskStatusService
 from app.services.task_status_history_service import TaskStatusHistoryService
-from app.services.route_service import RouteService
 from app.services.road_service import RoadService
 from app.crud import task as task_crud
 from app.schemas.task import TaskCreateRequest, TaskResponse, TaskConfigRequest
@@ -28,7 +27,6 @@ class TaskService:
         self.video_service = VideoService(db)
         self.task_status_service = TaskStatusService(db)
         self.task_status_history_service = TaskStatusHistoryService(db)
-        self.route_service = RouteService(db)
         self.road_service = RoadService(db)
         
     def get_list(self) -> list[TaskResponse]:
@@ -189,26 +187,20 @@ class TaskService:
         
         try:
             for i, road in enumerate(roads_in):
-                route = self.route_service.find_one_by_fields(id=road.route_id)
-                if not route:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La ruta no existe")
                 road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.IN,
                     polygon=road.polygon,
                     video_id=task.video.id,
-                    route_id=route.id,
                 )
                 self.db.add(road)
 
             for i, road in enumerate(roads_out):
-                route = self.route_service.find_one_by_fields(id=road.route_id)
                 road = Road(
                     number=i+1,
                     direction=RoadDirection.OUT,
                     polygon=road.polygon,
                     video_id=task.video.id,
-                    route_id=route.id,
                 )
                 self.db.add(road)
                 

@@ -2,7 +2,6 @@ from pydantic import BaseModel, field_validator
 from pydantic.config import ConfigDict
     
 class RoadRequest(BaseModel):
-    route_id: int
     polygon: tuple[float, float]
     
     model_config = ConfigDict(from_attributes=True)
