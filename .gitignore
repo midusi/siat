@@ -130,3 +130,6 @@ dist
 .pnp.*
 
 videos/
+**/.venv/
+**/__pycache__/
+**.svelte-kit
