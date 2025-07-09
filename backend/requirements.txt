@@ -9,3 +9,4 @@ passlib
 pymediainfo
 psycopg2-binary
 bcrypt
+boto3

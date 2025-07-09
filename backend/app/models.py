@@ -105,4 +105,16 @@ class Road(Base):
     
     video = relationship("Video")
     route = relationship("Route")
+
+
+class Inference(Base):
+    __tablename__ = "inference"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("task.id"), nullable=False)
+    url_transition_counts = Column(String, nullable=False)
+    url_transition_undetermined = Column(String, nullable=False)
+    url_video_processed = Column(String, nullable=False)
+    inferred_at = Column(DateTime, nullable=False)
     
+    task = relationship("Task", back_populates="inference")
