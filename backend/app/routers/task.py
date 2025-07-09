@@ -14,7 +14,59 @@ def get_list(service: TaskService = Depends(get_task_service)):
 
 @router.get("/{task_id}")
 def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
-    return service.get_task(task_id)
+    """
+    Obtiene los detalles de una tarea.
+    POR AHORA: Devuelve datos hardcodeados para el desarrollo del frontend.
+    A FUTURO: Deberá obtener estos datos de la base de datos o de archivos
+             asociados al task_id.
+    """
+    print(f"Backend: Solicitud recibida para la tarea con ID: {task_id}")
+
+    # Los datos que antes estaban en Svelte, ahora se sirven desde aquí.
+    # El backend es ahora la fuente de la verdad.
+    hardcoded_task_data = {
+        "id": task_id,
+        "name": f"Tarea de Prueba #{task_id}",
+        "videoPath": f"/video/videoPrueba.mp4",
+        "rutas": {
+            "0": {
+                "0": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "1": { "bicycle": 0, "bus": 0, "car": 6, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "2": { "bicycle": 0, "bus": 0, "car": 34, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "3": { "bicycle": 0, "bus": 0, "car": 8, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 }
+            },
+            "1": {
+                "0": { "bicycle": 0, "bus": 0, "car": 2, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "1": { "bicycle": 0, "bus": 0, "car": 1, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "2": { "bicycle": 0, "bus": 0, "car": 19, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "3": { "bicycle": 0, "bus": 0, "car": 23, "heavy_truck": 0, "light_truck": 1, "motorbike": 1 }
+            },
+            "2": {
+                "0": { "bicycle": 0, "bus": 0, "car": 77, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "1": { "bicycle": 0, "bus": 0, "car": 11, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "2": { "bicycle": 0, "bus": 0, "car": 4, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "3": { "bicycle": 0, "bus": 0, "car": 17, "heavy_truck": 0, "light_truck": 0, "motorbike": 2 }
+            },
+            "3": {
+                "0": { "bicycle": 0, "bus": 0, "car": 8, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "1": { "bicycle": 0, "bus": 0, "car": 22, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "2": { "bicycle": 0, "bus": 0, "car": 17, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                "3": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 }
+            }
+        },
+        "indeterminados": {
+            "1": ["A", "IND"],
+            "2": ["B", "IND"],
+            "3": ["IND", "C"],
+            "4": ["IND", "D"],
+            "5": ["IND", "IND"],
+        }
+    }
+
+    # Ignoramos el service por ahora y devolvemos directamente el diccionario.
+    # FastAPI lo convertirá automáticamente a JSON.
+    return hardcoded_task_data
+    # return service.get_task(task_id) # Esta línea se usará en el futuro
 
 @router.post("")
 async def create(
