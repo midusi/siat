@@ -67,6 +67,7 @@ class Task(Base):
     locality = relationship("Locality")
     
     status_history = relationship("TaskStatusHistory", back_populates="task", order_by="TaskStatusHistory.id.desc()")
+    inference = relationship("Inference", back_populates="task", uselist=False)
 
 class TaskStatus(Base):
     __tablename__ = "task_status"
