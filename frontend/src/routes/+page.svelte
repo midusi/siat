@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
+	import { BACKEND_URL } from '$lib/constants';
+
 	// Datos de ejemplo para la tabla
 	interface Task {
 		id: number;
@@ -18,7 +20,7 @@
 
 	onMount(async () => {
 		try {
-			const response = await fetch('http://127.0.0.1:8000/task');
+			const response = await fetch(`${BACKEND_URL}/task`);
 			if (!response.ok) {
 				throw new Error(`Error fetching tasks: ${response.statusText}`);
 			}

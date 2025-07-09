@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
+	import { BACKEND_URL } from '$lib/constants';
+
 	// Estado para el archivo seleccionado
 	let selectedFile = $state<File | null>(null);
 
@@ -16,7 +18,7 @@
 
 	async function fetchLocalities() {
 		try {
-			const response = await fetch('http://127.0.0.1:8000/locality');
+			const response = await fetch(`${BACKEND_URL}/locality`);
 			if (!response.ok) {
 				throw new Error(`Error fetching localities: ${response.statusText}`);
 			}
@@ -29,7 +31,7 @@
 
 	async function fetchDistricts() {
 		try {
-			const response = await fetch('http://127.0.0.1:8000/district');
+			const response = await fetch(`${BACKEND_URL}/district`);
 			if (!response.ok) {
 				throw new Error(`Error fetching districts: ${response.statusText}`);
 			}
@@ -80,7 +82,7 @@
 		formData.append('file', archivo);
 
 		try {
-			const response = await fetch('http://127.0.0.1:8000/task', {
+			const response = await fetch(`${BACKEND_URL}/task`, {
 				method: 'POST',
 				body: formData
 			});
