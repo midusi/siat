@@ -1,0 +1,12 @@
+fastapi[all]
+uvicorn
+sqlmodel
+sqlalchemy
+alembic
+pandas
+PyJWT>=2.0.0
+passlib
+pymediainfo
+psycopg2-binary
+bcrypt
+boto3

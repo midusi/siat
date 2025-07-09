@@ -133,3 +133,5 @@ videos/
 **/.venv/
 **/__pycache__/
 **.svelte-kit
+modelo/
+*.mp4
