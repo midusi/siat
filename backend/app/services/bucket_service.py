@@ -1,4 +1,5 @@
 # services/bucket_service.py
+from fastapi import UploadFile
 import json
 import boto3
 from botocore.client import Config
@@ -40,11 +41,11 @@ class BucketService:
         except Exception as e:
             print(f"Error al aplicar la política de bucket: {e}")
     
-    def upload(self, path: str, object_name: str):
+    def upload(self, file: UploadFile, object_name: str):
         self.set_public_read_policy()
         try:
-            self.s3_client.upload_file(path, self.BUCKET_NAME, object_name)
-            print(f"'{path}' subido a '{self.BUCKET_NAME}/{object_name}'")
+            self.s3_client.upload_fileobj(file.file, self.BUCKET_NAME, object_name)
+            print(f"'{file.filename}' subido a '{self.BUCKET_NAME}/{object_name}'")
         except Exception as e:
             print(f"Error al subir el archivo: {e}")
             
