@@ -25,3 +25,7 @@ def get_task_service(db: sessionmaker = Depends(get_db_session)):
 def get_video_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.video_service import VideoService
     return VideoService(db)
+
+def get_bucket_service():
+    from app.services.bucket_service import BucketService
+    return BucketService()

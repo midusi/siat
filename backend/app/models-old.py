@@ -99,9 +99,11 @@ class Inference(SQLModel, table=True):
     __tablename__ = "inference"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    video_id: int = Field(foreign_key="video.id")
+    task_id: int = Field(foreign_key="task.id")
+    url_transition_counts: str
+    url_transition_undetermined: str
+    url_video_processed: str
     inferred_at: datetime
-    total_vehicles: int
 
 
 class VehicleType(SQLModel, table=True):

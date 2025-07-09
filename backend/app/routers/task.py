@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, UploadFile, Form, File
 from app.auth.decorators import require_role
 from app.services.task_service import TaskService
 from app.schemas.task import TaskCreateRequest, TaskConfigRequest
-from app.services.dependencies import get_task_service
+from app.services.dependencies import get_task_service, get_bucket_service
+from app.services.bucket_service import BucketService
 from datetime import datetime
 
 router = APIRouter(prefix="/task", tags=["task"])
@@ -21,14 +22,23 @@ async def create(
     locality_id: int = Form(...),
     uploaded_at: datetime = Form(...), 
     file: UploadFile = File(...), 
-    service: TaskService = Depends(get_task_service)
+    service: TaskService = Depends(get_task_service),
+    bucket_service: BucketService = Depends(get_bucket_service)
 ):
+    # Upload file to MinIO
+    if not file.filename:
+        raise ValueError("File must be provided")
     task_request = TaskCreateRequest(
         name=name,
         locality_id=locality_id,
         uploaded_at=uploaded_at
     )
     task = service.create(task_request, file)
+    bucket_service.upload(
+        path=file.file,
+        object_name="task/" + str(task.id) + "/" + file.filename
+    )
+    file.file.close()
     return {"task": task}
 
 @router.post("/{task_id}/config")
