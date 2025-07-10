@@ -6,24 +6,65 @@
 	let { data } = $props();
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let notification = $state<string | null>(null);
+
+	// --- Referencias a elementos del DOM ---
+	let videoElement = $state<HTMLVideoElement | null>(null);
 
 	// --- Definiciones de Tipos ---
 	type Vehiculo = string;
 	type ConteoVehiculos = { [key: Vehiculo]: number };
 	type Rutas = { [entrada: string]: { [salida: string]: ConteoVehiculos } };
-	type Indeterminados = { [trackId: string]: [string, string] };
+	type BoundingBox = [string, string, string, string];
+	type Indeterminado = {
+		frame: string;
+		class: Vehiculo;
+		boundingBox: BoundingBox;
+		labels: [string, string];
+	};
+	type Indeterminados = { [trackId: string]: Indeterminado };
 	type FilaTabla = { tipo: string; [key: string]: string | number };
 
 	// --- Estado reactivo para los datos de la API ---
 	let videoPath = $state('');
+	let videoWidth = $state(0);
+	let videoHeight = $state(0);
+	let videoFps = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
 
 	function getVehicleName(key: Vehiculo): string {
+		if (!key) return 'N/A';
 		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
 	}
 
-	// --- Función para obtener los datos del backend ---
+	function showNotification(message: string, duration: number = 3000) {
+		notification = message;
+		setTimeout(() => {
+			notification = null;
+		}, duration);
+	}
+
+	async function updateBackendData() {
+		try {
+			const res = await fetch(`${BACKEND_URL}/task/${data.id}/update-data`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					rutas: rutas,
+					indeterminados: indeterminados
+				})
+			});
+			if (!res.ok) throw new Error('No se pudo guardar los cambios en el servidor.');
+			console.log('Datos actualizados en el backend.');
+			console.log('Response:', await res.json());
+			console.log('Rutas:', rutas);
+			console.log('Indeterminados:', indeterminados);
+		} catch (e: any) {
+			error = e.message;
+		}
+	}
+
 	async function fetchData(taskId: string) {
 		loading = true;
 		error = null;
@@ -32,6 +73,9 @@
 			if (!res.ok) throw new Error(`Error al obtener datos: ${res.statusText}`);
 			const apiData = await res.json();
 			videoPath = apiData.videoPath;
+			videoWidth = +apiData.videoWidth;
+			videoHeight = +apiData.videoHeight;
+			videoFps = +apiData.videoFps;
 			rutas = apiData.rutas;
 			indeterminados = apiData.indeterminados;
 		} catch (e: any) {
@@ -41,7 +85,6 @@
 		}
 	}
 
-	// --- Lógica de carga ---
 	onMount(() => {
 		const taskId = data.id;
 		if (taskId) fetchData(taskId);
@@ -51,19 +94,90 @@
 		}
 	});
 
-	// --- Derivación dinámica de los tipos de vehículos ---
-	// Se recalcula automáticamente cada vez que `rutas` cambia.
+	// --- LÓGICA DE INTERACCIÓN SIMPLIFICADA ---
+	function handleIndeterminateClick(trackId: string) {
+		if (!videoElement || !videoFps) return;
+		const item = indeterminados[trackId];
+		if (!item) return;
+
+		const timeInSeconds = parseInt(item.frame) / videoFps;
+		videoElement.currentTime = timeInSeconds;
+		videoElement.pause();
+	}
+
+	function handleKeyPress(event: KeyboardEvent, trackId: string) {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			handleIndeterminateClick(trackId);
+		}
+	}
+
+	// --- Lógica de Corrección de Datos ---
+	function handleConfirm(trackId: string, event: MouseEvent) {
+		event.stopPropagation();
+		const item = indeterminados[trackId];
+		const [entrada, salida] = item.labels;
+		const vehiculo = item.class;
+
+		if (rutas[entrada]?.[salida]?.[vehiculo] !== undefined) {
+			rutas[entrada][salida][vehiculo]++;
+		} else {
+			if (!rutas[entrada]) rutas[entrada] = {};
+			if (!rutas[entrada][salida]) rutas[entrada][salida] = {};
+			vehicleTypes.forEach((v) => {
+				if (rutas[entrada][salida][v] === undefined) {
+					rutas[entrada][salida][v] = 0;
+				}
+			});
+			rutas[entrada][salida][vehiculo] = 1;
+		}
+
+		delete indeterminados[trackId];
+		indeterminados = { ...indeterminados };
+		rutas = { ...rutas };
+		showNotification(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
+		updateBackendData();
+	}
+
+	function handleDelete(trackId: string, event: MouseEvent) {
+		event.stopPropagation();
+		delete indeterminados[trackId];
+		indeterminados = { ...indeterminados };
+		showNotification(`Vehículo indeterminado ${trackId} eliminado.`);
+		updateBackendData();
+	}
+
+	// --- Derivaciones de Datos para la UI ---
 	let vehicleTypes = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return [];
 		const allTypes = new Set<string>();
 		for (const entrada in rutas) {
 			for (const salida in rutas[entrada]) {
-				Object.keys(rutas[entrada][salida]).forEach((vehiculo) => {
-					allTypes.add(vehiculo);
-				});
+				Object.keys(rutas[entrada][salida]).forEach((vehiculo) => allTypes.add(vehiculo));
 			}
 		}
+		Object.values(indeterminados).forEach((item) => allTypes.add(item.class));
 		return Array.from(allTypes).sort();
+	});
+
+	let zoneIds = $derived.by(() => {
+		if (Object.keys(rutas).length === 0) return [];
+		const allZones = new Set<string>();
+		Object.keys(rutas).forEach((id) => allZones.add(id));
+		Object.values(rutas).forEach((salidas) =>
+			Object.keys(salidas).forEach((id) => allZones.add(id))
+		);
+		return Array.from(allZones).sort();
+	});
+
+	let sortedIndeterminados = $derived.by(() => {
+		return Object.entries(indeterminados).sort(([, a], [, b]) => {
+			const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
+			const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
+			if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
+			if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
+			return parseInt(a.frame) - parseInt(b.frame);
+		});
 	});
 
 	// Datos para la tabla de ENTRADAS
@@ -156,20 +270,17 @@
 		});
 		return { titulo: 'Detalle de Rutas (Entrada -> Salida)', entradasDetalle };
 	});
-
-	// Datos para la tabla de INDETERMINADOS
-	let indeterminadosData = $derived.by(() => {
-		if (Object.keys(indeterminados).length === 0) return null;
-		return Object.entries(indeterminados).map(([trackId, [entrada, salida]]) => ({
-			trackId,
-			entrada: entrada === 'IND' ? 'Indeterminada' : `Zona ${entrada}`,
-			salida: salida === 'IND' ? 'Indeterminada' : `Zona ${salida}`
-		}));
-	});
 </script>
 
+<!-- Notificación Flotante -->
+{#if notification}
+	<div class="fixed top-5 right-5 bg-green-600 text-white py-2 px-4 rounded-lg shadow-lg z-50">
+		{notification}
+	</div>
+{/if}
+
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
-	<div class="max-w-7xl mx-auto">
+	<div>
 		<h1 class="text-3xl font-bold mb-8 text-center">Revisar Video Analizado</h1>
 
 		{#if loading}
@@ -183,19 +294,108 @@
 				<span class="block sm:inline">{error}</span>
 			</div>
 		{:else}
-			<!-- Video Player -->
-			{#if videoPath !== ''}
-				<div class="rounded overflow-hidden border border-gray-600 bg-black mb-12">
-					<video class="w-full" controls autoplay>
-						<source src={videoPath} type="video/mp4" />
-						<track kind="captions" />
-						Tu navegador no soporta la reproducción de video.
-					</video>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+				<!-- Columna de Video -->
+				<div class="md:col-span-2">
+					{#if videoPath !== ''}
+						<div class="rounded overflow-hidden border border-gray-600 bg-black aspect-video">
+							<video class="w-full h-full" controls autoplay bind:this={videoElement}>
+								<source src={videoPath} type="video/mp4" />
+								<track kind="captions" />
+								Tu navegador no soporta la reproducción de video.
+							</video>
+							<!-- CANVAS ELIMINADO -->
+						</div>
+					{/if}
 				</div>
-			{/if}
+
+				<!-- Columna de Indeterminados -->
+				{#if sortedIndeterminados.length > 0}
+					<div class="bg-[#2a2f3a] p-4 rounded-lg shadow-lg flex flex-col">
+						<h3 class="text-xl font-semibold mb-4 text-center">Vehículos Indeterminados</h3>
+						<div class="overflow-y-auto flex-1">
+							<div class="space-y-3">
+								{#each sortedIndeterminados as [trackId, item] (trackId)}
+									{@const [entrada, salida] = item.labels}
+									{@const canConfirm = entrada !== 'IND' && salida !== 'IND'}
+									<div
+										class="bg-[#383f4f] p-3 rounded-md border border-gray-600 cursor-pointer hover:border-emerald-500 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400"
+										role="button"
+										tabindex="0"
+										onclick={() => handleIndeterminateClick(trackId)}
+										onkeydown={(e) => handleKeyPress(e, trackId)}
+									>
+										<div class="flex justify-between items-center mb-2">
+											<p class="font-bold text-lg">ID: {trackId}</p>
+											<button
+												onclick={(e) => handleDelete(trackId, e)}
+												class="text-red-400 hover:text-red-300 text-xs">Eliminar</button
+											>
+										</div>
+
+										<div class="grid grid-cols-3 gap-2 items-center mb-2 text-sm">
+											<label for="class-{trackId}" class="text-gray-400">Clase:</label>
+											<select
+												id="class-{trackId}"
+												bind:value={indeterminados[trackId].class}
+												onclick={(e) => e.stopPropagation()}
+												class="col-span-2 bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
+											>
+												{#each vehicleTypes as type}
+													<option value={type}>{getVehicleName(type)}</option>
+												{/each}
+											</select>
+										</div>
+
+										<div class="grid grid-cols-3 gap-2 items-center mb-3 text-sm">
+											<label for="entrada-{trackId}" class="text-gray-400">Ruta:</label>
+											<div class="col-span-2 flex items-center gap-1">
+												<select
+													id="entrada-{trackId}"
+													bind:value={indeterminados[trackId].labels[0]}
+													onclick={(e) => e.stopPropagation()}
+													class="bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
+												>
+													<option value="IND">IND</option>
+													{#each zoneIds as zone}
+														<option value={zone}>Zona {zone}</option>
+													{/each}
+												</select>
+												<span class="text-gray-400">→</span>
+												<select
+													id="salida-{trackId}"
+													bind:value={indeterminados[trackId].labels[1]}
+													onclick={(e) => e.stopPropagation()}
+													class="bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
+												>
+													<option value="IND">IND</option>
+													{#each zoneIds as zone}
+														<option value={zone}>Zona {zone}</option>
+													{/each}
+												</select>
+											</div>
+										</div>
+										<button
+											onclick={(e) => handleConfirm(trackId, e)}
+											disabled={!canConfirm}
+											class="w-full py-2 text-sm font-semibold rounded transition-colors"
+											class:bg-emerald-600={canConfirm}
+											class:hover:bg-emerald-500={canConfirm}
+											class:bg-gray-500={!canConfirm}
+											class:cursor-not-allowed={!canConfirm}
+										>
+											Confirmar Ruta
+										</button>
+									</div>
+								{/each}
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
 
 			<!-- Sección de Estadísticas -->
-			<div class="space-y-12">
+			<div class="max-w-7xl mx-auto space-y-12">
 				<!-- Tablas de Resumen (Entradas y Salidas) -->
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
 					<!-- Tabla de Entradas -->
@@ -310,36 +510,25 @@
 						</div>
 					</div>
 				{/if}
-
-				<!-- Tabla de Vehículos Indeterminados -->
-				{#if indeterminadosData}
-					<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
-						<h2 class="text-2xl font-semibold mb-4 text-center">
-							Vehículos con Trayectoria Indeterminada
-						</h2>
-						<div class="overflow-x-auto">
-							<table class="w-full text-sm text-left">
-								<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
-									<tr>
-										<th scope="col" class="px-4 py-3">Track ID</th>
-										<th scope="col" class="px-4 py-3">Entrada Detectada</th>
-										<th scope="col" class="px-4 py-3">Salida Detectada</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each indeterminadosData as item}
-										<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
-											<td class="px-4 py-2 font-medium">{item.trackId}</td>
-											<td class="px-4 py-2">{item.entrada}</td>
-											<td class="px-4 py-2">{item.salida}</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					</div>
-				{/if}
 			</div>
 		{/if}
 	</div>
 </div>
+
+<style>
+	.overflow-y-auto::-webkit-scrollbar {
+		width: 8px;
+	}
+	.overflow-y-auto::-webkit-scrollbar-track {
+		background: #2a2f3a;
+		border-radius: 10px;
+	}
+	.overflow-y-auto::-webkit-scrollbar-thumb {
+		background-color: #4a5568;
+		border-radius: 10px;
+		border: 2px solid #2a2f3a;
+	}
+	.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+		background-color: #718096;
+	}
+</style>

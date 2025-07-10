@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, Form, File
 from app.auth.decorators import require_role
 from app.services.task_service import TaskService
-from app.schemas.task import TaskCreateRequest, TaskConfigRequest
+from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
 from app.services.dependencies import get_task_service, get_bucket_service
 from app.services.bucket_service import BucketService
 from datetime import datetime
@@ -28,6 +28,9 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
         "id": task_id,
         "name": f"Tarea de Prueba #{task_id}",
         "videoPath": f"/video/videoPrueba.mp4",
+        "videoWidth": "1280",
+        "videoHeight": "720",
+        "videoFps": "30",
         "rutas": {
             "0": {
                 "0": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
@@ -55,11 +58,61 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
             }
         },
         "indeterminados": {
-            "1": ["A", "IND"],
-            "2": ["B", "IND"],
-            "3": ["IND", "C"],
-            "4": ["IND", "D"],
-            "5": ["IND", "IND"],
+            "1": {
+                "frame": "10",
+                "class": "car",
+                "boudingBox": [
+                    "1076.6845703125",
+                    "948.7716674804688",
+                    "1105.4195556640625",
+                    "994.1165771484375"
+                ],
+                "labels": ["0", "IND"],
+            },
+            "2": {
+                "frame": "20",
+                "class": "bus",
+                "boundingBox": [
+                    "1076.6845703125",
+                    "948.7716674804688",
+                    "1105.4195556640625",
+                    "994.1165771484375"
+                ],
+                "labels": ["1", "IND"],
+            },
+            "3": {
+                "frame": "30",
+                "class": "motorbike",
+                "boundingBox": [
+                    "1076.6845703125",
+                    "948.7716674804688",
+                    "1105.4195556640625",
+                    "994.1165771484375"
+                ],
+                "labels": ["IND", "2"],
+            },
+            "4": {
+                "frame": "40",
+                "class": "bicycle",
+                "boundingBox": [
+                    "1076.6845703125",
+                    "948.7716674804688",
+                    "1105.4195556640625",
+                    "994.1165771484375"
+                ],
+                "labels": ["IND", "3"],
+            },
+            "5": {
+                "frame": "50",
+                "class": "heavy_truck",
+                "boundingBox": [
+                    "1076.6845703125",
+                    "948.7716674804688",
+                    "1105.4195556640625",
+                    "994.1165771484375"
+                ],
+                "labels": ["IND", "IND"],
+            }
         }
     }
 
@@ -101,3 +154,16 @@ async def config(
 ):
     task = service.config(task_config_request, task_id)
     return {"task": task}
+
+@router.post("/{task_id}/update-data")
+async def update_data(task_id: int, updated_data: TaskUpdateData):
+    """
+    Recibe los datos actualizados de `rutas` e `indeterminados` desde el frontend.
+    """
+    print(f"Backend: Actualización recibida para la tarea con ID: {task_id}")
+
+    # Ahora puedes acceder a los datos enviados por el frontend
+    print("\n--- Data Recibida ---")
+    print(updated_data)
+
+    return {"status": "success", "message": f"Task {task_id} data received and processed."}

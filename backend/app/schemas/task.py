@@ -26,3 +26,7 @@ class TaskConfigRequest(BaseModel):
     roads_out: list[RoadRequest]
     
     model_config = ConfigDict(from_attributes=True)
+
+class TaskUpdateData(BaseModel):
+    rutas: dict
+    indeterminados: dict
