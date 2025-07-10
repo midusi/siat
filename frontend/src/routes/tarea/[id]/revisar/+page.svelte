@@ -8,8 +8,8 @@
 	let error = $state<string | null>(null);
 
 	// --- Definiciones de Tipos ---
-	type Vehiculo = 'bicycle' | 'bus' | 'car' | 'heavy_truck' | 'light_truck' | 'motorbike';
-	type ConteoVehiculos = { [key in Vehiculo]: number };
+	type Vehiculo = string;
+	type ConteoVehiculos = { [key: Vehiculo]: number };
 	type Rutas = { [entrada: string]: { [salida: string]: ConteoVehiculos } };
 	type Indeterminados = { [trackId: string]: [string, string] };
 	type FilaTabla = { tipo: string; [key: string]: string | number };
@@ -19,29 +19,8 @@
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
 
-	// --- Constantes y funciones de ayuda ---
-	const VEHICLE_TYPES: Vehiculo[] = [
-		'car',
-		'motorbike',
-		'bus',
-		'light_truck',
-		'heavy_truck',
-		'bicycle'
-	];
-	const VEHICLE_NAMES: Record<Vehiculo, string> = {
-		car: 'Automóvil',
-		motorbike: 'Motocicleta',
-		bus: 'Autobús',
-		light_truck: 'Camión Ligero',
-		heavy_truck: 'Camión Pesado',
-		bicycle: 'Bicicleta'
-	};
-
-	// --- FUNCIÓN PARA ETIQUETAS ALFABÉTICAS ---
-	function getLetterLabel(id: string): string {
-		const numericId = parseInt(id, 10);
-		if (isNaN(numericId)) return id;
-		return String.fromCharCode(65 + numericId);
+	function getVehicleName(key: Vehiculo): string {
+		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
 	}
 
 	// --- Función para obtener los datos del backend ---
@@ -72,21 +51,34 @@
 		}
 	});
 
-	// --- Transformación de datos usando $derived (CON ETIQUETAS ALFABÉTICAS) ---
+	// --- Derivación dinámica de los tipos de vehículos ---
+	// Se recalcula automáticamente cada vez que `rutas` cambia.
+	let vehicleTypes = $derived.by(() => {
+		if (Object.keys(rutas).length === 0) return [];
+		const allTypes = new Set<string>();
+		for (const entrada in rutas) {
+			for (const salida in rutas[entrada]) {
+				Object.keys(rutas[entrada][salida]).forEach((vehiculo) => {
+					allTypes.add(vehiculo);
+				});
+			}
+		}
+		return Array.from(allTypes).sort();
+	});
 
-	// 1. Datos para la tabla de ENTRADAS
+	// Datos para la tabla de ENTRADAS
 	let entradasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const entradasIds = Object.keys(rutas).sort();
-		const columnasPrincipales = entradasIds.map((id) => `Entrada ${getLetterLabel(id)}`);
+		const columnasPrincipales = entradasIds.map((id) => `Entrada ${id}`);
 		const totalGeneral: FilaTabla = {
 			tipo: 'Total',
 			...Object.fromEntries(columnasPrincipales.map((c) => [c, 0]))
 		};
-		const datos = VEHICLE_TYPES.map((vehiculo) => {
-			const fila: FilaTabla = { tipo: VEHICLE_NAMES[vehiculo] };
+		const datos = vehicleTypes.map((vehiculo) => {
+			const fila: FilaTabla = { tipo: getVehicleName(vehiculo) };
 			entradasIds.forEach((entradaId) => {
-				const nombreColumna = `Entrada ${getLetterLabel(entradaId)}`;
+				const nombreColumna = `Entrada ${entradaId}`;
 				const totalVehiculoPorEntrada = Object.values(rutas[entradaId] || {}).reduce(
 					(sum, salida) => sum + (salida[vehiculo] ?? 0),
 					0
@@ -104,19 +96,19 @@
 		};
 	});
 
-	// 2. Datos para la tabla de SALIDAS
+	// Datos para la tabla de SALIDAS
 	let salidasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const salidasIds = [...new Set(Object.values(rutas).flatMap(Object.keys))].sort();
-		const columnasPrincipales = salidasIds.map((id) => `Salida ${getLetterLabel(id)}`);
+		const columnasPrincipales = salidasIds.map((id) => `Salida ${id}`);
 		const totalGeneral: FilaTabla = {
 			tipo: 'Total',
 			...Object.fromEntries(columnasPrincipales.map((c) => [c, 0]))
 		};
-		const datos = VEHICLE_TYPES.map((vehiculo) => {
-			const fila: FilaTabla = { tipo: VEHICLE_NAMES[vehiculo] };
+		const datos = vehicleTypes.map((vehiculo) => {
+			const fila: FilaTabla = { tipo: getVehicleName(vehiculo) };
 			salidasIds.forEach((salidaId) => {
-				const nombreColumna = `Salida ${getLetterLabel(salidaId)}`;
+				const nombreColumna = `Salida ${salidaId}`;
 				let totalVehiculoPorSalida = 0;
 				for (const entradaId in rutas) {
 					totalVehiculoPorSalida += rutas[entradaId]?.[salidaId]?.[vehiculo] ?? 0;
@@ -134,21 +126,21 @@
 		};
 	});
 
-	// 3. Datos para la tabla detallada de RUTAS
+	// Datos para la tabla detallada de RUTAS
 	let rutasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const entradasIds = Object.keys(rutas).sort();
 		const entradasDetalle = entradasIds.map((entradaId) => {
 			const salidasDeEntradaIds = Object.keys(rutas[entradaId]).sort();
-			const columnasSalida = salidasDeEntradaIds.map((id) => `Salida ${getLetterLabel(id)}`);
+			const columnasSalida = salidasDeEntradaIds.map((id) => `Salida ${id}`);
 			const totalEntrada: FilaTabla = {
 				tipo: 'Total',
 				...Object.fromEntries(columnasSalida.map((c) => [c, 0]))
 			};
-			const datos = VEHICLE_TYPES.map((vehiculo) => {
-				const fila: FilaTabla = { tipo: VEHICLE_NAMES[vehiculo] };
+			const datos = vehicleTypes.map((vehiculo) => {
+				const fila: FilaTabla = { tipo: getVehicleName(vehiculo) };
 				salidasDeEntradaIds.forEach((salidaId) => {
-					const nombreColumna = `Salida ${getLetterLabel(salidaId)}`;
+					const nombreColumna = `Salida ${salidaId}`;
 					const conteo = rutas[entradaId][salidaId][vehiculo] ?? 0;
 					fila[nombreColumna] = conteo;
 					(totalEntrada[nombreColumna] as number) += conteo;
@@ -156,7 +148,7 @@
 				return fila;
 			});
 			return {
-				nombreEntrada: `Desde Entrada ${getLetterLabel(entradaId)}`,
+				nombreEntrada: `Desde Entrada ${entradaId}`,
 				columnasSalida,
 				datos,
 				total: totalEntrada
@@ -165,18 +157,17 @@
 		return { titulo: 'Detalle de Rutas (Entrada -> Salida)', entradasDetalle };
 	});
 
-	// 4. Datos para la tabla de INDETERMINADOS
+	// Datos para la tabla de INDETERMINADOS
 	let indeterminadosData = $derived.by(() => {
 		if (Object.keys(indeterminados).length === 0) return null;
 		return Object.entries(indeterminados).map(([trackId, [entrada, salida]]) => ({
 			trackId,
-			entrada: entrada === 'IND' ? 'Indeterminada' : `Zona ${getLetterLabel(entrada)}`,
-			salida: salida === 'IND' ? 'Indeterminada' : `Zona ${getLetterLabel(salida)}`
+			entrada: entrada === 'IND' ? 'Indeterminada' : `Zona ${entrada}`,
+			salida: salida === 'IND' ? 'Indeterminada' : `Zona ${salida}`
 		}));
 	});
 </script>
 
-<!-- Tu código HTML permanece exactamente igual -->
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
 	<div class="max-w-7xl mx-auto">
 		<h1 class="text-3xl font-bold mb-8 text-center">Revisar Video Analizado</h1>
@@ -196,7 +187,6 @@
 			{#if videoPath !== ''}
 				<div class="rounded overflow-hidden border border-gray-600 bg-black mb-12">
 					<video class="w-full" controls autoplay>
-						<!-- 'autoplay' es opcional pero útil para ver el efecto -->
 						<source src={videoPath} type="video/mp4" />
 						<track kind="captions" />
 						Tu navegador no soporta la reproducción de video.

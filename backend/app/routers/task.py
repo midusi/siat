@@ -28,9 +28,6 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
         "id": task_id,
         "name": f"Tarea de Prueba #{task_id}",
         "videoPath": f"/video/videoPrueba.mp4",
-        "videoWidth": "1280",
-        "videoHeight": "720",
-        "videoFps": "30",
         "rutas": {
             "0": {
                 "0": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
@@ -58,56 +55,11 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
             }
         },
         "indeterminados": {
-            "1": {
-                "frame": "10",
-                "boudingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
-                ],
-                "labels": ["A", "IND"],
-            },
-            "2": {
-                "frame": "20",
-                "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
-                ],
-                "labels": ["B", "IND"],
-            },
-            "3": {
-                "frame": "30",
-                "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
-                ],
-                "labels": ["IND", "C"],
-            },
-            "4": {
-                "frame": "40",
-                "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
-                ],
-                "labels": ["IND", "D"],
-            },
-            "5": {
-                "frame": "50",
-                "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
-                ],
-                "labels": ["IND", "IND"],
-            }
+            "1": ["A", "IND"],
+            "2": ["B", "IND"],
+            "3": ["IND", "C"],
+            "4": ["IND", "D"],
+            "5": ["IND", "IND"],
         }
     }
 
