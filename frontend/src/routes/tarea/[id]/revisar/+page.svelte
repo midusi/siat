@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { BACKEND_URL } from '$lib/constants';
 
 	// --- Props y estado inicial ---
@@ -10,6 +10,7 @@
 
 	// --- Referencias a elementos del DOM ---
 	let videoElement = $state<HTMLVideoElement | null>(null);
+	let videoHeightPx = $state(0);
 
 	// --- Definiciones de Tipos ---
 	type Vehiculo = string;
@@ -32,6 +33,14 @@
 	let videoFps = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
+
+	function syncHeight() {
+		if (videoElement) {
+			// Medimos la altura renderizada del video y la guardamos en nuestro estado.
+			videoHeightPx = videoElement.clientHeight;
+		}
+		console.log(videoHeightPx);
+	}
 
 	function getVehicleName(key: Vehiculo): string {
 		if (!key) return 'N/A';
@@ -92,6 +101,9 @@
 			error = 'No se proporcionó un ID de tarea.';
 			loading = false;
 		}
+
+		// Sincronizar altura cuando la ventana cambie de tamaño
+		window.addEventListener('resize', syncHeight);
 	});
 
 	// --- LÓGICA DE INTERACCIÓN SIMPLIFICADA ---
@@ -280,239 +292,247 @@
 {/if}
 
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
-	<div>
-		<h1 class="text-3xl font-bold mb-8 text-center">Revisar Video Analizado</h1>
+	<h1 class="text-3xl font-bold mb-8 text-center">Revisar Video Analizado</h1>
 
-		{#if loading}
-			<p class="text-center text-xl">Cargando datos de la tarea...</p>
-		{:else if error}
-			<div
-				class="bg-red-900 border border-red-600 text-red-100 px-4 py-3 rounded-lg text-center"
-				role="alert"
-			>
-				<strong class="font-bold">¡Error!</strong>
-				<span class="block sm:inline">{error}</span>
-			</div>
-		{:else}
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-				<!-- Columna de Video -->
-				<div class="md:col-span-2">
-					{#if videoPath !== ''}
-						<div class="rounded overflow-hidden border border-gray-600 bg-black aspect-video">
-							<video class="w-full h-full" controls autoplay bind:this={videoElement}>
-								<source src={videoPath} type="video/mp4" />
-								<track kind="captions" />
-								Tu navegador no soporta la reproducción de video.
-							</video>
-							<!-- CANVAS ELIMINADO -->
-						</div>
-					{/if}
-				</div>
-
-				<!-- Columna de Indeterminados -->
-				{#if sortedIndeterminados.length > 0}
-					<div class="bg-[#2a2f3a] p-4 rounded-lg shadow-lg flex flex-col">
-						<h3 class="text-xl font-semibold mb-4 text-center">Vehículos Indeterminados</h3>
-						<div class="overflow-y-auto flex-1">
-							<div class="space-y-3">
-								{#each sortedIndeterminados as [trackId, item] (trackId)}
-									{@const [entrada, salida] = item.labels}
-									{@const canConfirm = entrada !== 'IND' && salida !== 'IND'}
-									<div
-										class="bg-[#383f4f] p-3 rounded-md border border-gray-600 cursor-pointer hover:border-emerald-500 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400"
-										role="button"
-										tabindex="0"
-										onclick={() => handleIndeterminateClick(trackId)}
-										onkeydown={(e) => handleKeyPress(e, trackId)}
-									>
-										<div class="flex justify-between items-center mb-2">
-											<p class="font-bold text-lg">ID: {trackId}</p>
-											<button
-												onclick={(e) => handleDelete(trackId, e)}
-												class="text-red-400 hover:text-red-300 text-xs">Eliminar</button
-											>
-										</div>
-
-										<div class="grid grid-cols-3 gap-2 items-center mb-2 text-sm">
-											<label for="class-{trackId}" class="text-gray-400">Clase:</label>
-											<select
-												id="class-{trackId}"
-												bind:value={indeterminados[trackId].class}
-												onclick={(e) => e.stopPropagation()}
-												class="col-span-2 bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
-											>
-												{#each vehicleTypes as type}
-													<option value={type}>{getVehicleName(type)}</option>
-												{/each}
-											</select>
-										</div>
-
-										<div class="grid grid-cols-3 gap-2 items-center mb-3 text-sm">
-											<label for="entrada-{trackId}" class="text-gray-400">Ruta:</label>
-											<div class="col-span-2 flex items-center gap-1">
-												<select
-													id="entrada-{trackId}"
-													bind:value={indeterminados[trackId].labels[0]}
-													onclick={(e) => e.stopPropagation()}
-													class="bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
-												>
-													<option value="IND">IND</option>
-													{#each zoneIds as zone}
-														<option value={zone}>Zona {zone}</option>
-													{/each}
-												</select>
-												<span class="text-gray-400">→</span>
-												<select
-													id="salida-{trackId}"
-													bind:value={indeterminados[trackId].labels[1]}
-													onclick={(e) => e.stopPropagation()}
-													class="bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
-												>
-													<option value="IND">IND</option>
-													{#each zoneIds as zone}
-														<option value={zone}>Zona {zone}</option>
-													{/each}
-												</select>
-											</div>
-										</div>
-										<button
-											onclick={(e) => handleConfirm(trackId, e)}
-											disabled={!canConfirm}
-											class="w-full py-2 text-sm font-semibold rounded transition-colors"
-											class:bg-emerald-600={canConfirm}
-											class:hover:bg-emerald-500={canConfirm}
-											class:bg-gray-500={!canConfirm}
-											class:cursor-not-allowed={!canConfirm}
-										>
-											Confirmar Ruta
-										</button>
-									</div>
-								{/each}
-							</div>
-						</div>
+	{#if loading}
+		<p class="text-center text-xl">Cargando datos de la tarea...</p>
+	{:else if error}
+		<div
+			class="bg-red-900 border border-red-600 text-red-100 px-4 py-3 rounded-lg text-center"
+			role="alert"
+		>
+			<strong class="font-bold">¡Error!</strong>
+			<span class="block sm:inline">{error}</span>
+		</div>
+	{:else}
+		<!-- Contenedor Flexbox para centrar el video y la lista -->
+		<div class="flex flex-wrap justify-center items-start gap-8 mb-12">
+			<!-- Columna de Video (ahora un item de flex) -->
+			<div class="w-full lg:w-2/3 max-w-5xl">
+				{#if videoPath !== ''}
+					<div class="rounded overflow-hidden border border-gray-600 bg-black aspect-video">
+						<video
+							class="w-full h-full"
+							controls
+							autoplay
+							bind:this={videoElement}
+							onloadedmetadata={syncHeight}
+						>
+							<source src={videoPath} type="video/mp4" />
+							<track kind="captions" />
+							Tu navegador no soporta la reproducción de video.
+						</video>
 					</div>
 				{/if}
 			</div>
 
-			<!-- Sección de Estadísticas -->
-			<div class="max-w-7xl mx-auto space-y-12">
-				<!-- Tablas de Resumen (Entradas y Salidas) -->
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-					<!-- Tabla de Entradas -->
-					{#if entradasData}
-						<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
-							<h2 class="text-2xl font-semibold mb-4 text-center">{entradasData.titulo}</h2>
-							<div class="overflow-x-auto">
-								<table class="w-full text-sm text-left">
-									<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
-										<tr>
-											<th scope="col" class="px-4 py-3">Vehículo</th>
-											{#each entradasData.columnasPrincipales as col}
-												<th scope="col" class="px-4 py-3 text-center">{col}</th>
-											{/each}
-										</tr>
-									</thead>
-									<tbody>
-										{#each entradasData.datos as item}
-											<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
-												<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
-												{#each entradasData.columnasPrincipales as col}
-													<td class="px-4 py-2 text-center">{item[col]}</td>
-												{/each}
-											</tr>
-										{/each}
-										<tr class="font-semibold bg-[#383f4f]">
-											<td class="px-4 py-2">{entradasData.total.tipo}</td>
-											{#each entradasData.columnasPrincipales as col}
-												<td class="px-4 py-2 text-center">{entradasData.total[col]}</td>
-											{/each}
-										</tr>
-									</tbody>
-								</table>
-							</div>
-						</div>
-					{/if}
+			<!-- Columna de Indeterminados (ahora un item de flex) -->
+			{#if sortedIndeterminados.length > 0}
+				<div
+					class="w-full md:w-auto bg-[#2a2f3a] p-4 rounded-lg shadow-lg max-w-[450px] overflow-y-auto"
+					style:height={videoHeightPx > 0 ? `${videoHeightPx}px` : 'auto'}
+				>
+					<h3 class="text-xl font-semibold mb-4 text-center">Vehículos Indeterminados</h3>
 
-					<!-- Tabla de Salidas -->
-					{#if salidasData}
-						<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
-							<h2 class="text-2xl font-semibold mb-4 text-center">{salidasData.titulo}</h2>
-							<div class="overflow-x-auto">
-								<table class="w-full text-sm text-left">
-									<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
-										<tr>
-											<th scope="col" class="px-4 py-3">Vehículo</th>
-											{#each salidasData.columnasPrincipales as col}
-												<th scope="col" class="px-4 py-3 text-center">{col}</th>
-											{/each}
-										</tr>
-									</thead>
-									<tbody>
-										{#each salidasData.datos as item}
-											<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
-												<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
-												{#each salidasData.columnasPrincipales as col}
-													<td class="px-4 py-2 text-center">{item[col]}</td>
-												{/each}
-											</tr>
-										{/each}
-										<tr class="font-semibold bg-[#383f4f]">
-											<td class="px-4 py-2">{salidasData.total.tipo}</td>
-											{#each salidasData.columnasPrincipales as col}
-												<td class="px-4 py-2 text-center">{salidasData.total[col]}</td>
-											{/each}
-										</tr>
-									</tbody>
-								</table>
-							</div>
-						</div>
-					{/if}
-				</div>
-
-				<!-- Tabla detallada de Rutas -->
-				{#if rutasData}
-					<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
-						<h2 class="text-2xl font-semibold mb-6 text-center">{rutasData.titulo}</h2>
-						<div class="space-y-8">
-							{#each rutasData.entradasDetalle as entrada}
-								<div>
-									<h3 class="text-xl font-medium mb-3 text-gray-300">{entrada.nombreEntrada}</h3>
-									<div class="overflow-x-auto">
-										<table class="w-full text-sm text-left">
-											<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
-												<tr>
-													<th scope="col" class="px-4 py-3">Vehículo</th>
-													{#each entrada.columnasSalida as colName}
-														<th scope="col" class="px-4 py-3 text-center">{colName}</th>
-													{/each}
-												</tr>
-											</thead>
-											<tbody>
-												{#each entrada.datos as item}
-													<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
-														<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
-														{#each entrada.columnasSalida as colName}
-															<td class="px-4 py-2 text-center">{item[colName]}</td>
-														{/each}
-													</tr>
-												{/each}
-												<tr class="font-semibold bg-[#383f4f]">
-													<td class="px-4 py-2">{entrada.total.tipo}</td>
-													{#each entrada.columnasSalida as colName}
-														<td class="px-4 py-2 text-center">{entrada.total[colName]}</td>
-													{/each}
-												</tr>
-											</tbody>
-										</table>
+					<div class="overflow-y-auto flex-1">
+						<div class="space-y-3">
+							{#each sortedIndeterminados as [trackId, item] (trackId)}
+								{@const [entrada, salida] = item.labels}
+								{@const canConfirm = entrada !== 'IND' && salida !== 'IND'}
+								<div
+									class="bg-[#383f4f] p-3 rounded-md border border-gray-600 cursor-pointer hover:border-emerald-500 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400"
+									role="button"
+									tabindex="0"
+									onclick={() => handleIndeterminateClick(trackId)}
+									onkeydown={(e) => handleKeyPress(e, trackId)}
+								>
+									<!-- El resto del contenido de la tarjeta de indeterminado va aquí... -->
+									<!-- ... (no es necesario pegarlo todo, solo asegúrate de que esté dentro de este div) -->
+									<div class="flex justify-between items-center mb-2">
+										<p class="font-bold text-lg">ID: {trackId}</p>
+										<button
+											onclick={(e) => handleDelete(trackId, e)}
+											class="text-red-400 hover:text-red-300 text-xs">Eliminar</button
+										>
 									</div>
+									<div class="grid grid-cols-3 gap-2 items-center mb-2 text-sm">
+										<label for="class-{trackId}" class="text-gray-400">Clase:</label>
+										<select
+											id="class-{trackId}"
+											bind:value={indeterminados[trackId].class}
+											onclick={(e) => e.stopPropagation()}
+											class="col-span-2 bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
+										>
+											{#each vehicleTypes as type}
+												<option value={type}>{getVehicleName(type)}</option>
+											{/each}
+										</select>
+									</div>
+									<div class="grid grid-cols-3 gap-2 items-center mb-3 text-sm">
+										<label for="entrada-{trackId}" class="text-gray-400">Ruta:</label>
+										<div class="col-span-2 flex items-center gap-1">
+											<select
+												id="entrada-{trackId}"
+												bind:value={indeterminados[trackId].labels[0]}
+												onclick={(e) => e.stopPropagation()}
+												class="bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
+											>
+												<option value="IND">IND</option>
+												{#each zoneIds as zone}
+													<option value={zone}>Zona {zone}</option>
+												{/each}
+											</select>
+											<span class="text-gray-400">→</span>
+											<select
+												id="salida-{trackId}"
+												bind:value={indeterminados[trackId].labels[1]}
+												onclick={(e) => e.stopPropagation()}
+												class="bg-[#2a2f3a] border border-gray-500 rounded px-2 py-1 w-full"
+											>
+												<option value="IND">IND</option>
+												{#each zoneIds as zone}
+													<option value={zone}>Zona {zone}</option>
+												{/each}
+											</select>
+										</div>
+									</div>
+									<button
+										onclick={(e) => handleConfirm(trackId, e)}
+										disabled={!canConfirm}
+										class="w-full py-2 text-sm font-semibold rounded transition-colors"
+										class:bg-emerald-600={canConfirm}
+										class:hover:bg-emerald-500={canConfirm}
+										class:bg-gray-500={!canConfirm}
+										class:cursor-not-allowed={!canConfirm}
+									>
+										Confirmar Ruta
+									</button>
 								</div>
 							{/each}
 						</div>
 					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Sección de Estadísticas -->
+		<div class="max-w-7xl mx-auto space-y-12">
+			<!-- Tablas de Resumen (Entradas y Salidas) -->
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+				<!-- Tabla de Entradas -->
+				{#if entradasData}
+					<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
+						<h2 class="text-2xl font-semibold mb-4 text-center">{entradasData.titulo}</h2>
+						<div class="overflow-x-auto">
+							<table class="w-full text-sm text-left">
+								<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
+									<tr>
+										<th scope="col" class="px-4 py-3">Vehículo</th>
+										{#each entradasData.columnasPrincipales as col}
+											<th scope="col" class="px-4 py-3 text-center">{col}</th>
+										{/each}
+									</tr>
+								</thead>
+								<tbody>
+									{#each entradasData.datos as item}
+										<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
+											<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
+											{#each entradasData.columnasPrincipales as col}
+												<td class="px-4 py-2 text-center">{item[col]}</td>
+											{/each}
+										</tr>
+									{/each}
+									<tr class="font-semibold bg-[#383f4f]">
+										<td class="px-4 py-2">{entradasData.total.tipo}</td>
+										{#each entradasData.columnasPrincipales as col}
+											<td class="px-4 py-2 text-center">{entradasData.total[col]}</td>
+										{/each}
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Tabla de Salidas -->
+				{#if salidasData}
+					<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
+						<h2 class="text-2xl font-semibold mb-4 text-center">{salidasData.titulo}</h2>
+						<div class="overflow-x-auto">
+							<table class="w-full text-sm text-left">
+								<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
+									<tr>
+										<th scope="col" class="px-4 py-3">Vehículo</th>
+										{#each salidasData.columnasPrincipales as col}
+											<th scope="col" class="px-4 py-3 text-center">{col}</th>
+										{/each}
+									</tr>
+								</thead>
+								<tbody>
+									{#each salidasData.datos as item}
+										<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
+											<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
+											{#each salidasData.columnasPrincipales as col}
+												<td class="px-4 py-2 text-center">{item[col]}</td>
+											{/each}
+										</tr>
+									{/each}
+									<tr class="font-semibold bg-[#383f4f]">
+										<td class="px-4 py-2">{salidasData.total.tipo}</td>
+										{#each salidasData.columnasPrincipales as col}
+											<td class="px-4 py-2 text-center">{salidasData.total[col]}</td>
+										{/each}
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
 				{/if}
 			</div>
-		{/if}
-	</div>
+
+			<!-- Tabla detallada de Rutas -->
+			{#if rutasData}
+				<div class="bg-[#2a2f3a] p-6 rounded-lg shadow-lg">
+					<h2 class="text-2xl font-semibold mb-6 text-center">{rutasData.titulo}</h2>
+					<div class="space-y-8">
+						{#each rutasData.entradasDetalle as entrada}
+							<div>
+								<h3 class="text-xl font-medium mb-3 text-gray-300">{entrada.nombreEntrada}</h3>
+								<div class="overflow-x-auto">
+									<table class="w-full text-sm text-left">
+										<thead class="text-xs text-gray-300 uppercase bg-[#383f4f]">
+											<tr>
+												<th scope="col" class="px-4 py-3">Vehículo</th>
+												{#each entrada.columnasSalida as colName}
+													<th scope="col" class="px-4 py-3 text-center">{colName}</th>
+												{/each}
+											</tr>
+										</thead>
+										<tbody>
+											{#each entrada.datos as item}
+												<tr class="border-b border-gray-700 hover:bg-[#383f4f]">
+													<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
+													{#each entrada.columnasSalida as colName}
+														<td class="px-4 py-2 text-center">{item[colName]}</td>
+													{/each}
+												</tr>
+											{/each}
+											<tr class="font-semibold bg-[#383f4f]">
+												<td class="px-4 py-2">{entrada.total.tipo}</td>
+												{#each entrada.columnasSalida as colName}
+													<td class="px-4 py-2 text-center">{entrada.total[colName]}</td>
+												{/each}
+											</tr>
+										</tbody>
+									</table>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
