@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, Form, File
 from app.auth.decorators import require_role
 from app.services.task_service import TaskService
-from app.schemas.task import TaskCreateRequest, TaskConfigRequest
+from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
 from app.services.dependencies import get_task_service
 from datetime import datetime
 
