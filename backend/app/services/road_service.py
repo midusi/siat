@@ -12,7 +12,7 @@ class RoadService:
     def get_by_id(self, road_id: str) -> Road:
         return road_crud.find_one_by_fields(self.db, id=road_id)
         
-    def find_by_fields(self, **filters) -> Road:
+    def find_by_fields(self, **filters) -> list[Road] | None:
         return road_crud.find_by_fields(self.db, **filters)
         
     def create(self, number: int, direction: RoadDirection, polygon: tuple[float, float], video_id: int) -> Road:
