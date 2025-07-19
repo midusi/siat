@@ -19,6 +19,7 @@ from app.schemas.locality import LocalityWDistrictResponse
 from app.schemas.district import DistrictResponse
 from app.models import Task, Video, TaskStatusHistory, Road
 from app.enums.road_direction import RoadDirection
+from app.services.bucket_service import BucketService
 
 class TaskService:
     def __init__(self, db: sessionmaker):
@@ -28,6 +29,7 @@ class TaskService:
         self.task_status_service = TaskStatusService(db)
         self.task_status_history_service = TaskStatusHistoryService(db)
         self.road_service = RoadService(db)
+        self.bucket_service = BucketService()
         
     def get_list(self) -> list[TaskResponse]:
         tasks = task_crud.find_all(self.db)
@@ -51,7 +53,7 @@ class TaskService:
                     "id": history.task_status.id,
                     "name": history.task_status.name
                 },
-                "uploaded_at": task.uploaded_at.isoformat()
+                "created_at": task.created_at.isoformat()
             })
             responses.append(task_response)
         return responses
@@ -79,7 +81,7 @@ class TaskService:
                 "id": history.task_status.id,
                 "name": history.task_status.name
             },
-            "uploaded_at": task.uploaded_at.isoformat()
+            "created_at": task.created_at.isoformat()
         })
         return task_response
         
@@ -91,17 +93,16 @@ class TaskService:
         # Validate task data
         name = task_request.name
         locality_id = task_request.locality_id
-        uploaded_at = task_request.uploaded_at
+        date = task_request.date
         locality = self.locality_service.get_by_id(locality_id)
+        
         if not locality:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La localidad no existe")
         
-        data_video = self.video_service.get_metadata_video(file)
-        
-        # if video_request.size > 104857600:  # 100 MB
-        #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El video no puede ser mayor a 100 MB")
         if not file.filename.endswith(('.mp4', '.avi', '.mov')):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de video no soportado")
+        
+        data_video = self.video_service.get_metadata_video(file)
         
         video_name = os.path.splitext(file.filename)[0]
         video_extension = os.path.splitext(file.filename)[1][1:]
@@ -111,6 +112,8 @@ class TaskService:
             "url": f"{hashlib.sha256(f'{video_name}{int(time.time())}'.encode()).hexdigest()}.{video_extension}",
             **data_video
         }
+        
+        # Create objects in database
         try:
             # Create video
             video_obj = Video(
@@ -124,10 +127,21 @@ class TaskService:
                 name=name,
                 locality_id=locality_id,
                 video_id=video_obj.id,
-                uploaded_at=uploaded_at
+                date=date,
+                created_at=datetime.datetime.now()
             )
             self.db.add(task_obj)
             self.db.flush()
+            
+            # Update video url
+            video_obj.url = "task/" + str(task_obj.id) + "/" + video["url"]
+            
+            # Upload video to bucket
+            try:
+                self.bucket_service.upload(file, video_obj.url)
+                
+            except Exception as e:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
             
             # Create task status history
             task_status_pending = self.task_status_service.get_by_id("VIDEO_UPLOADED")
@@ -158,14 +172,15 @@ class TaskService:
                     "name_video": video_obj.name,
                     "duration": video_obj.duration,
                     "status": task_status_response,
-                    "uploaded_at": task_obj.uploaded_at,
+                    "date": task_obj.date,
+                    "created_at": task_obj.created_at,
                 })
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-        # finally:
-            # # Close the file after processing
-            # file.file.close()
+        finally:
+            # Close the file after processing
+            file.file.close()
         
 
     

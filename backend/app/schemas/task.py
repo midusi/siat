@@ -8,7 +8,7 @@ from datetime import datetime
 class TaskCreateRequest(BaseModel):
     name: str
     locality_id: int
-    uploaded_at: datetime
+    date: datetime
     
 class TaskResponse(BaseModel):
     id: int
@@ -17,8 +17,8 @@ class TaskResponse(BaseModel):
     name_video: str
     duration: int
     status: TaskStatusResponse
-    uploaded_at: datetime
-        
+    date: datetime
+    created_at: datetime
     model_config = ConfigDict(from_attributes=True)
     
 class TaskConfigRequest(BaseModel):
