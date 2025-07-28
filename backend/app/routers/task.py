@@ -28,8 +28,8 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
         "id": task_id,
         "name": f"Tarea de Prueba #{task_id}",
         "videoPath": f"/video/videoPrueba.mp4",
-        "videoWidth": "1280",
-        "videoHeight": "720",
+        "videoWidth": "1920",
+        "videoHeight": "1080",
         "videoFps": "30",
         "rutas": {
             "0": {
@@ -59,57 +59,57 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
         },
         "indeterminados": {
             "1": {
-                "frame": "10",
+                "frame": "30",
                 "class": "car",
-                "boudingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
+                "boundingBox": [
+                    "100",
+                    "100",
+                    "500",
+                    "500"
                 ],
                 "labels": ["0", "IND"],
             },
             "2": {
-                "frame": "20",
+                "frame": "60",
                 "class": "bus",
                 "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
+                    "200",
+                    "200",
+                    "600",
+                    "600"
                 ],
                 "labels": ["1", "IND"],
             },
             "3": {
-                "frame": "30",
+                "frame": "90",
                 "class": "motorbike",
                 "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
+                    "300",
+                    "300",
+                    "700",
+                    "700"
                 ],
                 "labels": ["IND", "2"],
             },
             "4": {
-                "frame": "40",
+                "frame": "95",
                 "class": "bicycle",
                 "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
+                    "400",
+                    "400",
+                    "800",
+                    "800"
                 ],
                 "labels": ["IND", "3"],
             },
             "5": {
-                "frame": "50",
+                "frame": "100",
                 "class": "heavy_truck",
                 "boundingBox": [
-                    "1076.6845703125",
-                    "948.7716674804688",
-                    "1105.4195556640625",
-                    "994.1165771484375"
+                    "500",
+                    "500",
+                    "900",
+                    "900"
                 ],
                 "labels": ["IND", "IND"],
             }

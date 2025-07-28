@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { BACKEND_URL } from '$lib/constants';
 
 	// --- Props y estado inicial ---
@@ -26,20 +26,96 @@
 	type Indeterminados = { [trackId: string]: Indeterminado };
 	type FilaTabla = { tipo: string; [key: string]: string | number };
 
-	// --- Estado reactivo para los datos de la API ---
+	// --- Estado reactivo ---
 	let videoPath = $state('');
 	let videoWidth = $state(0);
 	let videoHeight = $state(0);
 	let videoFps = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
+	let activeBoundingBox = $state<BoundingBox | null>(null);
+	let videoScale = $state({ x: 1, y: 1 }); // Estado dedicado a la escala para la reactividad
 
-	function syncHeight() {
+	// NUEVO: Estado para la Bounding Box que se muestra durante la reproducción
+	let playbackBoundingBox = $state<BoundingBox | null>(null);
+	// NUEVO: Variable para gestionar el temporizador de la caja de reproducción
+	let playbackTimeouts: ReturnType<typeof setTimeout>[] = [];
+	// NUEVO: Variable para optimizar el evento ontimeupdate
+	let lastCheckedSecond: number | null = null;
+
+	// Única función para manejar las dimensiones del video
+	function updateVideoDimensions() {
 		if (videoElement) {
-			// Medimos la altura renderizada del video y la guardamos en nuestro estado.
+			// Actualiza la altura para la lista de indeterminados
 			videoHeightPx = videoElement.clientHeight;
+
+			// Actualiza la escala, lo que disparará el recálculo de la BBox
+			if (videoWidth > 0 && videoHeight > 0) {
+				videoScale.x = videoElement.clientWidth / videoWidth;
+				videoScale.y = videoElement.clientHeight / videoHeight;
+			}
 		}
-		console.log(videoHeightPx);
+	}
+
+	// NUEVO: Mapa para búsqueda ultra-rápida de indeterminados por segundo.
+	let indeterminadosBySecond = $derived.by(() => {
+		if (!videoFps) return new Map<number, BoundingBox[]>();
+		console.log('[DERIVED] Re-calculando indeterminadosBySecond...');
+		const map = new Map<number, BoundingBox[]>();
+		for (const item of Object.values(indeterminados)) {
+			const second = Math.floor(parseInt(item.frame) / videoFps);
+			if (!map.has(second)) {
+				map.set(second, []);
+			}
+			map.get(second)!.push(item.boundingBox);
+		}
+		console.log(`[DERIVED] Mapa de segundos creado con ${map.size} claves.`);
+		console.log(map);
+		return map;
+	});
+
+	// NUEVO: Función que se ejecuta mientras el video se reproduce
+	function handleTimeUpdate() {
+		if (!videoElement || !videoFps || videoElement.paused) return;
+
+		const currentSecond = Math.floor(videoElement.currentTime);
+
+		// Optimización: No procesar el mismo segundo múltiples veces
+		if (currentSecond === lastCheckedSecond) return;
+		lastCheckedSecond = currentSecond;
+
+		const bboxes = indeterminadosBySecond.get(currentSecond);
+
+		// Cancelar cualquier secuencia de timeouts anterior
+		playbackTimeouts.forEach(clearTimeout);
+		playbackTimeouts = [];
+		playbackBoundingBox = null;
+
+		// Si hay una o más cajas para este segundo, las mostramos secuencialmente.
+		if (bboxes && bboxes.length > 0) {
+			bboxes.forEach((bbox, index) => {
+				// Se crea un temporizador para mostrar cada caja con un pequeño retardo.
+				const showTimeout = setTimeout(() => {
+					console.log(
+						`[TIME_UPDATE] Segundo: ${currentSecond} (Tiempo: ${videoElement.currentTime.toFixed(2)}s). Mostrando BBox ${index + 1}/${bboxes.length}:`,
+						bbox
+					);
+					playbackBoundingBox = bbox;
+
+					// Se crea un nuevo temporizador para ocultarla después de un tiempo.
+					const hideDelay = index === bboxes.length - 1 ? 1000 : 400;
+					const hideTimeout = setTimeout(() => {
+						console.log(`[TIMEOUT] Ocultando playbackBoundingBox después de ${hideDelay}ms.`);
+						// Solo ocultar si la caja actual es la que se mostró
+						if (playbackBoundingBox === bbox) {
+							playbackBoundingBox = null;
+						}
+					}, hideDelay);
+					playbackTimeouts.push(hideTimeout);
+				}, index * 500); // Muestra cada caja con 500ms de diferencia
+				playbackTimeouts.push(showTimeout);
+			});
+		}
 	}
 
 	function getVehicleName(key: Vehiculo): string {
@@ -65,10 +141,6 @@
 				})
 			});
 			if (!res.ok) throw new Error('No se pudo guardar los cambios en el servidor.');
-			console.log('Datos actualizados en el backend.');
-			console.log('Response:', await res.json());
-			console.log('Rutas:', rutas);
-			console.log('Indeterminados:', indeterminados);
 		} catch (e: any) {
 			error = e.message;
 		}
@@ -101,20 +173,31 @@
 			error = 'No se proporcionó un ID de tarea.';
 			loading = false;
 		}
-
-		// Sincronizar altura cuando la ventana cambie de tamaño
-		window.addEventListener('resize', syncHeight);
+		// Un único listener que llama a la función que actualiza todo
+		window.addEventListener('resize', updateVideoDimensions);
 	});
 
-	// --- LÓGICA DE INTERACCIÓN SIMPLIFICADA ---
+	// --- LÓGICA DE INTERACCIÓN ---
 	function handleIndeterminateClick(trackId: string) {
 		if (!videoElement || !videoFps) return;
 		const item = indeterminados[trackId];
 		if (!item) return;
 
+		console.log(`[CLICK] Click en indeterminado ID: ${trackId}. Frame: ${item.frame}`);
+
+		// Limpiar cualquier caja de reproducción automática
+		playbackTimeouts.forEach(clearTimeout);
+		playbackTimeouts = [];
+		playbackBoundingBox = null;
+
 		const timeInSeconds = parseInt(item.frame) / videoFps;
 		videoElement.currentTime = timeInSeconds;
 		videoElement.pause();
+		activeBoundingBox = item.boundingBox;
+		console.log(
+			`[CLICK] Video pausado en ${timeInSeconds.toFixed(2)}s. activeBoundingBox establecida:`,
+			activeBoundingBox
+		);
 	}
 
 	function handleKeyPress(event: KeyboardEvent, trackId: string) {
@@ -159,6 +242,15 @@
 		updateBackendData();
 	}
 
+	// NUEVO: Variable derivada que decide qué caja mostrar, dando prioridad a la del clic.
+	let displayBoundingBox = $derived.by(() => {
+		const finalBbox = activeBoundingBox || playbackBoundingBox;
+		console.log(
+			`[DERIVED_DISPLAY] activeBBox: ${activeBoundingBox ? 'SET' : 'null'}, playbackBBox: ${playbackBoundingBox ? 'SET' : 'null'}. Resultado: ${finalBbox ? 'MOSTRAR' : 'NINGUNA'}`
+		);
+		return finalBbox;
+	});
+
 	// --- Derivaciones de Datos para la UI ---
 	let vehicleTypes = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return [];
@@ -192,7 +284,72 @@
 		});
 	});
 
-	// Datos para la tabla de ENTRADAS
+	// --- Estilos calculados para la Bounding Box ---
+	let boundingBoxStyle = $derived.by(() => {
+		// Depende de displayBoundingBox y videoScale.
+		// Se recalculará si la caja cambia O si la escala del video cambia.
+		if (!displayBoundingBox || !videoElement) return '';
+		console.log('[STYLE_CALC] Calculando estilo para BBox:', displayBoundingBox);
+
+		// Coordenadas: [x_sup_izq, y_sup_izq, x_inf_der, y_inf_der]
+		const [x1_str, y1_str, x2_str, y2_str] = displayBoundingBox;
+		const x1 = parseFloat(x1_str);
+		const y1 = parseFloat(y1_str);
+		const x2 = parseFloat(x2_str);
+		const y2 = parseFloat(y2_str);
+
+		let left = x1 * videoScale.x;
+		let top = y1 * videoScale.y;
+		let width = (x2 - x1) * videoScale.x;
+		let height = (y2 - y1) * videoScale.y;
+
+		// --- Lógica de Clamping ---
+		const videoRenderedWidth = videoElement.clientWidth;
+		const videoRenderedHeight = videoElement.clientHeight;
+
+		if (width < 0) {
+			left += width;
+			width = Math.abs(width);
+		}
+		if (height < 0) {
+			top += height;
+			height = Math.abs(height);
+		}
+		if (left < 0) {
+			width += left;
+			left = 0;
+		}
+		if (top < 0) {
+			height += top;
+			top = 0;
+		}
+		if (left + width > videoRenderedWidth) {
+			width = videoRenderedWidth - left;
+		}
+		if (top + height > videoRenderedHeight) {
+			height = videoRenderedHeight - top;
+		}
+		if (width <= 0 || height <= 0) {
+			console.warn('[STYLE_CALC] BBox con ancho o alto <= 0. No se mostrará.');
+			return '';
+		}
+
+		const style = `
+			position: absolute;
+			left: ${left}px;
+			top: ${top}px;
+			width: ${width}px;
+			height: ${height}px;
+			border: 2px solid #10B981;
+			box-shadow: 0 0 15px rgba(16, 185, 129, 0.7);
+			pointer-events: none;
+			z-index: 10;
+		`;
+		console.log('[STYLE_CALC] Estilo final calculado:', style.replace(/\s+/g, ' '));
+		return style;
+	});
+
+	// --- Datos para las tablas ---
 	let entradasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const entradasIds = Object.keys(rutas).sort();
@@ -222,7 +379,6 @@
 		};
 	});
 
-	// Datos para la tabla de SALIDAS
 	let salidasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const salidasIds = [...new Set(Object.values(rutas).flatMap(Object.keys))].sort();
@@ -252,7 +408,6 @@
 		};
 	});
 
-	// Datos para la tabla detallada de RUTAS
 	let rutasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const entradasIds = Object.keys(rutas).sort();
@@ -305,28 +460,42 @@
 			<span class="block sm:inline">{error}</span>
 		</div>
 	{:else}
-		<!-- Contenedor Flexbox para centrar el video y la lista -->
 		<div class="flex flex-wrap justify-center items-start gap-8 mb-12">
-			<!-- Columna de Video (ahora un item de flex) -->
+			<!-- Reproductor de video -->
 			<div class="w-full lg:w-2/3 max-w-5xl">
 				{#if videoPath !== ''}
-					<div class="rounded overflow-hidden border border-gray-600 bg-black aspect-video">
+					<div
+						class="relative rounded overflow-hidden border border-gray-600 bg-black aspect-video"
+					>
 						<video
 							class="w-full h-full"
 							controls
 							autoplay
 							bind:this={videoElement}
-							onloadedmetadata={syncHeight}
+							onloadedmetadata={updateVideoDimensions}
+							ontimeupdate={handleTimeUpdate}
+							onplay={() => {
+								console.log('[ON_PLAY] Evento play disparado. Limpiando BBoxes.');
+								activeBoundingBox = null;
+								playbackTimeouts.forEach(clearTimeout);
+								playbackTimeouts = [];
+								playbackBoundingBox = null;
+							}}
 						>
 							<source src={videoPath} type="video/mp4" />
 							<track kind="captions" />
 							Tu navegador no soporta la reproducción de video.
 						</video>
+
+						<!-- El div para la Bounding Box -->
+						{#if displayBoundingBox && boundingBoxStyle}
+							<div style={boundingBoxStyle}></div>
+						{/if}
 					</div>
 				{/if}
 			</div>
 
-			<!-- Columna de Indeterminados (ahora un item de flex) -->
+			<!-- Lista de indeterminados -->
 			{#if sortedIndeterminados.length > 0}
 				<div
 					class="w-full md:w-auto bg-[#2a2f3a] p-4 rounded-lg shadow-lg max-w-[450px] overflow-y-auto"
@@ -346,8 +515,6 @@
 									onclick={() => handleIndeterminateClick(trackId)}
 									onkeydown={(e) => handleKeyPress(e, trackId)}
 								>
-									<!-- El resto del contenido de la tarjeta de indeterminado va aquí... -->
-									<!-- ... (no es necesario pegarlo todo, solo asegúrate de que esté dentro de este div) -->
 									<div class="flex justify-between items-center mb-2">
 										<p class="font-bold text-lg">ID: {trackId}</p>
 										<button
