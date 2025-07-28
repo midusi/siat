@@ -114,7 +114,17 @@
 		if (animationFrameId === null) {
 			activeBoundingBox = null;
 			playbackBoundingBoxes = [];
-			lastProcessedFrame = -1;
+
+			// CAMBIO CLAVE:
+			// En lugar de reiniciar siempre a -1, establecemos el último frame procesado
+			// justo antes de la posición actual de reproducción. Esto evita que el bucle
+			// "repase" la historia del video que fue omitida por una búsqueda (seek).
+			if (videoElement && videoFps > 0) {
+				lastProcessedFrame = Math.floor(videoElement.currentTime * videoFps) - 1;
+			} else {
+				lastProcessedFrame = -1;
+			}
+
 			animationFrameId = requestAnimationFrame(animationLoop);
 		}
 	}
@@ -707,8 +717,16 @@
 		background-color: #718096;
 	}
 	.bbox-style {
-		border: 2px solid #10b981;
-		box-shadow: 0 0 15px rgba(16, 185, 129, 0.7);
+		/* Borde blanco, 2px es un buen punto de partida */
+		border: 2px solid #ffffff;
+
+		/* Múltiples box-shadow para un efecto de neón más intenso.
+		   Se apilan de atrás hacia adelante. */
+		box-shadow:
+			0 0 5px rgba(255, 255, 255, 0.8),
+			/* Resplandor interior cercano */ 0 0 10px rgba(255, 255, 255, 0.6),
+			/* Resplandor medio */ 0 0 20px rgba(255, 255, 255, 0.4); /* Resplandor exterior más difuso */
+
 		pointer-events: none;
 		z-index: 10;
 		transition: transform 0.2s ease-in-out;
