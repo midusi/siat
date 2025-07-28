@@ -59,7 +59,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
         },
         "indeterminados": {
             "1": {
-                "frame": "30",
+                "frame": "20",
                 "class": "car",
                 "boundingBox": [
                     "100",
@@ -70,7 +70,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                 "labels": ["0", "IND"],
             },
             "2": {
-                "frame": "60",
+                "frame": "40",
                 "class": "bus",
                 "boundingBox": [
                     "200",
@@ -81,7 +81,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                 "labels": ["1", "IND"],
             },
             "3": {
-                "frame": "90",
+                "frame": "60",
                 "class": "motorbike",
                 "boundingBox": [
                     "300",
@@ -92,7 +92,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                 "labels": ["IND", "2"],
             },
             "4": {
-                "frame": "95",
+                "frame": "80",
                 "class": "bicycle",
                 "boundingBox": [
                     "400",

@@ -25,6 +25,8 @@
 	};
 	type Indeterminados = { [trackId: string]: Indeterminado };
 	type FilaTabla = { tipo: string; [key: string]: string | number };
+	// CAMBIO 1: Añadimos 'opacity' al tipo de la BBox que se va a renderizar.
+	type DisplayableBBox = { id: string; bbox: BoundingBox; hideAtTime: number; opacity: number };
 
 	// --- Estado reactivo ---
 	let videoPath = $state('');
@@ -33,280 +35,147 @@
 	let videoFps = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
+	let videoScale = $state({ x: 1, y: 1 });
+
+	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
 	let activeBoundingBox = $state<BoundingBox | null>(null);
-	let videoScale = $state({ x: 1, y: 1 }); // Estado dedicado a la escala para la reactividad
+	let playbackBoundingBoxes = $state<DisplayableBBox[]>([]);
 
-	// NUEVO: Estado para la Bounding Box que se muestra durante la reproducción
-	let playbackBoundingBox = $state<BoundingBox | null>(null);
-	// NUEVO: Variable para gestionar el temporizador de la caja de reproducción
-	let playbackTimeouts: ReturnType<typeof setTimeout>[] = [];
-	// NUEVO: Variable para optimizar el evento ontimeupdate
-	let lastCheckedSecond: number | null = null;
+	// ID del bucle de animación para poder cancelarlo
+	let animationFrameId: number | null = null;
+	// Para no volver a procesar el mismo frame en el bucle
+	let lastProcessedFrame = -1;
+	// CAMBIO 2: Renombramos la constante para que sea más claro que es la duración del desvanecimiento.
+	const FADE_OUT_DURATION_SECONDS = 1.0;
 
-	// Única función para manejar las dimensiones del video
+	// --- ESTRUCTURA DE DATOS OPTIMIZADA POR FRAME ---
+	let indeterminadosByFrame = $derived.by(() => {
+		const map = new Map<number, { trackId: string; bbox: BoundingBox }[]>();
+		if (!videoFps) return map;
+		for (const [trackId, item] of Object.entries(indeterminados)) {
+			const frame = parseInt(item.frame);
+			if (!map.has(frame)) {
+				map.set(frame, []);
+			}
+			map.get(frame)!.push({ trackId, bbox: item.boundingBox });
+		}
+		return map;
+	});
+
+	// --- LÓGICA DEL BUCLE DE ANIMACIÓN (MODIFICADA PARA DESVANECIMIENTO) ---
+	function animationLoop() {
+		if (!videoElement || videoElement.paused) {
+			animationFrameId = null;
+			return;
+		}
+
+		const currentTime = videoElement.currentTime;
+		const currentFrame = Math.floor(currentTime * videoFps);
+
+		// CAMBIO 3: Lógica de animación actualizada.
+		// En lugar de eliminar bruscamente las bboxes, ahora actualizamos su opacidad
+		// y solo las eliminamos del array cuando la opacidad es 0.
+		if (playbackBoundingBoxes.length > 0) {
+			playbackBoundingBoxes = playbackBoundingBoxes
+				.map((box) => {
+					const timeUntilHidden = box.hideAtTime - currentTime;
+					// Calculamos la nueva opacidad. Será un valor entre 0 y 1.
+					const newOpacity = Math.max(
+						0,
+						Math.min(1.0, timeUntilHidden / FADE_OUT_DURATION_SECONDS)
+					);
+					return { ...box, opacity: newOpacity };
+				})
+				.filter((box) => box.opacity > 0); // Solo mantenemos las que son visibles.
+		}
+
+		// 2. AÑADIR NUEVAS BBOXES si hemos avanzado a un nuevo frame
+		if (currentFrame > lastProcessedFrame) {
+			for (let frame = lastProcessedFrame + 1; frame <= currentFrame; frame++) {
+				const bboxesInfo = indeterminadosByFrame.get(frame);
+				if (bboxesInfo) {
+					const newBoxes = bboxesInfo.map((info) => ({
+						id: info.trackId,
+						bbox: info.bbox,
+						hideAtTime: frame / videoFps + FADE_OUT_DURATION_SECONDS,
+						opacity: 1.0 // Empiezan con opacidad total
+					}));
+					playbackBoundingBoxes = [...playbackBoundingBoxes, ...newBoxes];
+				}
+			}
+		}
+
+		lastProcessedFrame = currentFrame;
+		animationFrameId = requestAnimationFrame(animationLoop);
+	}
+
+	// --- FUNCIONES DE CONTROL DEL VIDEO ---
+	function startAnimationLoop() {
+		if (animationFrameId === null) {
+			activeBoundingBox = null;
+			playbackBoundingBoxes = [];
+			lastProcessedFrame = -1;
+			animationFrameId = requestAnimationFrame(animationLoop);
+		}
+	}
+
+	function stopAnimationLoop() {
+		if (animationFrameId !== null) {
+			cancelAnimationFrame(animationFrameId);
+			animationFrameId = null;
+		}
+	}
+
+	// CAMBIO 4: La BBox manual también debe tener una propiedad 'opacity' para ser consistente.
+	let displayBoundingBoxes = $derived.by(() => {
+		if (activeBoundingBox) {
+			return [{ id: 'active-manual', bbox: activeBoundingBox, hideAtTime: Infinity, opacity: 1.0 }];
+		}
+		return playbackBoundingBoxes;
+	});
+
+	// --- Lógica de Interacción ---
+	function handleIndeterminateClick(trackId: string) {
+		if (!videoElement || !videoFps) return;
+		const item = indeterminados[trackId];
+		if (!item) return;
+
+		stopAnimationLoop();
+		videoElement.pause();
+
+		const timeInSeconds = parseInt(item.frame) / videoFps;
+		videoElement.currentTime = timeInSeconds;
+		activeBoundingBox = item.boundingBox;
+	}
+
+	// --- El resto del código permanece casi igual ---
 	function updateVideoDimensions() {
 		if (videoElement) {
-			// Actualiza la altura para la lista de indeterminados
 			videoHeightPx = videoElement.clientHeight;
-
-			// Actualiza la escala, lo que disparará el recálculo de la BBox
 			if (videoWidth > 0 && videoHeight > 0) {
 				videoScale.x = videoElement.clientWidth / videoWidth;
 				videoScale.y = videoElement.clientHeight / videoHeight;
 			}
 		}
 	}
+	// CAMBIO 5: La función ahora recibe el objeto `DisplayableBBox` completo.
+	function calculateBoxStyle(box: DisplayableBBox): string {
+		if (!videoElement) return 'display: none;';
 
-	// NUEVO: Mapa para búsqueda ultra-rápida de indeterminados por segundo.
-	let indeterminadosBySecond = $derived.by(() => {
-		if (!videoFps) return new Map<number, BoundingBox[]>();
-		console.log('[DERIVED] Re-calculando indeterminadosBySecond...');
-		const map = new Map<number, BoundingBox[]>();
-		for (const item of Object.values(indeterminados)) {
-			const second = Math.floor(parseInt(item.frame) / videoFps);
-			if (!map.has(second)) {
-				map.set(second, []);
-			}
-			map.get(second)!.push(item.boundingBox);
-		}
-		console.log(`[DERIVED] Mapa de segundos creado con ${map.size} claves.`);
-		console.log(map);
-		return map;
-	});
-
-	// NUEVO: Función que se ejecuta mientras el video se reproduce
-	function handleTimeUpdate() {
-		if (!videoElement || !videoFps || videoElement.paused) return;
-
-		const currentSecond = Math.floor(videoElement.currentTime);
-
-		// Optimización: No procesar el mismo segundo múltiples veces
-		if (currentSecond === lastCheckedSecond) return;
-		lastCheckedSecond = currentSecond;
-
-		const bboxes = indeterminadosBySecond.get(currentSecond);
-
-		// Cancelar cualquier secuencia de timeouts anterior
-		playbackTimeouts.forEach(clearTimeout);
-		playbackTimeouts = [];
-		playbackBoundingBox = null;
-
-		// Si hay una o más cajas para este segundo, las mostramos secuencialmente.
-		if (bboxes && bboxes.length > 0) {
-			bboxes.forEach((bbox, index) => {
-				// Se crea un temporizador para mostrar cada caja con un pequeño retardo.
-				const showTimeout = setTimeout(() => {
-					console.log(
-						`[TIME_UPDATE] Segundo: ${currentSecond} (Tiempo: ${videoElement.currentTime.toFixed(2)}s). Mostrando BBox ${index + 1}/${bboxes.length}:`,
-						bbox
-					);
-					playbackBoundingBox = bbox;
-
-					// Se crea un nuevo temporizador para ocultarla después de un tiempo.
-					const hideDelay = index === bboxes.length - 1 ? 1000 : 400;
-					const hideTimeout = setTimeout(() => {
-						console.log(`[TIMEOUT] Ocultando playbackBoundingBox después de ${hideDelay}ms.`);
-						// Solo ocultar si la caja actual es la que se mostró
-						if (playbackBoundingBox === bbox) {
-							playbackBoundingBox = null;
-						}
-					}, hideDelay);
-					playbackTimeouts.push(hideTimeout);
-				}, index * 500); // Muestra cada caja con 500ms de diferencia
-				playbackTimeouts.push(showTimeout);
-			});
-		}
-	}
-
-	function getVehicleName(key: Vehiculo): string {
-		if (!key) return 'N/A';
-		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
-	}
-
-	function showNotification(message: string, duration: number = 3000) {
-		notification = message;
-		setTimeout(() => {
-			notification = null;
-		}, duration);
-	}
-
-	async function updateBackendData() {
-		try {
-			const res = await fetch(`${BACKEND_URL}/task/${data.id}/update-data`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					rutas: rutas,
-					indeterminados: indeterminados
-				})
-			});
-			if (!res.ok) throw new Error('No se pudo guardar los cambios en el servidor.');
-		} catch (e: any) {
-			error = e.message;
-		}
-	}
-
-	async function fetchData(taskId: string) {
-		loading = true;
-		error = null;
-		try {
-			const res = await fetch(`${BACKEND_URL}/task/${taskId}`);
-			if (!res.ok) throw new Error(`Error al obtener datos: ${res.statusText}`);
-			const apiData = await res.json();
-			videoPath = apiData.videoPath;
-			videoWidth = +apiData.videoWidth;
-			videoHeight = +apiData.videoHeight;
-			videoFps = +apiData.videoFps;
-			rutas = apiData.rutas;
-			indeterminados = apiData.indeterminados;
-		} catch (e: any) {
-			error = e.message || 'Error desconocido al cargar los datos.';
-		} finally {
-			loading = false;
-		}
-	}
-
-	onMount(() => {
-		const taskId = data.id;
-		if (taskId) fetchData(taskId);
-		else {
-			error = 'No se proporcionó un ID de tarea.';
-			loading = false;
-		}
-		// Un único listener que llama a la función que actualiza todo
-		window.addEventListener('resize', updateVideoDimensions);
-	});
-
-	// --- LÓGICA DE INTERACCIÓN ---
-	function handleIndeterminateClick(trackId: string) {
-		if (!videoElement || !videoFps) return;
-		const item = indeterminados[trackId];
-		if (!item) return;
-
-		console.log(`[CLICK] Click en indeterminado ID: ${trackId}. Frame: ${item.frame}`);
-
-		// Limpiar cualquier caja de reproducción automática
-		playbackTimeouts.forEach(clearTimeout);
-		playbackTimeouts = [];
-		playbackBoundingBox = null;
-
-		const timeInSeconds = parseInt(item.frame) / videoFps;
-		videoElement.currentTime = timeInSeconds;
-		videoElement.pause();
-		activeBoundingBox = item.boundingBox;
-		console.log(
-			`[CLICK] Video pausado en ${timeInSeconds.toFixed(2)}s. activeBoundingBox establecida:`,
-			activeBoundingBox
-		);
-	}
-
-	function handleKeyPress(event: KeyboardEvent, trackId: string) {
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			handleIndeterminateClick(trackId);
-		}
-	}
-
-	// --- Lógica de Corrección de Datos ---
-	function handleConfirm(trackId: string, event: MouseEvent) {
-		event.stopPropagation();
-		const item = indeterminados[trackId];
-		const [entrada, salida] = item.labels;
-		const vehiculo = item.class;
-
-		if (rutas[entrada]?.[salida]?.[vehiculo] !== undefined) {
-			rutas[entrada][salida][vehiculo]++;
-		} else {
-			if (!rutas[entrada]) rutas[entrada] = {};
-			if (!rutas[entrada][salida]) rutas[entrada][salida] = {};
-			vehicleTypes.forEach((v) => {
-				if (rutas[entrada][salida][v] === undefined) {
-					rutas[entrada][salida][v] = 0;
-				}
-			});
-			rutas[entrada][salida][vehiculo] = 1;
-		}
-
-		delete indeterminados[trackId];
-		indeterminados = { ...indeterminados };
-		rutas = { ...rutas };
-		showNotification(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
-		updateBackendData();
-	}
-
-	function handleDelete(trackId: string, event: MouseEvent) {
-		event.stopPropagation();
-		delete indeterminados[trackId];
-		indeterminados = { ...indeterminados };
-		showNotification(`Vehículo indeterminado ${trackId} eliminado.`);
-		updateBackendData();
-	}
-
-	// NUEVO: Variable derivada que decide qué caja mostrar, dando prioridad a la del clic.
-	let displayBoundingBox = $derived.by(() => {
-		const finalBbox = activeBoundingBox || playbackBoundingBox;
-		console.log(
-			`[DERIVED_DISPLAY] activeBBox: ${activeBoundingBox ? 'SET' : 'null'}, playbackBBox: ${playbackBoundingBox ? 'SET' : 'null'}. Resultado: ${finalBbox ? 'MOSTRAR' : 'NINGUNA'}`
-		);
-		return finalBbox;
-	});
-
-	// --- Derivaciones de Datos para la UI ---
-	let vehicleTypes = $derived.by(() => {
-		if (Object.keys(rutas).length === 0) return [];
-		const allTypes = new Set<string>();
-		for (const entrada in rutas) {
-			for (const salida in rutas[entrada]) {
-				Object.keys(rutas[entrada][salida]).forEach((vehiculo) => allTypes.add(vehiculo));
-			}
-		}
-		Object.values(indeterminados).forEach((item) => allTypes.add(item.class));
-		return Array.from(allTypes).sort();
-	});
-
-	let zoneIds = $derived.by(() => {
-		if (Object.keys(rutas).length === 0) return [];
-		const allZones = new Set<string>();
-		Object.keys(rutas).forEach((id) => allZones.add(id));
-		Object.values(rutas).forEach((salidas) =>
-			Object.keys(salidas).forEach((id) => allZones.add(id))
-		);
-		return Array.from(allZones).sort();
-	});
-
-	let sortedIndeterminados = $derived.by(() => {
-		return Object.entries(indeterminados).sort(([, a], [, b]) => {
-			const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
-			const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
-			if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
-			if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
-			return parseInt(a.frame) - parseInt(b.frame);
-		});
-	});
-
-	// --- Estilos calculados para la Bounding Box ---
-	let boundingBoxStyle = $derived.by(() => {
-		// Depende de displayBoundingBox y videoScale.
-		// Se recalculará si la caja cambia O si la escala del video cambia.
-		if (!displayBoundingBox || !videoElement) return '';
-		console.log('[STYLE_CALC] Calculando estilo para BBox:', displayBoundingBox);
-
-		// Coordenadas: [x_sup_izq, y_sup_izq, x_inf_der, y_inf_der]
-		const [x1_str, y1_str, x2_str, y2_str] = displayBoundingBox;
-		const x1 = parseFloat(x1_str);
-		const y1 = parseFloat(y1_str);
-		const x2 = parseFloat(x2_str);
-		const y2 = parseFloat(y2_str);
+		const { bbox, opacity } = box;
+		const [x1_str, y1_str, x2_str, y2_str] = bbox;
+		const x1 = parseFloat(x1_str),
+			y1 = parseFloat(y1_str),
+			x2 = parseFloat(x2_str),
+			y2 = parseFloat(y2_str);
 
 		let left = x1 * videoScale.x;
 		let top = y1 * videoScale.y;
 		let width = (x2 - x1) * videoScale.x;
 		let height = (y2 - y1) * videoScale.y;
 
-		// --- Lógica de Clamping ---
-		const videoRenderedWidth = videoElement.clientWidth;
-		const videoRenderedHeight = videoElement.clientHeight;
-
+		const videoRenderedWidth = videoElement.clientWidth,
+			videoRenderedHeight = videoElement.clientHeight;
 		if (width < 0) {
 			left += width;
 			width = Math.abs(width);
@@ -329,27 +198,143 @@
 		if (top + height > videoRenderedHeight) {
 			height = videoRenderedHeight - top;
 		}
-		if (width <= 0 || height <= 0) {
-			console.warn('[STYLE_CALC] BBox con ancho o alto <= 0. No se mostrará.');
-			return '';
+		if (width <= 0 || height <= 0) return 'display: none;';
+
+		// Añadimos la opacidad al estilo dinámico.
+		return `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; opacity: ${opacity};`;
+	}
+	function getVehicleName(key: Vehiculo): string {
+		if (!key) return 'N/A';
+		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
+	}
+	function showNotification(message: string, duration: number = 3000) {
+		notification = message;
+		setTimeout(() => {
+			notification = null;
+		}, duration);
+	}
+	async function updateBackendData() {
+		try {
+			const res = await fetch(`${BACKEND_URL}/task/${data.id}/update-data`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					rutas: rutas,
+					indeterminados: indeterminados
+				})
+			});
+			if (!res.ok) throw new Error('No se pudo guardar los cambios en el servidor.');
+		} catch (e: any) {
+			error = e.message;
+		}
+	}
+	async function fetchData(taskId: string) {
+		loading = true;
+		error = null;
+		try {
+			const res = await fetch(`${BACKEND_URL}/task/${taskId}`);
+			if (!res.ok) throw new Error(`Error al obtener datos: ${res.statusText}`);
+			const apiData = await res.json();
+			videoPath = apiData.videoPath;
+			videoWidth = +apiData.videoWidth;
+			videoHeight = +apiData.videoHeight;
+			videoFps = +apiData.videoFps;
+			rutas = apiData.rutas;
+			indeterminados = apiData.indeterminados;
+		} catch (e: any) {
+			error = e.message || 'Error desconocido al cargar los datos.';
+		} finally {
+			loading = false;
+		}
+	}
+	onMount(() => {
+		const taskId = data.id;
+		if (taskId) fetchData(taskId);
+		else {
+			error = 'No se proporcionó un ID de tarea.';
+			loading = false;
+		}
+		window.addEventListener('resize', updateVideoDimensions);
+		return () => {
+			window.removeEventListener('resize', updateVideoDimensions);
+			stopAnimationLoop();
+		};
+	});
+	function handleKeyPress(event: KeyboardEvent, trackId: string) {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			handleIndeterminateClick(trackId);
+		}
+	}
+	function handleConfirm(trackId: string, event: MouseEvent) {
+		event.stopPropagation();
+		const item = indeterminados[trackId];
+		if (!item) return;
+		if (activeBoundingBox === item.boundingBox) activeBoundingBox = null;
+		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
+
+		const [entrada, salida] = item.labels;
+		const vehiculo = item.class;
+
+		if (rutas[entrada]?.[salida]?.[vehiculo] !== undefined) {
+			rutas[entrada][salida][vehiculo]++;
+		} else {
+			if (!rutas[entrada]) rutas[entrada] = {};
+			if (!rutas[entrada][salida]) rutas[entrada][salida] = {};
+			vehicleTypes.forEach((v) => {
+				if (rutas[entrada][salida][v] === undefined) {
+					rutas[entrada][salida][v] = 0;
+				}
+			});
+			rutas[entrada][salida][vehiculo] = 1;
 		}
 
-		const style = `
-			position: absolute;
-			left: ${left}px;
-			top: ${top}px;
-			width: ${width}px;
-			height: ${height}px;
-			border: 2px solid #10B981;
-			box-shadow: 0 0 15px rgba(16, 185, 129, 0.7);
-			pointer-events: none;
-			z-index: 10;
-		`;
-		console.log('[STYLE_CALC] Estilo final calculado:', style.replace(/\s+/g, ' '));
-		return style;
-	});
+		delete indeterminados[trackId];
+		indeterminados = { ...indeterminados };
+		rutas = { ...rutas };
+		showNotification(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
+		updateBackendData();
+	}
+	function handleDelete(trackId: string, event: MouseEvent) {
+		event.stopPropagation();
+		const item = indeterminados[trackId];
+		if (item && activeBoundingBox === item.boundingBox) activeBoundingBox = null;
+		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
 
-	// --- Datos para las tablas ---
+		delete indeterminados[trackId];
+		indeterminados = { ...indeterminados };
+		showNotification(`Vehículo indeterminado ${trackId} eliminado.`);
+		updateBackendData();
+	}
+	let vehicleTypes = $derived.by(() => {
+		if (Object.keys(rutas).length === 0) return [];
+		const allTypes = new Set<string>();
+		for (const entrada in rutas) {
+			for (const salida in rutas[entrada]) {
+				Object.keys(rutas[entrada][salida]).forEach((vehiculo) => allTypes.add(vehiculo));
+			}
+		}
+		Object.values(indeterminados).forEach((item) => allTypes.add(item.class));
+		return Array.from(allTypes).sort();
+	});
+	let zoneIds = $derived.by(() => {
+		if (Object.keys(rutas).length === 0) return [];
+		const allZones = new Set<string>();
+		Object.keys(rutas).forEach((id) => allZones.add(id));
+		Object.values(rutas).forEach((salidas) =>
+			Object.keys(salidas).forEach((id) => allZones.add(id))
+		);
+		return Array.from(allZones).sort();
+	});
+	let sortedIndeterminados = $derived.by(() => {
+		return Object.entries(indeterminados).sort(([, a], [, b]) => {
+			const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
+			const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
+			if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
+			if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
+			return parseInt(a.frame) - parseInt(b.frame);
+		});
+	});
 	let entradasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const entradasIds = Object.keys(rutas).sort();
@@ -378,7 +363,6 @@
 			total: totalGeneral
 		};
 	});
-
 	let salidasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const salidasIds = [...new Set(Object.values(rutas).flatMap(Object.keys))].sort();
@@ -407,7 +391,6 @@
 			total: totalGeneral
 		};
 	});
-
 	let rutasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
 		const entradasIds = Object.keys(rutas).sort();
@@ -473,13 +456,15 @@
 							autoplay
 							bind:this={videoElement}
 							onloadedmetadata={updateVideoDimensions}
-							ontimeupdate={handleTimeUpdate}
-							onplay={() => {
-								console.log('[ON_PLAY] Evento play disparado. Limpiando BBoxes.');
-								activeBoundingBox = null;
-								playbackTimeouts.forEach(clearTimeout);
-								playbackTimeouts = [];
-								playbackBoundingBox = null;
+							onplay={startAnimationLoop}
+							onpause={stopAnimationLoop}
+							onended={stopAnimationLoop}
+							onseeking={() => {
+								// Cuando el usuario arrastra el cursor, reseteamos el frame procesado
+								// para que el bucle sepa que tiene que re-evaluar desde la nueva posición.
+								if (videoElement) {
+									lastProcessedFrame = Math.floor(videoElement.currentTime * videoFps) - 1;
+								}
 							}}
 						>
 							<source src={videoPath} type="video/mp4" />
@@ -487,10 +472,13 @@
 							Tu navegador no soporta la reproducción de video.
 						</video>
 
-						<!-- El div para la Bounding Box -->
-						{#if displayBoundingBox && boundingBoxStyle}
-							<div style={boundingBoxStyle}></div>
-						{/if}
+						<!-- El bloque de renderizado de BBoxes no cambia -->
+						{#each displayBoundingBoxes as box (box.id)}
+							<div class="bbox-style" style={calculateBoxStyle(box)}>
+								<!-- Opcional: Podrías mostrar el ID aquí para depuración -->
+								<!-- <span class="absolute -top-5 left-0 bg-black bg-opacity-50 text-white text-xs px-1">{box.id}</span> -->
+							</div>
+						{/each}
 					</div>
 				{/if}
 			</div>
@@ -717,5 +705,12 @@
 	}
 	.overflow-y-auto::-webkit-scrollbar-thumb:hover {
 		background-color: #718096;
+	}
+	.bbox-style {
+		border: 2px solid #10b981;
+		box-shadow: 0 0 15px rgba(16, 185, 129, 0.7);
+		pointer-events: none;
+		z-index: 10;
+		transition: transform 0.2s ease-in-out;
 	}
 </style>
