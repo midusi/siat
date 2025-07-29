@@ -59,7 +59,8 @@ class Task(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    uploaded_at = Column(DateTime, nullable=False)
+    date = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False)
     video_id = Column(Integer, ForeignKey("video.id"), nullable=False)
     locality_id = Column(Integer, ForeignKey("locality.id"), nullable=False)
     

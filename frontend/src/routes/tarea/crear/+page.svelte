@@ -2,36 +2,46 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-
+	import type { TaskForm } from '$lib/types/task';
 	import { BACKEND_URL } from '$lib/constants';
+	import { TaskFormSchema } from '$lib/types/task';
+	import { z } from 'zod';
 
-	// Estado para el archivo seleccionado
-	let selectedFile = $state<File | null>(null);
+	// Estado agrupado en un objeto form
+	let form = $state<TaskForm>({
+		name: '',
+		date: new Date().toISOString().split('T')[0],
+		selectedProvince: 1,
+		selectedDistrict: null as number | null,
+		selectedLocality: null as number | null,
+		file: null as File | null
+	});
 
-	// Estado para localidad y distrito
-	let selectedLocality = $state('');
-	let selectedDistrict = $state('');
+	let isFormValid = $state(false);
+	let errors = $state<Record<string, string>>({});
+	let submitted = $state(false);
 
 	// Datos de localidades y distritos
 	let localities = $state<{ id: number; name: string }[]>([]);
 	let districts = $state<{ id: number; name: string }[]>([]);
+	let provinces = $state<{ id: number; name: string }[]>([]);
 
-	async function fetchLocalities() {
+	async function fetchProvinces() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/locality`);
+			const response = await fetch(`${BACKEND_URL}/province`);
 			if (!response.ok) {
-				throw new Error(`Error fetching localities: ${response.statusText}`);
+				throw new Error(`Error fetching provinces: ${response.statusText}`);
 			}
-			localities = await response.json();
+			provinces = await response.json();
 		} catch (error) {
 			console.error(error);
-			alert('Error al cargar las localidades.');
+			alert('Error al cargar las provincias.');
 		}
 	}
 
 	async function fetchDistricts() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/district`);
+			const response = await fetch(`${BACKEND_URL}/province/${form.selectedProvince}/district`);
 			if (!response.ok) {
 				throw new Error(`Error fetching districts: ${response.statusText}`);
 			}
@@ -42,44 +52,56 @@
 		}
 	}
 
-	onMount(() => {
-		fetchLocalities();
-		fetchDistricts();
-	});
+	async function fetchLocalities() {
+		try {
+			const response = await fetch(`${BACKEND_URL}/district/${form.selectedDistrict}/locality`);
+			if (!response.ok) {
+				throw new Error(`Error fetching localities: ${response.statusText}`);
+			}
+			localities = await response.json();
+		} catch (error) {
+			console.error(error);
+			alert('Error al cargar las localidades.');
+		}
+	}
 
 	// Función para manejar la selección de archivos
 	function handleFileSelect(event: Event): void {
 		const input = event.target as HTMLInputElement;
 		if (input.files && input.files.length > 0) {
-			selectedFile = input.files[0];
+			const file = input.files[0];
+			const allowedExtensions = ['.mp4', '.avi', '.mov'];
+			const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+			if (!allowedExtensions.includes(ext)) {
+				alert('El archivo debe ser .mp4, .avi o .mov');
+				form.file = null;
+				input.value = '';
+				return;
+			}
+			form.file = file;
 		}
-	}
-
-	// Función para volver a la página anterior
-	function goBack(): void {
-		goto('/');
 	}
 
 	// Función para iniciar la subida
 	async function handleSubmit(): Promise<void> {
-		const fecha = (document.getElementById('fecha') as HTMLInputElement).value;
-		const localidad = selectedLocality;
-		const distritoId = selectedDistrict;
-		const archivo = selectedFile;
-
-		if (!fecha || !localidad || !distritoId || !archivo) {
-			alert('Por favor complete todos los campos y seleccione un archivo.');
+		submitted = true;
+		const result = TaskFormSchema.safeParse(form);
+		if (!result.success) {
+			errors = {};
+			for (const err of result.error.errors) {
+				errors[err.path[0]] = err.message;
+			}
 			return;
 		}
+		errors = {};
 
 		const formData = new FormData();
-		const districtName =
-			districts.find((d) => d.id.toString() === distritoId)?.name || 'Tarea sin nombre';
-
-		formData.append('name', districtName);
-		formData.append('locality_id', localidad); // El id de la localidad (string, backend espera int)
-		formData.append('uploaded_at', fecha); // Fecha en formato YYYY-MM-DD
-		formData.append('file', archivo);
+		formData.append('name', form.name);
+		formData.append('locality_id', form.selectedLocality?.toString() ?? '');
+		formData.append('date', form.date);
+		if (form.file) {
+			formData.append('file', form.file);
+		}
 
 		try {
 			const response = await fetch(`${BACKEND_URL}/task`, {
@@ -99,6 +121,32 @@
 			console.error('Error al crear la tarea:', error);
 			alert('Hubo un error al crear la tarea.');
 		}
+	}
+
+	$effect(() => {
+		if (form.selectedProvince) {
+			fetchDistricts();
+		}
+	});
+
+	$effect(() => {
+		if (form.selectedDistrict) {
+			fetchLocalities();
+		}
+	});
+
+	$effect(() => {
+		isFormValid = TaskFormSchema.safeParse(form).success;
+		// console.log(isFormValid, form);
+	});
+
+	onMount(() => {
+		fetchProvinces();
+	});
+
+	// Función para volver a la página anterior
+	function goBack(): void {
+		goto('/');
 	}
 </script>
 
@@ -133,42 +181,63 @@
 		<h2 class="text-xl text-amber-400 text-center mb-8">Datos</h2>
 
 		<form class="space-y-8">
+			<!-- Campo Nombre -->
+			<div class="flex flex-col space-y-2">
+				<label for="nombre" class="text-lg">Nombre *</label>
+				<input
+					type="text"
+					id="nombre"
+					class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					bind:value={form.name}
+					placeholder="Ingrese el nombre de la tarea"
+				/>
+				{#if submitted && errors.name}
+					<span class="text-red-400 text-xs">{errors.name}</span>
+				{/if}
+				<div class="border-t border-gray-700 mt-2"></div>
+			</div>
 			<!-- Campo Fecha simple -->
 			<div class="flex flex-col space-y-2">
-				<label for="fecha" class="text-lg">Fecha</label>
+				<label for="fecha" class="text-lg">Fecha *</label>
 				<input
 					type="date"
 					id="fecha"
 					class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-					value={new Date().toISOString().split('T')[0]}
+					bind:value={form.date}
+					max={new Date().toISOString().split('T')[0]}
 				/>
+				{#if submitted && errors.date}
+					<span class="text-red-400 text-xs">{errors.date}</span>
+				{/if}
 				<div class="border-t border-gray-700 mt-2"></div>
 			</div>
 
 			<!-- Campos Localidad y Distrito (como selects independientes) -->
 			<div class="flex flex-col space-y-6">
-				<!-- Select de Localidad -->
+				<!-- Select de Provincia -->
 				<div class="flex flex-col space-y-2">
-					<label for="localidad" class="text-lg">Localidad</label>
+					<label for="provincia" class="text-lg">Provincia *</label>
 					<select
-						id="localidad"
-						bind:value={selectedLocality}
+						id="provincia"
+						bind:value={form.selectedProvince}
 						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
 					>
 						<option value="" disabled selected>Seleccione una provincia</option>
-						{#each localities as locality}
-							<option value={locality.id}>{locality.name}</option>
+						{#each provinces as province}
+							<option value={province.id}>{province.name}</option>
 						{/each}
 					</select>
+					{#if submitted && errors.selectedProvince}
+						<span class="text-red-400 text-xs">{errors.selectedProvince}</span>
+					{/if}
 					<div class="border-t border-gray-700 mt-2"></div>
 				</div>
-
 				<!-- Select de Distrito -->
 				<div class="flex flex-col space-y-2">
-					<label for="distrito" class="text-lg">Distrito</label>
+					<label for="distrito" class="text-lg">Distrito *</label>
 					<select
 						id="distrito"
-						bind:value={selectedDistrict}
+						bind:value={form.selectedDistrict}
 						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
 					>
 						<option value="" disabled selected>Seleccione un distrito</option>
@@ -176,13 +245,34 @@
 							<option value={district.id}>{district.name}</option>
 						{/each}
 					</select>
+					{#if submitted && errors.selectedDistrict}
+						<span class="text-red-400 text-xs">{errors.selectedDistrict}</span>
+					{/if}
+					<div class="border-t border-gray-700 mt-2"></div>
+				</div>
+				<!-- Select de Localidad -->
+				<div class="flex flex-col space-y-2">
+					<label for="localidad" class="text-lg">Localidad *</label>
+					<select
+						id="localidad"
+						bind:value={form.selectedLocality}
+						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+					>
+						<option value="" disabled selected>Seleccione una provincia</option>
+						{#each localities as locality}
+							<option value={locality.id}>{locality.name}</option>
+						{/each}
+					</select>
+					{#if submitted && errors.selectedLocality}
+						<span class="text-red-400 text-xs">{errors.selectedLocality}</span>
+					{/if}
 					<div class="border-t border-gray-700 mt-2"></div>
 				</div>
 			</div>
 
 			<!-- Campo Archivo de video -->
 			<div class="flex flex-col space-y-2">
-				<label for="video" class="text-lg">Archivo de video</label>
+				<label for="video" class="text-lg">Archivo de video *</label>
 				<div class="flex items-center space-x-4">
 					<label
 						for="video-upload"
@@ -212,8 +302,11 @@
 						onchange={handleFileSelect}
 					/>
 					<span class="text-gray-400">
-						{selectedFile ? selectedFile.name : 'Ningún archivo seleccionado'}
+						{form.file ? form.file.name : 'Ningún archivo seleccionado'}
 					</span>
+					{#if submitted && errors.file}
+						<span class="text-red-400 text-xs">{errors.file}</span>
+					{/if}
 				</div>
 				<p class="text-xs text-gray-400 mt-1">Formatos aceptados: MP4, AVI, MOV.</p>
 				<div class="border-t border-gray-700 mt-2"></div>
@@ -225,8 +318,9 @@
 					type="button"
 					onclick={handleSubmit}
 					class="bg-blue-600 hover:bg-blue-700 text-white py-3 px-8 rounded-md font-medium transition-colors"
+					disabled={!isFormValid}
 				>
-					Iniciar Subida
+					{isFormValid}
 				</button>
 			</div>
 		</form>

@@ -18,6 +18,10 @@ def get_district_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.district_service import DistrictService
     return DistrictService(db)
 
+def get_province_service(db: sessionmaker = Depends(get_db_session)):
+    from app.services.province_service import ProvinceService
+    return ProvinceService(db)
+
 def get_task_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.task_service import TaskService
     return TaskService(db)

@@ -134,4 +134,5 @@ videos/
 **/__pycache__/
 **.svelte-kit
 modelo/
+minio/
 *.mp4
