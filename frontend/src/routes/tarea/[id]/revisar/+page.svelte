@@ -35,6 +35,8 @@
 	let videoFps = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
+	type SortedIndeterminado = [string, Indeterminado];
+	let sortedIndeterminados = $state<SortedIndeterminado[]>([]);
 	let videoScale = $state({ x: 1, y: 1 });
 
 	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
@@ -113,6 +115,7 @@
 	function startAnimationLoop() {
 		if (animationFrameId === null) {
 			activeBoundingBox = null;
+			activeIndeterminateId = null;
 			playbackBoundingBoxes = [];
 
 			// CAMBIO CLAVE:
@@ -145,7 +148,14 @@
 	});
 
 	// --- Lógica de Interacción ---
+	// IDs de las tarjetas que corresponden a BBoxes visibles en el video
+	let liveIndeterminateIds = $derived.by(() => {
+		// Usamos un Set para búsquedas ultra-rápidas (O(1)) en el template
+		return new Set(playbackBoundingBoxes.map((box) => box.id));
+	});
+	let activeIndeterminateId = $state<string | null>(null);
 	function handleIndeterminateClick(trackId: string) {
+		activeIndeterminateId = trackId;
 		if (!videoElement || !videoFps) return;
 		const item = indeterminados[trackId];
 		if (!item) return;
@@ -251,6 +261,13 @@
 			videoFps = +apiData.videoFps;
 			rutas = apiData.rutas;
 			indeterminados = apiData.indeterminados;
+			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
+				const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
+				const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
+				if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
+				if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
+				return parseInt(a.frame) - parseInt(b.frame);
+			});
 		} catch (e: any) {
 			error = e.message || 'Error desconocido al cargar los datos.';
 		} finally {
@@ -280,8 +297,10 @@
 		event.stopPropagation();
 		const item = indeterminados[trackId];
 		if (!item) return;
+		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (activeBoundingBox === item.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
+		if (activeIndeterminateId === trackId) activeIndeterminateId = null;
 
 		const [entrada, salida] = item.labels;
 		const vehiculo = item.class;
@@ -308,8 +327,10 @@
 	function handleDelete(trackId: string, event: MouseEvent) {
 		event.stopPropagation();
 		const item = indeterminados[trackId];
+		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (item && activeBoundingBox === item.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
+		if (activeIndeterminateId === trackId) activeIndeterminateId = null;
 
 		delete indeterminados[trackId];
 		indeterminados = { ...indeterminados };
@@ -335,15 +356,6 @@
 			Object.keys(salidas).forEach((id) => allZones.add(id))
 		);
 		return Array.from(allZones).sort();
-	});
-	let sortedIndeterminados = $derived.by(() => {
-		return Object.entries(indeterminados).sort(([, a], [, b]) => {
-			const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
-			const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
-			if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
-			if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
-			return parseInt(a.frame) - parseInt(b.frame);
-		});
 	});
 	let entradasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
@@ -485,8 +497,9 @@
 						<!-- El bloque de renderizado de BBoxes no cambia -->
 						{#each displayBoundingBoxes as box (box.id)}
 							<div class="bbox-style" style={calculateBoxStyle(box)}>
-								<!-- Opcional: Podrías mostrar el ID aquí para depuración -->
-								<!-- <span class="absolute -top-5 left-0 bg-black bg-opacity-50 text-white text-xs px-1">{box.id}</span> -->
+								{#if box.id !== 'active-manual'}
+									<div class="bbox-id-label">ID: {box.id}</div>
+								{/if}
 							</div>
 						{/each}
 					</div>
@@ -496,18 +509,20 @@
 			<!-- Lista de indeterminados -->
 			{#if sortedIndeterminados.length > 0}
 				<div
-					class="w-full md:w-auto bg-[#2a2f3a] p-4 rounded-lg shadow-lg max-w-[450px] overflow-y-auto"
+					class="w-full md:w-auto bg-[#2a2f3a] p-1 rounded-lg shadow-lg max-w-[450px] overflow-y-auto"
 					style:height={videoHeightPx > 0 ? `${videoHeightPx}px` : 'auto'}
 				>
-					<h3 class="text-xl font-semibold mb-4 text-center">Vehículos Indeterminados</h3>
+					<h3 class="text-xl font-semibold mt-3 mb-3 text-center">Vehículos Indeterminados</h3>
 
 					<div class="overflow-y-auto flex-1">
-						<div class="space-y-3">
+						<div class="space-y-3 p-1">
 							{#each sortedIndeterminados as [trackId, item] (trackId)}
 								{@const [entrada, salida] = item.labels}
 								{@const canConfirm = entrada !== 'IND' && salida !== 'IND'}
 								<div
-									class="bg-[#383f4f] p-3 rounded-md border border-gray-600 cursor-pointer hover:border-emerald-500 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400"
+									class="ind-card"
+									class:live={liveIndeterminateIds.has(trackId)}
+									class:selected={trackId === activeIndeterminateId}
 									role="button"
 									tabindex="0"
 									onclick={() => handleIndeterminateClick(trackId)}
@@ -567,7 +582,8 @@
 										class="w-full py-2 text-sm font-semibold rounded transition-colors"
 										class:bg-emerald-600={canConfirm}
 										class:hover:bg-emerald-500={canConfirm}
-										class:bg-gray-500={!canConfirm}
+										class:bg-gray-500={!canConfirm && trackId !== activeIndeterminateId}
+										class:bg-gray-300={trackId === activeIndeterminateId}
 										class:cursor-not-allowed={!canConfirm}
 									>
 										Confirmar Ruta
@@ -730,5 +746,102 @@
 		pointer-events: none;
 		z-index: 10;
 		transition: transform 0.2s ease-in-out;
+	}
+	.ind-card {
+		background-color: #383f4f;
+		padding: 0.75rem;
+		border-radius: 0.375rem;
+		border: 2px solid #4a5568;
+		cursor: pointer;
+		transition:
+			border-color 0.2s ease-in-out,
+			box-shadow 0.2s ease-in-out,
+			background-color 0.2s ease-in-out,
+			color 0.2s ease-in-out;
+		outline: none;
+	}
+
+	/* 1. Resplandor débil para hover (sin cambios) */
+	.ind-card:hover {
+		border-color: #a0aec0;
+		box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+	}
+
+	/* 2. Resplandor fuerte para la tarjeta "en vivo" durante la reproducción */
+	.ind-card.live {
+		transition: none;
+		border-color: #ffffff;
+		box-shadow:
+			0 0 3px rgba(255, 255, 255, 0.5),
+			0 0 7px rgba(255, 255, 255, 0.7);
+	}
+
+	/* 3. Estilo para la tarjeta seleccionada manualmente (la más importante) */
+	.ind-card.selected {
+		background-color: #ffffff;
+		color: #1a1e2a; /* Color de texto por defecto para fondo blanco */
+		border-color: #ffffff; /* Mantiene el borde blanco del glow */
+		box-shadow: /* Mantiene el mismo glow fuerte */
+			0 0 3px rgba(255, 255, 255, 0.5),
+			0 0 7px rgba(255, 255, 255, 0.7);
+	}
+
+	/* --- Overrides para los elementos internos cuando la tarjeta está seleccionada --- */
+
+	.ind-card.selected p,
+	.ind-card.selected label {
+		color: #1f2937; /* Texto principal oscuro */
+	}
+
+	.ind-card.selected .text-red-400 {
+		color: #dc2626; /* Un rojo más oscuro y visible */
+	}
+
+	.ind-card.selected .text-red-400:hover {
+		color: #b91c1c;
+	}
+
+	.ind-card.selected span.text-gray-400 {
+		color: #4b5567; /* La flecha '→' */
+	}
+
+	.ind-card.selected select {
+		background-color: #f3f4f6; /* Fondo gris claro para los selects */
+		border-color: #9ca3af;
+		color: #1f2937;
+	}
+	/* --- ESTILO AÑADIDO PARA LA ETIQUETA DEL ID DE LA BBOX --- */
+	.bbox-id-label {
+		/* Posicionamiento: arriba y a la izquierda de la BBox */
+		position: absolute;
+		bottom: 100%;
+		left: -2px; /* Alineado con el borde de la BBox */
+		margin-bottom: 5px; /* Pequeño espacio sobre la BBox */
+
+		/* Estilo del contenedor para máxima legibilidad */
+		background-color: rgba(0, 0, 0, 0.75); /* Fondo negro semitransparente */
+		padding: 2px 8px;
+		border-radius: 4px;
+
+		/* Estilo del texto */
+		color: white;
+		font-family:
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			Roboto,
+			Oxygen,
+			Ubuntu,
+			Cantarell,
+			'Open Sans',
+			'Helvetica Neue',
+			sans-serif;
+		font-size: 12px;
+		font-weight: 600;
+		white-space: nowrap; /* Evita que el ID se parta en dos líneas */
+
+		/* Un suave resplandor al texto para que se integre mejor */
+		text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
 	}
 </style>
