@@ -1,242 +1,478 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { quintOut } from 'svelte/easing';
+	import { fly } from 'svelte/transition';
 
-  let canvas: HTMLCanvasElement | null = null;
-  let ctx: CanvasRenderingContext2D | null = null;
-  let drawing = false;
-  let showModal = false;
+	// --- Estado del Canvas y Dibujo ---
+	let canvas: HTMLCanvasElement;
+	let ctx: CanvasRenderingContext2D;
+	let imageRef: HTMLImageElement;
+	let currentPoints: Array<{ x: number; y: number }> = [];
 
-  let modalVia = 'Ruta 2';
-  let modalSentido = 'Entrada';
-  let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
-  let opcionesSentido = ['Entrada', 'Salida'];
+	// --- Estado de Polígonos ---
+	let poligonos: Array<{
+		id: number;
+		via: string;
+		sentido: string;
+		vertices: Array<{ x: number; y: number }>;
+	}> = [];
 
-  let puntos: Array<{ x: number, y: number }> = [];
+	// --- Estado del Popover Contextual ---
+	let pendingPolygon: {
+		via: string;
+		sentido: string;
+		vertices: Array<{ x: number; y: number }>;
+	} | null = null;
+	let popoverPosition = { top: 0, left: 0, transform: 'translate(-50%, 15px)' };
 
-  let poligonos: Array<{
-    via: string;
-    sentido: string;
-    vertices: Array<{ x: number, y: number }>;
-  }> = [];
+	// --- Estado de la Interfaz ---
+	let isSubmitting = false; // Para deshabilitar el botón "Finalizar" durante el envío
 
-  function handleDraw() {
-    if (puntos.length >= 4) {
-      alert('Ya se han agregado los 4 puntos permitidos.');
-      puntos.length =0;
-      return;
-    }
-    showModal = true;
-  }
+	// --- Opciones (pueden venir de una API) ---
+	let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
+	let opcionesSentido = ['Entrada', 'Salida'];
 
-  function closeModal() {
-    showModal = false;
-  }
+	// --- Ciclo de vida y Eventos ---
+	onMount(() => {
+		// All window-related code must be inside onMount to avoid SSR errors
+		if (typeof window !== 'undefined') {
+			window.addEventListener('keydown', handleKeyDown);
+			const setupCanvas = () => {
+				if (imageRef && imageRef.clientWidth > 0) {
+					ctx = canvas.getContext('2d')!;
+					canvas.width = imageRef.clientWidth;
+					canvas.height = imageRef.clientHeight;
+					requestAnimationFrame(redrawCanvas);
+				} else {
+					setTimeout(setupCanvas, 50);
+				}
+			};
+			setupCanvas();
+			window.addEventListener('resize', setupCanvas);
 
-  async function confirmDraw() {
-    showModal = false;
-    drawing = true;
-    await tick();
+			onDestroy(() => {
+				window.removeEventListener('keydown', handleKeyDown);
+				window.removeEventListener('resize', setupCanvas);
+			});
+		}
+	});
 
-    if (canvas) {
-      ctx = canvas.getContext('2d');
-      canvas.addEventListener('click', handleCanvasClick);
-      redrawConfirmedPolygons(); // Redibuja los anteriores
-    }
-  }
+	// --- Lógica de Interacción ---
 
-  function handleCanvasClick(event: MouseEvent) {
-    if (!canvas || !ctx) return;
+	function ordenarVertices(
+		points: Array<{ x: number; y: number }>
+	): Array<{ x: number; y: number }> {
+		if (points.length !== 4) return points;
+		const centro = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+		centro.x /= 4;
+		centro.y /= 4;
+		return points
+			.map((point) => ({
+				...point,
+				angle: Math.atan2(point.y - centro.y, point.x - centro.x)
+			}))
+			.sort((a, b) => a.angle - b.angle)
+			.map(({ x, y }) => ({ x, y }));
+	}
 
-    if (puntos.length >= 4) {
-      alert('Ya se marcaron los 4 vértices. Confirmá o inicia otro dibujo.');
-      puntos.length =0;
-      return;
-    }
+	function calculatePopoverPosition(
+		polyVertices: Array<{ x: number; y: number }>,
+		canvasRect: DOMRect
+	) {
+		const centro = polyVertices.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
+			x: 0,
+			y: 0
+		});
+		centro.x /= 4;
+		centro.y /= 4;
+		const popoverHeight = 230;
+		const popoverOffsetY = 15;
+		let top = centro.y + canvasRect.top + popoverOffsetY;
+		let transform = 'translate(-50%, 0)';
+		if (top + popoverHeight > window.innerHeight) {
+			top = centro.y + canvasRect.top - popoverOffsetY;
+			transform = 'translate(-50%, -100%)';
+		}
+		const popoverWidth = 288; // w-72 = 18rem = 288px
+		let left = centro.x + canvasRect.left;
+		if (left + popoverWidth / 2 > window.innerWidth) {
+			left = window.innerWidth - popoverWidth / 2 - 16; // 16px margin from edge
+		}
+		if (left - popoverWidth / 2 < 0) {
+			left = popoverWidth / 2 + 16; // 16px margin from edge
+		}
+		return {
+			top,
+			left,
+			transform
+		};
+	}
 
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+	function handleCanvasClick(event: MouseEvent) {
+		if (pendingPolygon) return;
+		const rect = canvas.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		currentPoints.push({ x, y });
 
-    puntos.push({ x, y });
-    console.log(`Vértice ${puntos.length}: ${Math.round(x)}, ${Math.round(y)}`);
+		if (currentPoints.length === 4) {
+			const verticesOrdenados = ordenarVertices(currentPoints);
+			pendingPolygon = {
+				vertices: verticesOrdenados,
+				via: opcionesVias[0],
+				sentido: opcionesSentido[0]
+			};
+			currentPoints = [];
+			const { top, left, transform } = calculatePopoverPosition(pendingPolygon.vertices, rect);
+			popoverPosition = { top, left, transform };
+		}
+		requestAnimationFrame(redrawCanvas);
+	}
 
-    ctx.fillStyle = modalSentido === 'Entrada' ? 'green' : 'red';
-    ctx.fillRect(x - 5, y - 5, 10, 10);
+	function handleKeyDown(event: KeyboardEvent) {
+		if (pendingPolygon) {
+			if (event.key === 'Enter') confirmPendingPolygon();
+			if (event.key === 'Escape') cancelPendingPolygon();
+			return;
+		}
+		if (event.key === 'Escape') currentPoints = [];
+		if (event.key === 'Backspace') currentPoints.pop();
+		requestAnimationFrame(redrawCanvas);
+	}
 
-    if (puntos.length === 4) {
-      // Guardamos el polígono
-      poligonos = [...poligonos,
-          {
-            via: modalVia,
-            sentido: modalSentido,
-            vertices: [...puntos]
-          }
-        ];
+	function confirmPendingPolygon() {
+		if (!pendingPolygon) return;
+		poligonos = [
+			...poligonos,
+			{
+				id: Date.now(),
+				...pendingPolygon
+			}
+		];
+		pendingPolygon = null;
+		requestAnimationFrame(redrawCanvas);
+	}
 
-      console.log('Todos los polígonos:', poligonos);
-          
+	function cancelPendingPolygon() {
+		pendingPolygon = null;
+		requestAnimationFrame(redrawCanvas);
+	}
 
-      // Limpiamos el canvas y redibujamos todos los confirmados
-      puntos = [];
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      redrawConfirmedPolygons();
-    }
-  }
+	function eliminarPoligono(id: number) {
+		poligonos = poligonos.filter((p) => p.id !== id);
+		requestAnimationFrame(redrawCanvas);
+	}
 
-  function redrawConfirmedPolygons() {
-  if (!ctx || !canvas) return;
+	// --- NUEVA FUNCIÓN ---
+	async function finalizarProceso() {
+		if (poligonos.length === 0 || isSubmitting) return;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+		isSubmitting = true;
+		alert(`Proceso finalizado. Se enviarán ${poligonos.length} vías al servidor.`);
+		console.log('Datos a enviar al backend:', JSON.stringify(poligonos, null, 2));
 
-  for (const poly of poligonos) {
-    // Dibujar contorno
-    ctx.beginPath();
-    ctx.moveTo(poly.vertices[0].x, poly.vertices[0].y);
-    for (let i = 1; i < poly.vertices.length; i++) {
-      ctx.lineTo(poly.vertices[i].x, poly.vertices[i].y);
-    }
-    ctx.closePath();
-    ctx.strokeStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+		// TODO: Aquí va la lógica para enviar los datos a tu API.
+		// try {
+		//   const response = await fetch('/api/vias', {
+		//     method: 'POST',
+		//     headers: { 'Content-Type': 'application/json' },
+		//     body: JSON.stringify(poligonos)
+		//   });
+		//   if (!response.ok) throw new Error('Error en el servidor');
+		//   const result = await response.json();
+		//   console.log('Respuesta del servidor:', result);
+		//   // Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.
+		//   // poligonos = [];
+		// } catch (error) {
+		//   console.error('Fallo al enviar los datos:', error);
+		//   alert('Hubo un error al guardar las vías. Inténtalo de nuevo.');
+		// } finally {
+		//    isSubmitting = false;
+		// }
 
-    // Dibujar vértices
-    for (const v of poly.vertices) {
-      ctx.fillStyle = poly.sentido === 'Entrada' ? 'green' : 'red';
-      ctx.fillRect(v.x - 5, v.y - 5, 10, 10);
-    }
+		// Como es un mockup, solo simulamos un pequeño retraso y re-habilitamos el botón.
+		setTimeout(() => {
+			isSubmitting = false;
+		}, 1000);
+	}
 
-    // Calcular centroide del polígono
-    const centro = poly.vertices.reduce(
-      (acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
-      { x: 0, y: 0 }
-    );
-    centro.x /= poly.vertices.length;
-    centro.y /= poly.vertices.length;
+	// --- Función Central de Dibujo ---
+	function redrawCanvas() {
+		// ... (el resto de esta función es idéntico)
+		if (!ctx) return;
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		poligonos.forEach((poly) => drawPolygon(poly, { confirmed: true }));
+		if (pendingPolygon) {
+			drawPolygon(pendingPolygon, { pending: true });
+		}
+		if (currentPoints.length > 0) {
+			ctx.beginPath();
+			ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+			for (const p of currentPoints.slice(1)) ctx.lineTo(p.x, p.y);
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+			ctx.lineWidth = 2;
+			ctx.setLineDash([6, 6]);
+			ctx.stroke();
+			ctx.setLineDash([]);
+			currentPoints.forEach((p) => {
+				ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+				ctx.beginPath();
+				ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+				ctx.fill();
+			});
+		}
+	}
 
-    // Dibujar el texto centrado
-    ctx.font = '12px sans-serif';
-    ctx.fillStyle = 'white';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${poly.via} - ${poly.sentido}`, centro.x, centro.y - 10);
-  }
-}
+	function drawPolygon(
+		poly: { via: string; sentido: string; vertices: Array<{ x: number; y: number }> },
+		options: { confirmed?: boolean; pending?: boolean }
+	) {
+		// ... (el resto de esta función es idéntico)
+		const color = poly.sentido === 'Entrada' ? 'rgba(74, 222, 128, 1)' : 'rgba(248, 113, 113, 1)';
+		ctx.fillStyle = color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
+		ctx.beginPath();
+		ctx.moveTo(poly.vertices[0].x, poly.vertices[0].y);
+		for (const v of poly.vertices.slice(1)) ctx.lineTo(v.x, v.y);
+		ctx.closePath();
+		ctx.fill();
+		ctx.strokeStyle = color;
+		ctx.lineWidth = options.pending ? 4 : 2;
+		if (options.pending) {
+			ctx.setLineDash([8, 4]);
+		}
+		ctx.stroke();
+		ctx.setLineDash([]);
+		if (options.confirmed) {
+			const centro = poly.vertices.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
+				x: 0,
+				y: 0
+			});
+			centro.x /= 4;
+			centro.y /= 4;
+			ctx.font = 'bold 14px sans-serif';
+			ctx.fillStyle = 'white';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.shadowColor = 'black';
+			ctx.shadowBlur = 5;
+			ctx.fillText(`${poly.via}`, centro.x, centro.y);
+			ctx.shadowBlur = 0;
+		}
+	}
 
- function eliminarPoligono(index: number) {
-  poligonos = poligonos.filter((_, i) => i !== index);
-  redrawConfirmedPolygons();
-}
-
-
+	$: if (pendingPolygon) requestAnimationFrame(redrawCanvas);
 </script>
 
-<style>
-  canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    pointer-events: auto;
-    cursor: crosshair;
-  }
-</style>
-
-<!-- Fondo oscuro -->
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
-  <div class="max-w-5xl mx-auto">
-    <h1 class="text-2xl font-bold mb-6">Asignar vías - Dibujar sobre imagen</h1>
+	<div class=" mx-auto">
+		<!-- Título y descripción generales -->
+		<div class="text-center mb-6">
+			<h1 class="text-3xl font-bold">Asignar Vías</h1>
+			<p class="text-gray-400 mt-2">
+				Haz clic 4 veces en la imagen para definir una zona. Usa <kbd class="key-kbd">Backspace</kbd
+				>
+				para deshacer o
+				<kbd class="key-kbd">Esc</kbd> para cancelar.
+			</p>
+		</div>
 
-    <!-- Imagen con canvas superpuesto -->
-    <div class="relative w-full rounded overflow-hidden bg-black">
-      <img src="/images/rotonda_manual.png" alt="Imagen base" class="w-full h-auto opacity-90" />
+		<!-- Contenedor Principal con Layout de Grid -->
+		<div class="lg:grid lg:grid-cols-3 lg:gap-8">
+			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
+			<div
+				class="lg:col-span-1 flex flex-col h-full bg-[#23263a] border border-gray-700 rounded-lg shadow-xl p-4 lg:mr-4 mb-8 lg:mb-0"
+			>
+				<div>
+					<h2 class="text-xl font-semibold mb-4">Vías Definidas ({poligonos.length})</h2>
+					{#if poligonos.length === 0}
+						<p class="text-gray-400 text-center py-4 bg-[#2d3748] rounded-lg">
+							No hay vías definidas.
+						</p>
+					{:else}
+						<div class="space-y-3">
+							{#each poligonos as poly (poly.id)}
+								<div
+									class="bg-[#2d3748] p-3 rounded-lg border-l-4 flex justify-between items-center transition-all"
+									class:border-green-400={poly.sentido === 'Entrada'}
+									class:border-red-400={poly.sentido === 'Salida'}
+									out:fly={{ y: -10, opacity: 0, duration: 250, easing: quintOut }}
+								>
+									<div>
+										<p class="font-bold text-lg text-blue-300">{poly.via}</p>
+										<p
+											class="text-sm"
+											class:text-green-300={poly.sentido === 'Entrada'}
+											class:text-red-300={poly.sentido === 'Salida'}
+										>
+											{poly.sentido}
+										</p>
+									</div>
+									<button
+										on:click={() => eliminarPoligono(poly.id)}
+										class="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-red-500"
+										aria-label="Eliminar vía"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="20"
+											height="20"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<polyline points="3 6 5 6 21 6" />
+											<path
+												d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+											/>
+											<line x1="10" y1="11" x2="10" y2="17" />
+											<line x1="14" y1="11" x2="14" y2="17" />
+										</svg>
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
 
-      {#if drawing}
-        <canvas
-          bind:this={canvas}
-          width={canvas?.parentElement?.clientWidth}
-          height={canvas?.parentElement?.clientHeight}
-          class="absolute top-0 left-0 z-10"
-        ></canvas>
-      {/if}
-    </div>
+				<!-- Botón Finalizar -->
+				<div class="mt-auto pt-8">
+					<button
+						on:click={finalizarProceso}
+						disabled={poligonos.length === 0 || isSubmitting}
+						class="w-full px-4 py-3 rounded font-semibold transition-colors text-lg
+            bg-green-600 hover:bg-green-500
+            disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
+					>
+						{isSubmitting ? 'Enviando...' : 'Finalizar y Guardar'}
+					</button>
+				</div>
+			</div>
 
-    <!-- Botón para abrir modal -->
-    <div class="flex justify-center mt-6 gap-4">
-      <button
-        on:click={handleDraw}
-        class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-md"
-      >
-        Dibujar
-      </button>
-    </div>
-  </div>
+			<!-- Columna Derecha: Imagen y Canvas -->
+			<div class="lg:col-span-2 mt-8 lg:mt-0">
+				<div
+					class="canvas-container rounded-lg overflow-hidden shadow-2xl border-2 border-gray-700"
+					on:click={handleCanvasClick}
+					role="button"
+					tabindex="0"
+					on:keydown={() => {}}
+					aria-label="Definir zona en la imagen"
+				>
+					<img
+						src="/images/rotonda_manual.png"
+						alt="Imagen base"
+						bind:this={imageRef}
+						class="w-full h-auto opacity-70 prevent-drag"
+						draggable="false"
+					/>
+					<canvas bind:this={canvas}></canvas>
+				</div>
+			</div>
+		</div>
+	</div>
 
-  <!-- Lista de polígonos confirmados -->
-  <div class="max-w-5xl mx-auto mt-10">
-    <h2 class="text-xl font-semibold mb-4">Polígonos confirmados</h2>
-
-    {#if poligonos.length === 0}
-      <p class="text-gray-400">Todavía no se han dibujado polígonos.</p>
-    {:else}
-      <div class="space-y-4">
-        {#each poligonos as poly, index}
-          <div class="bg-[#2d3748] p-4 rounded border border-gray-700">
-            <div class="flex justify-between items-center mb-2">
-              <div>
-                <p><strong>#{index + 1}</strong> - 
-                  <span class="text-blue-400">{poly.via}</span> - 
-                  <span class={poly.sentido === 'Entrada' ? 'text-green-400' : 'text-red-400'}>
-                    {poly.sentido}
-                  </span>
-                </p>
-              </div>
-              <div class="flex gap-2">
-                <button on:click={() => eliminarPoligono(index)} class="text-red-400 hover:underline text-sm">Eliminar</button>
-              </div>
-            </div>
-            <ul class="text-sm pl-4 list-disc">
-              {#each poly.vertices as v, vi}
-                <li>Vértice {vi + 1}: ({Math.round(v.x)}, {Math.round(v.y)})</li>
-              {/each}
-            </ul>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  <!-- Modal -->
-  {#if showModal}
-    <div class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <div class="bg-[#1a202c] text-white p-6 rounded-lg space-y-4 w-full max-w-sm shadow-lg">
-        <h2 class="text-lg font-semibold">Dibujar vía</h2>
-
-        <div>
-          <label class="block mb-1 text-sm">Vía:</label>
-          <select bind:value={modalVia} class="w-full bg-[#2d3748] text-white p-2 rounded border border-gray-600">
-            {#each opcionesVias as opcion}
-              <option value={opcion}>{opcion}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div>
-          <label class="block mb-1 text-sm">Sentido:</label>
-          <select bind:value={modalSentido} class="w-full bg-[#2d3748] text-white p-2 rounded border border-gray-600">
-            {#each opcionesSentido as opcion}
-              <option value={opcion}>{opcion}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="flex justify-end gap-3 pt-4">
-          <button on:click={closeModal} class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded">
-            Cancelar
-          </button>
-          <button on:click={confirmDraw} class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded">
-            Confirmar
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+	<!-- Popover Contextual para Confirmar Polígono -->
+	{#if pendingPolygon}
+		<div
+			class="popover bg-[#1a202c] p-4 rounded-lg shadow-2xl border border-gray-600 w-72"
+			style="top: {popoverPosition.top}px; left: {popoverPosition.left}px; transform: {popoverPosition.transform};"
+			transition:fly={{ y: 20, duration: 250, easing: quintOut }}
+		>
+			<h3 class="font-semibold text-center text-lg mb-3">Confirmar Zona</h3>
+			<div class="space-y-3">
+				<div>
+					<label for="via-select" class="block mb-1 text-sm text-gray-300">Vía:</label>
+					<select id="via-select" bind:value={pendingPolygon.via} class="select-input">
+						{#each opcionesVias as opcion}
+							<option value={opcion}>{opcion}</option>
+						{/each}
+					</select>
+				</div>
+				<div>
+					<label for="sentido-select" class="block mb-1 text-sm text-gray-300">Sentido:</label>
+					<select id="sentido-select" bind:value={pendingPolygon.sentido} class="select-input">
+						{#each opcionesSentido as opcion}
+							<option value={opcion}>{opcion}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+			<div class="flex gap-2 pt-4">
+				<button on:click={cancelPendingPolygon} class="btn-secondary">Cancelar (Esc)</button>
+				<button on:click={confirmPendingPolygon} class="btn-primary">Confirmar (Enter)</button>
+			</div>
+		</div>
+	{/if}
 </div>
+
+<style>
+	.canvas-container {
+		position: relative;
+		width: 100%;
+		cursor: crosshair;
+		line-height: 0;
+	}
+	canvas {
+		position: absolute;
+		top: 0;
+		left: 0;
+		pointer-events: none;
+	}
+	.popover {
+		position: fixed;
+		z-index: 50;
+	}
+	.prevent-drag {
+		user-select: none;
+		-webkit-user-drag: none;
+	}
+
+	/* Clases de utilidad para reducir duplicación en el HTML */
+	.key-kbd {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #1f2937;
+		background-color: #f3f4f6;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.5rem;
+	}
+	.select-input {
+		width: 100%;
+		background-color: #2d3748;
+		padding: 0.5rem;
+		border-radius: 0.25rem;
+		border: 1px solid #4b5563;
+	}
+	.select-input:focus {
+		outline: none;
+		box-shadow: 0 0 0 2px #3b82f6;
+		border-color: #3b82f6;
+	}
+	.btn-primary {
+		width: 100%;
+		padding: 0.5rem 1rem;
+		background-color: #2563eb;
+		border-radius: 0.25rem;
+		font-weight: 600;
+		transition: background-color 0.2s;
+		color: white;
+	}
+	.btn-primary:hover {
+		background-color: #3b82f6;
+	}
+	.btn-secondary {
+		width: 100%;
+		padding: 0.5rem 1rem;
+		background-color: #4b5563;
+		border-radius: 0.25rem;
+		transition: background-color 0.2s;
+		color: white;
+	}
+	.btn-secondary:hover {
+		background-color: #6b7280;
+	}
+</style>
