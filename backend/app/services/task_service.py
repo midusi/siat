@@ -53,6 +53,7 @@ class TaskService:
                     "id": history.task_status.id,
                     "name": history.task_status.name
                 },
+                "date": task.date, 
                 "created_at": task.created_at.isoformat()
             })
             responses.append(task_response)
