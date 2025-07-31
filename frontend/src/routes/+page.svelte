@@ -18,6 +18,11 @@
 
 	let tasks: Task[] = [];
 
+	// Método para definir las acciones en base al estado de la tarea
+	const taskActions: Record<string, string[]> = {
+		'Video subido': ['configurar']
+	};
+
 	onMount(async () => {
 		try {
 			const response = await fetch(`${BACKEND_URL}/task`);
@@ -36,7 +41,7 @@
 				vias: task.name_video, // Using video name as a placeholder for vias
 				estado: task.status.name,
 				detalle: `${Math.floor(task.duration / 60)}m ${task.duration % 60}s`, // Formatting duration
-				acciones: [] // Actions will be determined by existing frontend logic
+				acciones: taskActions[task.status.name] || []
 			}));
 		} catch (error) {
 			console.error('Error fetching tasks:', error);
