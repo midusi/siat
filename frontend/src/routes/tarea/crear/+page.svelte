@@ -240,7 +240,7 @@
 						bind:value={form.selectedDistrict}
 						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
 					>
-						<option value="" disabled selected>Seleccione un distrito</option>
+						<option value={null} disabled selected>Seleccione un distrito</option>
 						{#each districts as district}
 							<option value={district.id}>{district.name}</option>
 						{/each}
@@ -258,7 +258,9 @@
 						bind:value={form.selectedLocality}
 						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
 					>
-						<option value="" disabled selected>Seleccione una provincia</option>
+						<option value={null} disabled selected>
+							Seleccione {form.selectedDistrict === null ? 'un distrito' : 'una localidad'}
+						</option>
 						{#each localities as locality}
 							<option value={locality.id}>{locality.name}</option>
 						{/each}
@@ -317,10 +319,13 @@
 				<button
 					type="button"
 					onclick={handleSubmit}
-					class="bg-blue-600 hover:bg-blue-700 text-white py-3 px-8 rounded-md font-medium transition-colors"
+					class="py-3 px-8 rounded-md font-medium transition-colors
+						{!isFormValid
+						? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+						: 'bg-blue-600 hover:bg-blue-700 text-white'}"
 					disabled={!isFormValid}
 				>
-					{isFormValid}
+					Crear Tarea
 				</button>
 			</div>
 		</form>
