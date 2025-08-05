@@ -32,7 +32,7 @@
 			const fetchedTasks = await response.json();
 			tasks = fetchedTasks.map((task: any) => ({
 				id: task.id,
-				fecha: new Date(task.uploaded_at).toLocaleDateString('es-AR', {
+				fecha: new Date(task.date).toLocaleDateString('es-AR', {
 					year: '2-digit',
 					month: '2-digit',
 					day: '2-digit'
