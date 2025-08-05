@@ -88,8 +88,8 @@
 		const result = TaskFormSchema.safeParse(form);
 		if (!result.success) {
 			errors = {};
-			for (const err of result.error.errors) {
-				errors[err.path[0]] = err.message;
+			for (const err of result.error.issues) {
+				errors[String(err.path[0])] = err.message;
 			}
 			return;
 		}
