@@ -15,10 +15,12 @@ class RoadService:
     def find_by_fields(self, **filters) -> list[Road] | None:
         return road_crud.find_by_fields(self.db, **filters)
         
-    def create(self, number: int, direction: RoadDirection, polygon: tuple[float, float], video_id: int) -> Road:
+    def create(self, number: int, direction: RoadDirection, polygon, video_id: int) -> Road:
+        import json
         return Road(
+            name=f"Vía {number}",
             number=number,
             direction=direction,
-            polygon=polygon,
+            polygon=json.dumps(polygon),
             video_id=video_id,
         )

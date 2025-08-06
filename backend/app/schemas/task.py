@@ -22,8 +22,8 @@ class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
 class TaskConfigRequest(BaseModel):
-    roads_in: list[RoadRequest]
-    roads_out: list[RoadRequest]
+    roads_in: list[list[list[int]]]
+    roads_out: list[list[list[int]]]
     
     model_config = ConfigDict(from_attributes=True)
 

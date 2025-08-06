@@ -4,6 +4,7 @@ from app.services.task_service import TaskService
 from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
 from app.services.dependencies import get_task_service
 from datetime import datetime
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/task", tags=["task"])
 
@@ -142,10 +143,11 @@ async def create(
 
 @router.post("/{task_id}/config")
 async def config(
-    task_config_request: TaskConfigRequest,
     task_id: int,
+    task_config_request: TaskConfigRequest,
     service: TaskService = Depends(get_task_service)
 ):
+    print(f"Configurar tarea {task_id} con datos:", task_config_request)
     task = service.config(task_config_request, task_id)
     return {"task": task}
 
@@ -161,3 +163,18 @@ async def update_data(task_id: int, updated_data: TaskUpdateData):
     print(updated_data)
 
     return {"status": "success", "message": f"Task {task_id} data received and processed."}
+
+@router.get("/{task_id}/get-first-frame-info")
+async def get_first_frame_info(task_id: int, service: TaskService = Depends(get_task_service)):
+    # service.get_first_frame ahora devuelve la cadena en base64
+    first_frame_b64 = service.get_first_frame(task_id)
+    # Obtener información del video (alto y ancho)
+    video_info = service.get_video_dimensions(task_id)  # Debe devolver un dict con 'width' y 'height'
+
+    # Devolvemos un JSON que el frontend puede usar directamente
+    return JSONResponse(content={
+        "width": video_info.get("width"),
+        "height": video_info.get("height"),
+        "image_b64": first_frame_b64,
+        "mimetype": "image/jpeg"
+    })

@@ -2,14 +2,27 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { quintOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
+	import { page } from '$app/stores';
+	import { BACKEND_URL } from '$lib/constants';
+
+	// --- Estado de la Carga de Datos ---
+	let imageSrc: string = '/images/rotonda_manual.png';
+	let isLoading: boolean = true;
+	let errorMessage: string | null = null;
+	let taskId: string;
+	// Dimensiones originales del frame
+	let frameWidth: number = 1920;
+	let frameHeight: number = 1080;
 
 	// --- Estado del Canvas y Dibujo ---
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D;
 	let imageRef: HTMLImageElement;
+	// Los puntos se guardan como relativos (0-1)
 	let currentPoints: Array<{ x: number; y: number }> = [];
 
 	// --- Estado de Polígonos ---
+	// Los vértices ahora son relativos (0-1)
 	let poligonos: Array<{
 		id: number;
 		via: string;
@@ -34,28 +47,58 @@
 
 	// --- Ciclo de vida y Eventos ---
 	onMount(() => {
-		// All window-related code must be inside onMount to avoid SSR errors
-		if (typeof window !== 'undefined') {
-			window.addEventListener('keydown', handleKeyDown);
-			const setupCanvas = () => {
-				if (imageRef && imageRef.clientWidth > 0) {
-					ctx = canvas.getContext('2d')!;
-					canvas.width = imageRef.clientWidth;
-					canvas.height = imageRef.clientHeight;
-					requestAnimationFrame(redrawCanvas);
-				} else {
-					setTimeout(setupCanvas, 50);
-				}
-			};
-			setupCanvas();
-			window.addEventListener('resize', setupCanvas);
+		const unsubscribePage = page.subscribe((p) => {
+			taskId = p.params.id;
+		});
 
-			onDestroy(() => {
-				window.removeEventListener('keydown', handleKeyDown);
-				window.removeEventListener('resize', setupCanvas);
-			});
-		}
+		// Función para obtener el primer frame del video desde el backend
+		const fetchFirstFrame = async () => {
+			if (!taskId) return;
+			try {
+				isLoading = true;
+				errorMessage = null;
+				const response = await fetch(`${BACKEND_URL}/task/${taskId}/get-first-frame-info`);
+
+				if (!response.ok) {
+					throw new Error(`Error del servidor: ${response.status}`);
+				}
+
+				const data = await response.json(); // { image_b64, mimetype, width, height }
+				imageSrc = `data:${data.mimetype};base64,${data.image_b64}`;
+				if (data.width && data.height) {
+					frameWidth = data.width;
+					frameHeight = data.height;
+				}
+			} catch (error) {
+				console.error('No se pudo cargar el frame de la tarea:', error);
+				errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
+			} finally {
+				isLoading = false;
+			}
+		};
+
+		fetchFirstFrame();
+
+		// Los listeners se mantienen, pero la inicialización del canvas ahora es más robusta.
+		window.addEventListener('keydown', handleKeyDown);
+		window.addEventListener('resize', setupCanvas);
+
+		onDestroy(() => {
+			unsubscribePage(); // Limpiar la suscripción
+			window.removeEventListener('keydown', handleKeyDown);
+			window.removeEventListener('resize', setupCanvas);
+		});
 	});
+
+	function setupCanvas() {
+		if (imageRef && imageRef.complete && imageRef.naturalWidth > 0 && canvas) {
+			ctx = canvas.getContext('2d')!;
+			// Usamos clientWidth/clientHeight para que el canvas tenga el tamaño visual de la imagen
+			canvas.width = imageRef.clientWidth;
+			canvas.height = imageRef.clientHeight;
+			requestAnimationFrame(redrawCanvas); // Redibujar todo con las dimensiones correctas
+		}
+	}
 
 	// --- Lógica de Interacción ---
 
@@ -111,9 +154,14 @@
 	function handleCanvasClick(event: MouseEvent) {
 		if (pendingPolygon) return;
 		const rect = canvas.getBoundingClientRect();
-		const x = event.clientX - rect.left;
-		const y = event.clientY - rect.top;
-		currentPoints.push({ x, y });
+		// Convertir a coordenadas relativas al frame original
+		const xCanvas = event.clientX - rect.left;
+		const yCanvas = event.clientY - rect.top;
+		// Relativo al tamaño actual del canvas
+		const xRel = (xCanvas * frameWidth) / canvas.width / frameWidth;
+		const yRel = (yCanvas * frameHeight) / canvas.height / frameHeight;
+		// Simplifica: xRel = xCanvas / canvas.width, pero guardamos la relación con frameWidth
+		currentPoints.push({ x: xCanvas / canvas.width, y: yCanvas / canvas.height });
 
 		if (currentPoints.length === 4) {
 			const verticesOrdenados = ordenarVertices(currentPoints);
@@ -123,7 +171,17 @@
 				sentido: opcionesSentido[0]
 			};
 			currentPoints = [];
-			const { top, left, transform } = calculatePopoverPosition(pendingPolygon.vertices, rect);
+			// Para el popover, convertir a absolutas para posicionar
+			const absVertices = verticesOrdenados.map((v) => ({
+				x: v.x * frameWidth,
+				y: v.y * frameHeight
+			}));
+			// Escalar a canvas actual para mostrar el popover
+			const absVerticesCanvas = absVertices.map((v) => ({
+				x: (v.x * canvas.width) / frameWidth,
+				y: (v.y * canvas.height) / frameHeight
+			}));
+			const { top, left, transform } = calculatePopoverPosition(absVerticesCanvas, rect);
 			popoverPosition = { top, left, transform };
 		}
 		requestAnimationFrame(redrawCanvas);
@@ -146,7 +204,9 @@
 			...poligonos,
 			{
 				id: Date.now(),
-				...pendingPolygon
+				via: pendingPolygon.via,
+				sentido: pendingPolygon.sentido,
+				vertices: pendingPolygon.vertices
 			}
 		];
 		pendingPolygon = null;
@@ -166,55 +226,70 @@
 	// --- NUEVA FUNCIÓN ---
 	async function finalizarProceso() {
 		if (poligonos.length === 0 || isSubmitting) return;
-
 		isSubmitting = true;
-		alert(`Proceso finalizado. Se enviarán ${poligonos.length} vías al servidor.`);
-		console.log('Datos a enviar al backend:', JSON.stringify(poligonos, null, 2));
 
-		// TODO: Aquí va la lógica para enviar los datos a tu API.
-		// try {
-		//   const response = await fetch('/api/vias', {
-		//     method: 'POST',
-		//     headers: { 'Content-Type': 'application/json' },
-		//     body: JSON.stringify(poligonos)
-		//   });
-		//   if (!response.ok) throw new Error('Error en el servidor');
-		//   const result = await response.json();
-		//   console.log('Respuesta del servidor:', result);
-		//   // Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.
-		//   // poligonos = [];
-		// } catch (error) {
-		//   console.error('Fallo al enviar los datos:', error);
-		//   alert('Hubo un error al guardar las vías. Inténtalo de nuevo.');
-		// } finally {
-		//    isSubmitting = false;
-		// }
+		// Construir el objeto de envío con las claves correctas para el backend
+		const payload = {
+			roads_in: poligonos
+				.filter((p) => p.sentido === 'Entrada')
+				.map((p) =>
+					p.vertices.map((v) => [Math.round(v.x * frameWidth), Math.round(v.y * frameHeight)])
+				),
+			roads_out: poligonos
+				.filter((p) => p.sentido === 'Salida')
+				.map((p) =>
+					p.vertices.map((v) => [Math.round(v.x * frameWidth), Math.round(v.y * frameHeight)])
+				)
+		};
 
-		// Como es un mockup, solo simulamos un pequeño retraso y re-habilitamos el botón.
-		setTimeout(() => {
+		console.log('Enviando datos:', payload);
+
+		try {
+			const response = await fetch(`${BACKEND_URL}/task/${taskId}/config`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			if (!response.ok) throw new Error('Error en el servidor');
+			const result = await response.json();
+			console.log('Respuesta del servidor:', result);
+			alert('Vías guardadas correctamente.');
+			// Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.
+			// poligonos = [];
+		} catch (error) {
+			console.error('Fallo al enviar los datos:', error);
+			alert('Hubo un error al guardar las vías. Inténtalo de nuevo.');
+		} finally {
 			isSubmitting = false;
-		}, 1000);
+		}
 	}
 
 	// --- Función Central de Dibujo ---
 	function redrawCanvas() {
-		// ... (el resto de esta función es idéntico)
 		if (!ctx) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		poligonos.forEach((poly) => drawPolygon(poly, { confirmed: true }));
+		// Dibujar polígonos confirmados
+		poligonos.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
+		// Dibujar polígono pendiente
 		if (pendingPolygon) {
-			drawPolygon(pendingPolygon, { pending: true });
+			drawPolygonRel(pendingPolygon, { pending: true });
 		}
+		// Dibujar puntos actuales
 		if (currentPoints.length > 0) {
 			ctx.beginPath();
-			ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
-			for (const p of currentPoints.slice(1)) ctx.lineTo(p.x, p.y);
+			// Convertir a absolutas usando frame original y escalar a canvas
+			const absPoints = currentPoints.map((p) => ({
+				x: (p.x * frameWidth * canvas.width) / frameWidth,
+				y: (p.y * frameHeight * canvas.height) / frameHeight
+			}));
+			ctx.moveTo(absPoints[0].x, absPoints[0].y);
+			for (const p of absPoints.slice(1)) ctx.lineTo(p.x, p.y);
 			ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
 			ctx.lineWidth = 2;
 			ctx.setLineDash([6, 6]);
 			ctx.stroke();
 			ctx.setLineDash([]);
-			currentPoints.forEach((p) => {
+			absPoints.forEach((p) => {
 				ctx.fillStyle = 'rgba(255, 255, 255, 1)';
 				ctx.beginPath();
 				ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
@@ -223,16 +298,21 @@
 		}
 	}
 
-	function drawPolygon(
+	// Dibuja polígonos usando coordenadas relativas
+	function drawPolygonRel(
 		poly: { via: string; sentido: string; vertices: Array<{ x: number; y: number }> },
 		options: { confirmed?: boolean; pending?: boolean }
 	) {
-		// ... (el resto de esta función es idéntico)
+		// Convertir vértices relativos a absolutos usando frame original y escalar a canvas
+		const absVertices = poly.vertices.map((v) => ({
+			x: (v.x * frameWidth * canvas.width) / frameWidth,
+			y: (v.y * frameHeight * canvas.height) / frameHeight
+		}));
 		const color = poly.sentido === 'Entrada' ? 'rgba(74, 222, 128, 1)' : 'rgba(248, 113, 113, 1)';
 		ctx.fillStyle = color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
 		ctx.beginPath();
-		ctx.moveTo(poly.vertices[0].x, poly.vertices[0].y);
-		for (const v of poly.vertices.slice(1)) ctx.lineTo(v.x, v.y);
+		ctx.moveTo(absVertices[0].x, absVertices[0].y);
+		for (const v of absVertices.slice(1)) ctx.lineTo(v.x, v.y);
 		ctx.closePath();
 		ctx.fill();
 		ctx.strokeStyle = color;
@@ -243,7 +323,7 @@
 		ctx.stroke();
 		ctx.setLineDash([]);
 		if (options.confirmed) {
-			const centro = poly.vertices.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
+			const centro = absVertices.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
 				x: 0,
 				y: 0
 			});
@@ -336,15 +416,14 @@
 						</div>
 					{/if}
 				</div>
-
 				<!-- Botón Finalizar -->
 				<div class="mt-auto pt-8">
 					<button
 						on:click={finalizarProceso}
 						disabled={poligonos.length === 0 || isSubmitting}
 						class="w-full px-4 py-3 rounded font-semibold transition-colors text-lg
-            bg-green-600 hover:bg-green-500
-            disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
+bg-green-600 hover:bg-green-500
+disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 					>
 						{isSubmitting ? 'Enviando...' : 'Finalizar y Guardar'}
 					</button>
@@ -362,9 +441,10 @@
 					aria-label="Definir zona en la imagen"
 				>
 					<img
-						src="/images/rotonda_manual.png"
+						src={imageSrc}
 						alt="Imagen base"
 						bind:this={imageRef}
+						on:load={setupCanvas}
 						class="w-full h-auto opacity-70 prevent-drag"
 						draggable="false"
 					/>

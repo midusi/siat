@@ -25,11 +25,11 @@ class TaskService:
     def __init__(self, db: sessionmaker):
         self.db = db
         self.locality_service = LocalityService(db)
-        self.video_service = VideoService(db)
+        self.bucket_service = BucketService()
+        self.video_service = VideoService(db, self.bucket_service)
         self.task_status_service = TaskStatusService(db)
         self.task_status_history_service = TaskStatusHistoryService(db)
         self.road_service = RoadService(db)
-        self.bucket_service = BucketService()
         
     def get_list(self) -> list[TaskResponse]:
         tasks = task_crud.find_all(self.db)
@@ -186,44 +186,53 @@ class TaskService:
 
     
     def config(self, task_config_request: TaskConfigRequest, task_id: int):
+
+        # Buscar la tarea por ID
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
-        
+
+        # Verificar que la tarea se pueda configurar
+        # Solo se puede configurar si el estado actual es VIDEO_UPLOADED o CONFIGURED
         current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
-        if current_task_status_history.status_id != "VIDEO_UPLOADED" and current_task_status_history.status_id != "CONFIGURED":
+        if current_task_status_history.status_id not in ["VIDEO_UPLOADED", "CONFIGURED"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no se puede configurar")
-        
+
+        # Eliminar las vías actuales asociadas al video de la tarea
         currents_road = self.road_service.find_by_fields(video_id=task.video_id)
         for road in currents_road:
             self.db.delete(road)
-        
+
+        # roads_in y roads_out son listas de listas de pares [x, y] (enteros)
         roads_in = task_config_request.roads_in
         roads_out = task_config_request.roads_out
-        
+
         try:
-            for i, road in enumerate(roads_in):
+            for i, polygon in enumerate(roads_in):
+                # polygon: list[list[int]]
                 road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.IN,
-                    polygon=road.polygon,
+                    polygon=polygon,
                     video_id=task.video.id,
                 )
                 self.db.add(road)
 
-            for i, road in enumerate(roads_out):
+            import json
+            for i, polygon in enumerate(roads_out):
                 road = Road(
+                    name=f"Vía {i+1}",
                     number=i+1,
                     direction=RoadDirection.OUT,
-                    polygon=road.polygon,
+                    polygon=json.dumps(polygon),
                     video_id=task.video.id,
                 )
                 self.db.add(road)
-                
+
             # Change task status history
             current_task_status_history.to_date = datetime.datetime.now()
             self.db.flush()
-            
+
             # Create task status history CONFIGURED
             task_status_configured = self.task_status_service.get_by_id("CONFIGURED")
             new_task_status_history = TaskStatusHistory(
@@ -232,9 +241,37 @@ class TaskService:
                 status_id=task_status_configured.id,
             )
             self.db.add(new_task_status_history)
-                
+
             self.db.commit()
             return task
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    
+    def get_first_frame(self, task_id: int):
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        
+        video = task.video
+        if not video:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+        
+        # Ahora video.url es la key del objeto, que es lo que espera get_frame
+        # Y el valor de retorno ya es una cadena Base64, lista para ser enviada como JSON.
+        first_frame_b64 = self.video_service.get_frame(video.url, 0)
+        return first_frame_b64
+    
+    def get_video_dimensions(self, task_id: int) -> dict:
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        
+        video = task.video
+        if not video:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+        
+        return {
+            "width": video.width,
+            "height": video.height
+        }
