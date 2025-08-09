@@ -15,111 +15,12 @@ def get_list(service: TaskService = Depends(get_task_service)):
 @router.get("/{task_id}")
 def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
     """
-    Obtiene los detalles de una tarea.
-    POR AHORA: Devuelve datos hardcodeados para el desarrollo del frontend.
-    A FUTURO: Deberá obtener estos datos de la base de datos o de archivos
-             asociados al task_id.
+    Obtiene los detalles de una tarea desde la base de datos y MinIO.
+    Devuelve el path público del video y, si existen, las URLs públicas
+    a los archivos JSON de rutas e indeterminados generados por la inferencia.
     """
     print(f"Backend: Solicitud recibida para la tarea con ID: {task_id}")
-
-    # Los datos que antes estaban en Svelte, ahora se sirven desde aquí.
-    # El backend es ahora la fuente de la verdad.
-    hardcoded_task_data = {
-        "id": task_id,
-        "name": f"Tarea de Prueba #{task_id}",
-        "videoPath": f"/video/videoPrueba.mp4",
-        "videoWidth": "1920",
-        "videoHeight": "1080",
-        "videoFps": "30",
-        "rutas": {
-            "0": {
-                "0": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "1": { "bicycle": 0, "bus": 0, "car": 6, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "2": { "bicycle": 0, "bus": 0, "car": 34, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "3": { "bicycle": 0, "bus": 0, "car": 8, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 }
-            },
-            "1": {
-                "0": { "bicycle": 0, "bus": 0, "car": 2, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "1": { "bicycle": 0, "bus": 0, "car": 1, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "2": { "bicycle": 0, "bus": 0, "car": 19, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "3": { "bicycle": 0, "bus": 0, "car": 23, "heavy_truck": 0, "light_truck": 1, "motorbike": 1 }
-            },
-            "2": {
-                "0": { "bicycle": 0, "bus": 0, "car": 77, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "1": { "bicycle": 0, "bus": 0, "car": 11, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "2": { "bicycle": 0, "bus": 0, "car": 4, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "3": { "bicycle": 0, "bus": 0, "car": 17, "heavy_truck": 0, "light_truck": 0, "motorbike": 2 }
-            },
-            "3": {
-                "0": { "bicycle": 0, "bus": 0, "car": 8, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "1": { "bicycle": 0, "bus": 0, "car": 22, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "2": { "bicycle": 0, "bus": 0, "car": 17, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
-                "3": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 }
-            }
-        },
-        "indeterminados": {
-            "1": {
-                "frame": "20",
-                "class": "car",
-                "boundingBox": [
-                    "100",
-                    "100",
-                    "500",
-                    "500"
-                ],
-                "labels": ["0", "IND"],
-            },
-            "2": {
-                "frame": "40",
-                "class": "bus",
-                "boundingBox": [
-                    "200",
-                    "200",
-                    "600",
-                    "600"
-                ],
-                "labels": ["1", "IND"],
-            },
-            "3": {
-                "frame": "60",
-                "class": "motorbike",
-                "boundingBox": [
-                    "300",
-                    "300",
-                    "700",
-                    "700"
-                ],
-                "labels": ["IND", "2"],
-            },
-            "4": {
-                "frame": "80",
-                "class": "bicycle",
-                "boundingBox": [
-                    "400",
-                    "400",
-                    "800",
-                    "800"
-                ],
-                "labels": ["IND", "3"],
-            },
-            "5": {
-                "frame": "100",
-                "class": "heavy_truck",
-                "boundingBox": [
-                    "500",
-                    "500",
-                    "900",
-                    "900"
-                ],
-                "labels": ["IND", "IND"],
-            }
-        }
-    }
-
-    # Ignoramos el service por ahora y devolvemos directamente el diccionario.
-    # FastAPI lo convertirá automáticamente a JSON.
-    return hardcoded_task_data
-    # return service.get_task(task_id) # Esta línea se usará en el futuro
+    return service.get_task(task_id)
 
 @router.post("")
 async def create(
@@ -152,17 +53,18 @@ async def config(
     return {"task": task}
 
 @router.post("/{task_id}/update-data")
-async def update_data(task_id: int, updated_data: TaskUpdateData):
+async def update_data(
+    task_id: int,
+    updated_data: TaskUpdateData,
+    service: TaskService = Depends(get_task_service)
+):
     """
-    Recibe los datos actualizados de `rutas` e `indeterminados` desde el frontend.
+    Recibe los datos actualizados de `rutas` e `indeterminados` desde el frontend y
+    actualiza los archivos correspondientes en el bucket para mantener consistencia.
     """
     print(f"Backend: Actualización recibida para la tarea con ID: {task_id}")
-
-    # Ahora puedes acceder a los datos enviados por el frontend
-    print("\n--- Data Recibida ---")
-    print(updated_data)
-
-    return {"status": "success", "message": f"Task {task_id} data received and processed."}
+    result = service.update_data(task_id, updated_data)
+    return {"status": "success", **result}
 
 @router.get("/{task_id}/get-first-frame-info")
 async def get_first_frame_info(task_id: int, service: TaskService = Depends(get_task_service)):

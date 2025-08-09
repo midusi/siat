@@ -3,6 +3,9 @@ from fastapi import UploadFile
 import json
 import boto3
 from botocore.client import Config
+from typing import Optional
+import io
+import os
 
 class BucketService:
     def __init__(self):
@@ -41,13 +44,77 @@ class BucketService:
         except Exception as e:
             print(f"Error al aplicar la política de bucket: {e}")
     
-    def upload(self, file: UploadFile, object_name: str):
+    def _infer_content_type(self, object_name: str, default: Optional[str] = None) -> str:
+        if default:
+            return default
+        ext = os.path.splitext(object_name)[1].lower()
+        if ext == '.json':
+            return 'application/json'
+        if ext in ('.mp4', '.m4v'):
+            return 'video/mp4'
+        if ext in ('.avi',):
+            return 'video/x-msvideo'
+        if ext in ('.mov',):
+            return 'video/quicktime'
+        if ext in ('.txt',):
+            return 'text/plain; charset=utf-8'
+        return 'application/octet-stream'
+
+    def upload(self, data, object_name: str, content_type: Optional[str] = None):
+        """
+        Sube un objeto al bucket.
+        - Si `data` es UploadFile (FastAPI), usa upload_fileobj.
+        - Si `data` es bytes o str, usa put_object (convierte str a UTF-8).
+        - `content_type` es opcional; si no se provee se infiere por extensión.
+        """
         self.set_public_read_policy()
         try:
-            self.s3_client.upload_fileobj(file.file, self.BUCKET_NAME, object_name)
-            print(f"'{file.filename}' subido a '{self.BUCKET_NAME}/{object_name}'")
+            # Caso 1: FastAPI UploadFile
+            if isinstance(data, UploadFile):
+                ct = content_type or self._infer_content_type(object_name)
+                # ExtraArgs solo es soportado por upload_file, no upload_fileobj; para asegurar ContentType usamos put_object
+                # leyendo el stream a memoria de forma segura.
+                file_bytes = data.file.read()
+                self.s3_client.put_object(
+                    Bucket=self.BUCKET_NAME,
+                    Key=object_name,
+                    Body=file_bytes,
+                    ContentType=ct
+                )
+                print(f"'{data.filename}' subido a '{self.BUCKET_NAME}/{object_name}'")
+                return
+
+            # Caso 2: file-like object con método read()
+            if hasattr(data, 'read') and callable(getattr(data, 'read')):
+                ct = content_type or self._infer_content_type(object_name)
+                self.s3_client.put_object(
+                    Bucket=self.BUCKET_NAME,
+                    Key=object_name,
+                    Body=data.read(),
+                    ContentType=ct
+                )
+                print(f"Objeto file-like subido a '{self.BUCKET_NAME}/{object_name}'")
+                return
+
+            # Caso 3: bytes o str (por ejemplo JSON serializado)
+            if isinstance(data, bytes):
+                body = data
+            elif isinstance(data, str):
+                body = data.encode('utf-8')
+            else:
+                raise TypeError("Tipo de dato no soportado para upload. Use UploadFile, bytes, str o file-like object.")
+
+            ct = content_type or self._infer_content_type(object_name)
+            self.s3_client.put_object(
+                Bucket=self.BUCKET_NAME,
+                Key=object_name,
+                Body=body,
+                ContentType=ct
+            )
+            print(f"Objeto subido a '{self.BUCKET_NAME}/{object_name}'")
         except Exception as e:
             print(f"Error al subir el archivo: {e}")
+            raise
             
     def download(self, path: str, object_name: str):
         try:

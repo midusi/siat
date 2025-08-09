@@ -254,6 +254,7 @@
 			const result = await response.json();
 			console.log('Respuesta del servidor:', result);
 			alert('Vías guardadas correctamente.');
+			window.location.href = '/';
 			// Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.
 			// poligonos = [];
 		} catch (error) {
@@ -425,7 +426,7 @@
 bg-green-600 hover:bg-green-500
 disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						{isSubmitting ? 'Enviando...' : 'Finalizar y Guardar'}
+						{isSubmitting ? 'Enviando...' : 'Finalizar y Procesar'}
 					</button>
 				</div>
 			</div>

@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 import hashlib
 import time
 import datetime
+import json
 
 from app.services.base import *
 from app.services.locality_service import LocalityService
@@ -14,10 +15,11 @@ from app.services.task_status_history_service import TaskStatusHistoryService
 from app.services.road_service import RoadService
 from app.crud import task as task_crud
 from app.schemas.task import TaskCreateRequest, TaskResponse, TaskConfigRequest
+from app.schemas.task import TaskUpdateData  # newly added import
 from app.schemas.task_status import TaskStatusResponse
 from app.schemas.locality import LocalityWDistrictResponse
 from app.schemas.district import DistrictResponse
-from app.models import Task, Video, TaskStatusHistory, Road
+from app.models import Task, Video, TaskStatusHistory, Road, Inference
 from app.enums.road_direction import RoadDirection
 from app.services.bucket_service import BucketService
 
@@ -59,32 +61,46 @@ class TaskService:
             responses.append(task_response)
         return responses
     
-    def get_task(self, task_id: int) -> TaskResponse:
+    def get_task(self, task_id: int) -> dict:
+        """Devuelve la información real desde la BD y MinIO para el frontend.
+        Incluye el path público del video, sus dimensiones y fps.
+        Si existe una inferencia, devuelve también las URLs públicas de
+        rutas (transition_counts) e indeterminados (transition_undetermined).
+        """
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
-        
-        history = task.status_history[0]
-        task_response = TaskResponse.model_validate({
+        if not task.video:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
+
+        # Base pública para acceder a MinIO directamente
+        public_base = f"http://localhost:9000/{BucketService.BUCKET_NAME}"
+
+        # Elegir el video a reproducir: si hay uno procesado úsese, si no el original
+        video_key = None
+        if task.inference and task.inference.url_video_processed:
+            video_key = task.inference.url_video_processed
+        else:
+            video_key = task.video.url
+
+        payload: dict = {
             "id": task.id,
             "name": task.name,
-            "locality": {
-                "id": task.locality.id,
-                "name": task.locality.name,
-                "district": {
-                    "id": task.locality.district.id,
-                    "name": task.locality.district.name
-                }
-            },
-            "name_video": task.video.name,
-            "duration": int(task.video.duration),
-            "status": {
-                "id": history.task_status.id,
-                "name": history.task_status.name
-            },
-            "created_at": task.created_at.isoformat()
-        })
-        return task_response
+            # Front espera una URL reproducible por el tag <video>
+            "videoPath": f"{public_base}/{video_key}",
+            "videoWidth": task.video.width,
+            "videoHeight": task.video.height,
+            "videoFps": task.video.fps,
+        }
+
+        # Si existe inferencia, agregar URLs públicas a los JSON
+        if task.inference:
+            if task.inference.url_transition_counts:
+                payload["rutasUrl"] = f"{public_base}/{task.inference.url_transition_counts}"
+            if task.inference.url_transition_undetermined:
+                payload["indeterminadosUrl"] = f"{public_base}/{task.inference.url_transition_undetermined}"
+
+        return payload
         
     def create(
         self, 
@@ -155,27 +171,7 @@ class TaskService:
             
             # Commit and refresh the task object to get the ID
             self.db.commit()
-            
-            # Create schema for task
-            task_status_response = TaskStatusResponse.model_validate(task_status_pending)
-            district_response = DistrictResponse.model_validate(locality.district)
-            locality_response = LocalityWDistrictResponse.model_validate(
-                {
-                    "id": locality.id, 
-                    "name": locality.name, 
-                    "district": district_response
-                })
-            return TaskResponse.model_validate(
-                {
-                    "id": task_obj.id,
-                    "name": task_obj.name,
-                    "locality": locality_response,
-                    "name_video": video_obj.name,
-                    "duration": video_obj.duration,
-                    "status": task_status_response,
-                    "date": task_obj.date,
-                    "created_at": task_obj.created_at,
-                })
+
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -229,7 +225,7 @@ class TaskService:
                 )
                 self.db.add(road)
 
-            # Change task status history
+            # Actualizar el estado de la tarea
             current_task_status_history.to_date = datetime.datetime.now()
             self.db.flush()
 
@@ -243,6 +239,7 @@ class TaskService:
             self.db.add(new_task_status_history)
 
             self.db.commit()
+            self.process_video(task.id)
             return task
         except Exception as e:
             self.db.rollback()
@@ -275,3 +272,229 @@ class TaskService:
             "width": video.width,
             "height": video.height
         }
+
+    def process_video(self, task_id: int):
+
+        # Verificar que la tarea exista
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+
+        # Verificar que el video de la tarea exista
+        video = task.video
+        if not video:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+
+        # Verificar que la tarea esté configurada para procesar el video
+        current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
+        if current_task_status_history.status_id != "CONFIGURED":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no está configurada para procesar el video")
+        
+        # -----------------
+        # HARCODEADO:
+        transition_counts = {
+            "rutas": {
+                "0": {
+                    "0": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "1": { "bicycle": 0, "bus": 0, "car": 6, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "2": { "bicycle": 0, "bus": 0, "car": 34, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "3": { "bicycle": 0, "bus": 0, "car": 8, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 }
+                },
+                "1": {
+                    "0": { "bicycle": 0, "bus": 0, "car": 2, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "1": { "bicycle": 0, "bus": 0, "car": 1, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "2": { "bicycle": 0, "bus": 0, "car": 19, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "3": { "bicycle": 0, "bus": 0, "car": 23, "heavy_truck": 0, "light_truck": 1, "motorbike": 1 }
+                },
+                "2": {
+                    "0": { "bicycle": 0, "bus": 0, "car": 77, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "1": { "bicycle": 0, "bus": 0, "car": 11, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "2": { "bicycle": 0, "bus": 0, "car": 4, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "3": { "bicycle": 0, "bus": 0, "car": 17, "heavy_truck": 0, "light_truck": 0, "motorbike": 2 }
+                },
+                "3": {
+                    "0": { "bicycle": 0, "bus": 0, "car": 8, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "1": { "bicycle": 0, "bus": 0, "car": 22, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "2": { "bicycle": 0, "bus": 0, "car": 17, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 },
+                    "3": { "bicycle": 0, "bus": 0, "car": 0, "heavy_truck": 0, "light_truck": 0, "motorbike": 0 }
+                }
+            }
+        }
+        
+        transition_undetermined = {
+            "indeterminados": {
+                "1": {
+                    "frame": "20",
+                    "class": "car",
+                    "boundingBox": [
+                        "100",
+                        "100",
+                        "500",
+                        "500"
+                    ],
+                    "labels": ["0", "IND"],
+                },
+                "2": {
+                    "frame": "40",
+                    "class": "bus",
+                    "boundingBox": [
+                        "200",
+                        "200",
+                        "600",
+                        "600"
+                    ],
+                    "labels": ["1", "IND"],
+                },
+                "3": {
+                    "frame": "60",
+                    "class": "motorbike",
+                    "boundingBox": [
+                        "300",
+                        "300",
+                        "700",
+                        "700"
+                    ],
+                    "labels": ["IND", "2"],
+                },
+                "4": {
+                    "frame": "80",
+                    "class": "bicycle",
+                    "boundingBox": [
+                        "400",
+                        "400",
+                        "800",
+                        "800"
+                    ],
+                    "labels": ["IND", "3"],
+                },
+                "5": {
+                    "frame": "100",
+                    "class": "heavy_truck",
+                    "boundingBox": [
+                        "500",
+                        "500",
+                        "900",
+                        "900"
+                    ],
+                    "labels": ["IND", "IND"],
+                }
+            }
+        }
+
+        # Get the folder where the video was saved in the bucket
+        video_folder = os.path.dirname(video.url)
+
+        # Prepare file names
+        transition_counts_filename = "transition_counts.json"
+        transition_undetermined_filename = "transition_undetermined.json"
+
+        # Serialize data to JSON strings
+        transition_counts_str = json.dumps(transition_counts, ensure_ascii=False, indent=2)
+        transition_undetermined_str = json.dumps(transition_undetermined, ensure_ascii=False, indent=2)
+
+        # Build full paths for the files in the bucket
+        transition_counts_path = f"{video_folder}/{transition_counts_filename}"
+        transition_undetermined_path = f"{video_folder}/{transition_undetermined_filename}"
+
+        # Upload files to the bucket
+        self.bucket_service.upload(transition_counts_str, transition_counts_path)
+        self.bucket_service.upload(transition_undetermined_str, transition_undetermined_path)
+
+        # Store URLs in the inference object
+        inference = Inference(
+            task_id=task.id,
+            url_transition_counts=transition_counts_path,
+            url_transition_undetermined=transition_undetermined_path,
+            url_video_processed=video.url,
+            inferred_at=datetime.datetime.now()
+        )
+        self.db.add(inference)
+        # FIN HARCODEADO
+        # -----------------
+
+        # Actualizar el estado de la tarea a PROCESSED
+        current_task_status_history.to_date = datetime.datetime.now()
+        self.db.flush()
+        task_status_processed = self.task_status_service.get_by_id("REVIEW")
+        new_task_status_history = TaskStatusHistory(
+            from_date=datetime.datetime.now(),
+            task_id=task.id,
+            status_id=task_status_processed.id,
+        )
+        self.db.add(new_task_status_history)
+        self.db.flush()
+        self.db.commit()
+
+    # NEW: Persist updated rutas and indeterminados coming from frontend
+    def update_data(self, task_id: int, updated_data: TaskUpdateData) -> dict:
+        """Actualiza los archivos transition_counts.json y transition_undetermined.json
+        en el bucket para mantener consistencia con los datos editados en el frontend.
+        Si la tarea no tiene registro de Inference, se crea uno nuevo apuntando a estos archivos.
+        Devuelve las URLs públicas actualizadas.
+        """
+        # Validaciones básicas
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        video = task.video
+        if not video:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+
+        rutas = updated_data.rutas or {}
+        indeterminados = updated_data.indeterminados or {}
+
+        # Estructura en archivos (envolvemos como en la inferencia original)
+        rutas_payload = {"rutas": rutas}
+        indeterminados_payload = {"indeterminados": indeterminados}
+
+        video_folder = os.path.dirname(video.url)
+        # Usamos paths existentes si hay Inference, sino los generamos por convención
+        if task.inference:
+            counts_path = task.inference.url_transition_counts or f"{video_folder}/transition_counts.json"
+            und_path = task.inference.url_transition_undetermined or f"{video_folder}/transition_undetermined.json"
+        else:
+            counts_path = f"{video_folder}/transition_counts.json"
+            und_path = f"{video_folder}/transition_undetermined.json"
+
+        try:
+            # Subir archivos actualizados al bucket
+            counts_str = json.dumps(rutas_payload, ensure_ascii=False, indent=2)
+            und_str = json.dumps(indeterminados_payload, ensure_ascii=False, indent=2)
+            self.bucket_service.upload(counts_str, counts_path)
+            self.bucket_service.upload(und_str, und_path)
+
+            # Asegurar registro de Inference existente/actualizado
+            if not task.inference:
+                inference = Inference(
+                    task_id=task.id,
+                    url_transition_counts=counts_path,
+                    url_transition_undetermined=und_path,
+                    url_video_processed=video.url,  # por ahora usamos el original si no hay procesado
+                    inferred_at=datetime.datetime.now(),
+                )
+                self.db.add(inference)
+                self.db.flush()
+            else:
+                changed = False
+                if not task.inference.url_transition_counts:
+                    task.inference.url_transition_counts = counts_path
+                    changed = True
+                if not task.inference.url_transition_undetermined:
+                    task.inference.url_transition_undetermined = und_path
+                    changed = True
+                if changed:
+                    self.db.flush()
+
+            self.db.commit()
+
+            public_base = f"http://localhost:9000/{BucketService.BUCKET_NAME}"
+            return {
+                "rutasUrl": f"{public_base}/{counts_path}",
+                "indeterminadosUrl": f"{public_base}/{und_path}",
+            }
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"No se pudo actualizar los datos: {str(e)}",
+            )

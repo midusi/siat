@@ -255,12 +255,44 @@
 			const res = await fetch(`${BACKEND_URL}/task/${taskId}`);
 			if (!res.ok) throw new Error(`Error al obtener datos: ${res.statusText}`);
 			const apiData = await res.json();
-			videoPath = apiData.videoPath;
+
+			// Meta del video
+			videoPath = apiData.videoPath ?? '';
 			videoWidth = +apiData.videoWidth;
 			videoHeight = +apiData.videoHeight;
 			videoFps = +apiData.videoFps;
-			rutas = apiData.rutas;
-			indeterminados = apiData.indeterminados;
+
+			// Obtener rutas e indeterminados: inline o vía URLs públicas (MinIO)
+			const rutasPromise: Promise<any> = apiData.rutas
+				? Promise.resolve(apiData.rutas)
+				: apiData.rutasUrl
+					? fetch(apiData.rutasUrl)
+							.then((r) => {
+								if (!r.ok) throw new Error(`Error al obtener rutas: ${r.statusText}`);
+								return r.json();
+							})
+							.then((d) => d.rutas ?? d)
+					: Promise.resolve({});
+
+			const indeterminadosPromise: Promise<any> = apiData.indeterminados
+				? Promise.resolve(apiData.indeterminados)
+				: apiData.indeterminadosUrl
+					? fetch(apiData.indeterminadosUrl)
+							.then((r) => {
+								if (!r.ok) throw new Error(`Error al obtener indeterminados: ${r.statusText}`);
+								return r.json();
+							})
+							.then((d) => d.indeterminados ?? d)
+					: Promise.resolve({});
+
+			const [rutasData, indeterminadosData] = await Promise.all([
+				rutasPromise,
+				indeterminadosPromise
+			]);
+
+			rutas = rutasData;
+			indeterminados = indeterminadosData;
+
 			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
 				const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
 				const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
@@ -521,8 +553,8 @@
 								{@const canConfirm = entrada !== 'IND' && salida !== 'IND'}
 								<div
 									class="ind-card"
-									class:live={liveIndeterminateIds.has(trackId)}
-									class:selected={trackId === activeIndeterminateId}
+									class:live={liveIndeterminateIds.has(trackId) ||
+										trackId === activeIndeterminateId}
 									role="button"
 									tabindex="0"
 									onclick={() => handleIndeterminateClick(trackId)}

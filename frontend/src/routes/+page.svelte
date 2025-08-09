@@ -20,7 +20,8 @@
 
 	// Método para definir las acciones en base al estado de la tarea
 	const taskActions: Record<string, string[]> = {
-		'Video subido': ['configurar']
+		'Video subido': ['configurar'],
+		Revisión: ['revisar', 'archivar']
 	};
 
 	onMount(async () => {
