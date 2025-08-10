@@ -16,6 +16,11 @@
 	let frameWidth: number = 1920;
 	let frameHeight: number = 1080;
 
+	// Variables para la información del primer frame
+	let videoWidth: number;
+	let videoHeight: number;
+	let imageB64: string;
+
 	// --- Estado del Canvas y Dibujo ---
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D;
