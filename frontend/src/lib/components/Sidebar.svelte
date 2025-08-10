@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	export let user: App.Locals['user'];
 
 	// Lista de elementos del menú
 	const menuItems = [
@@ -12,7 +13,7 @@
 			  	</svg>`
 		},
 		{
-			id: 'ajustes',
+			id: 'admin',
 			label: 'Admin',
 			path: '/admin',
 			icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -30,16 +31,18 @@
 	class="bg-[#1a1e2a] w-16 min-h-screen flex-col items-center py-4 shrink-0 border-r border-gray-800 hidden md:flex"
 >
 	{#each menuItems as item}
-		<a
-			href={item.path}
-			class="w-full flex flex-col items-center py-4 text-center {currentPath === item.path
-				? 'text-amber-400'
-				: 'text-gray-400 hover:text-gray-200'}"
-		>
-			<div class="mb-1">
-				{@html item.icon}
-			</div>
-			<span class="text-xs">{item.label}</span>
-		</a>
+		{#if item.id !== 'admin' || user?.role === 'ROLE_ADMIN'}
+			<a
+				href={item.path}
+				class="w-full flex flex-col items-center py-4 text-center {currentPath === item.path
+					? 'text-amber-400'
+					: 'text-gray-400 hover:text-gray-200'}"
+			>
+				<div class="mb-1">
+					{@html item.icon}
+				</div>
+				<span class="text-xs">{item.label}</span>
+			</a>
+		{/if}
 	{/each}
 </aside>

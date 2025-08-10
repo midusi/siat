@@ -11,6 +11,14 @@ from models import (
 )
 from db import engine
 
+# Added imports
+from sqlalchemy.orm import Session as SASession
+from app.models import User
+from passlib.context import CryptContext
+
+
+pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 def seed_static_data():
     with Session(engine) as session:
@@ -50,6 +58,31 @@ def seed_static_data():
             print("🔁 TaskStatus ya tiene datos.")
 
         session.commit()
+
+
+def seed_admin_user():
+    # Use SQLAlchemy session directly bound to same engine URL
+    from app.db import SessionLocal
+    db: SASession = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.username == "admin").first()
+        if not admin:
+            admin = User(
+                username="admin",
+                password=pwd.hash("admin"),  # cambiar en prod
+                email="admin@example.com",
+                first_name="Admin",
+                last_name="User",
+                role="ROLE_ADMIN",
+                active=True,
+            )
+            db.add(admin)
+            db.commit()
+            print("✔ Usuario admin creado (username=admin, password=admin)")
+        else:
+            print("🔁 Usuario admin ya existe")
+    finally:
+        db.close()
 
 
 def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
@@ -103,5 +136,6 @@ def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
 
 if __name__ == "__main__":
     seed_static_data()
+    seed_admin_user()
     seed_provinces_districts_localities()
     print("✔ Datos cargados.")

@@ -4,6 +4,8 @@
 	import { fly } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import { BACKEND_URL } from '$lib/constants';
+	import { apiFetch } from '$lib/api';
+	import { goto } from '$app/navigation';
 
 	// --- Estado de la Carga de Datos ---
 	let imageSrc: string = '/images/rotonda_manual.png';
@@ -57,18 +59,16 @@
 			try {
 				isLoading = true;
 				errorMessage = null;
-				const response = await fetch(`${BACKEND_URL}/task/${taskId}/get-first-frame-info`);
+				const response = await apiFetch(`/task/${taskId}/get-first-frame-info`);
 
 				if (!response.ok) {
-					throw new Error(`Error del servidor: ${response.status}`);
+					throw new Error(`Error al obtener información del primer frame: ${response.statusText}`);
 				}
 
-				const data = await response.json(); // { image_b64, mimetype, width, height }
-				imageSrc = `data:${data.mimetype};base64,${data.image_b64}`;
-				if (data.width && data.height) {
-					frameWidth = data.width;
-					frameHeight = data.height;
-				}
+				const info = await response.json();
+				videoWidth = info.width;
+				videoHeight = info.height;
+				imageB64 = info.image_b64;
 			} catch (error) {
 				console.error('No se pudo cargar el frame de la tarea:', error);
 				errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
@@ -245,7 +245,7 @@
 		console.log('Enviando datos:', payload);
 
 		try {
-			const response = await fetch(`${BACKEND_URL}/task/${taskId}/config`, {
+			const response = await apiFetch(`/task/${taskId}/config`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)

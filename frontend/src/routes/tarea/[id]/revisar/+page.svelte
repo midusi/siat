@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { BACKEND_URL } from '$lib/constants';
+	import { apiFetch } from '$lib/api';
 
 	// --- Props y estado inicial ---
 	let { data } = $props();
@@ -235,9 +236,8 @@
 	}
 	async function updateBackendData() {
 		try {
-			const res = await fetch(`${BACKEND_URL}/task/${data.id}/update-data`, {
+			const res = await apiFetch(`/task/${data.id}/update-data`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					rutas: rutas,
 					indeterminados: indeterminados
@@ -252,7 +252,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(`${BACKEND_URL}/task/${taskId}`);
+			const res = await apiFetch(`/task/${taskId}`);
 			if (!res.ok) throw new Error(`Error al obtener datos: ${res.statusText}`);
 			const apiData = await res.json();
 

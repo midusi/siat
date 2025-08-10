@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from enum import Enum
 
 class Role(str, Enum):
@@ -14,6 +14,26 @@ class UserCreateRequest(BaseModel):
     first_name: str
     last_name: str
     active: bool = True
+
+class UserUpdateRequest(BaseModel):
+    email: EmailStr | None = None
+    role: Role | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+    confirm_password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+class UserProfileUpdateRequest(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: EmailStr | None = None
     
 class UserLoginRequest(BaseModel):
     username: str

@@ -1,20 +1,17 @@
 <script lang="ts">
 	// src/lib/components/Header.svelte
+	import { goto } from '$app/navigation';
+	import { apiFetch } from '$lib/api';
 
-	// Información del usuario
-	const userName: string = 'Facundo Quiroga';
-	const userEmail: string = 'facundo.quiroga@ejemplo.com';
+	let { user } = $props<{ user: App.Locals['user'] }>();
 
-	// Estado para controlar si el menú desplegable está abierto o cerrado
 	let isDropdownOpen = $state(false);
 
-	// Función para alternar el estado del menú desplegable
 	function toggleDropdown(event: MouseEvent): void {
 		event.stopPropagation();
 		isDropdownOpen = !isDropdownOpen;
 	}
 
-	// Función para cerrar el menú desplegable al hacer clic fuera de él
 	function closeDropdown(event: MouseEvent): void {
 		const target = event.target as HTMLElement;
 		if (!target.closest('.user-dropdown-container')) {
@@ -22,7 +19,6 @@
 		}
 	}
 
-	// Añadir un event listener para cerrar el dropdown al hacer clic fuera
 	$effect(() => {
 		if (typeof window !== 'undefined') {
 			if (isDropdownOpen) {
@@ -31,8 +27,6 @@
 				window.removeEventListener('click', closeDropdown);
 			}
 		}
-
-		// Limpieza al desmontar el componente
 		return () => {
 			if (typeof window !== 'undefined') {
 				window.removeEventListener('click', closeDropdown);
@@ -40,12 +34,19 @@
 		};
 	});
 
-	// Función para manejar el cierre de sesión
-	function handleLogout(): void {
-		// Aquí iría la lógica para cerrar sesión
-		console.log('Cerrando sesión...');
-		// Por ejemplo: redireccionar a la página de login
-		// window.location.href = '/login';
+	async function handleLogout(): Promise<void> {
+		const res = await apiFetch('/auth/logout', {
+			method: 'POST',
+			headers: { 'X-CSRF-Token': '1' }
+		});
+		if (res.ok || res.status === 204) {
+			await goto('/login');
+		}
+	}
+
+	function goChangePassword(): void {
+		isDropdownOpen = false;
+		goto('/perfil');
 	}
 </script>
 
@@ -63,7 +64,7 @@
 	</div>
 
 	<div class="flex items-center gap-2 relative user-dropdown-container">
-		<span>{userName}</span>
+		<span>{user?.first_name ?? user?.username}</span>
 		<!-- Botón del icono de usuario -->
 		<button
 			class="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center focus:outline-none"
@@ -93,12 +94,21 @@
 			>
 				<!-- Información del usuario -->
 				<div class="p-4 bg-gray-100 border-b">
-					<p class="font-medium text-gray-800">{userName}</p>
-					<p class="text-sm text-gray-600">{userEmail}</p>
+					<p class="font-medium text-gray-800">{user?.first_name} {user?.last_name}</p>
+					<p class="text-sm text-gray-600">{user?.email}</p>
 				</div>
 
 				<!-- Opciones del menú -->
 				<div class="p-2">
+					<button
+						class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center"
+						onclick={goChangePassword}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0-1.657-1.343-3-3-3S6 9.343 6 11v2H5a2 2 0 00-2 2v3a2 2 0 002 2h10a2 2 0 002-2v-3a2 2 0 00-2-2h-1v-2z" />
+						</svg>
+						Cambiar contraseña
+					</button>
 					<button
 						class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 rounded-md flex items-center"
 						onclick={handleLogout}

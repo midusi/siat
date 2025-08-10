@@ -1,34 +1,31 @@
 <!-- src/routes/login/+page.svelte -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { apiFetch } from '$lib/api';
 
-	// Estado para los campos del formulario
-	let email = $state('');
+	let username = $state('');
 	let password = $state('');
+	let error = $state<string | null>(null);
 
-	// Función para manejar el inicio de sesión
 	async function handleLogin(): Promise<void> {
-		const response = await fetchApi('/api/login', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ email, password })
-		});
-		
-		if (response.ok) {
-			const user = await response.json();
-			console.log('Login exitoso:', user);
-			goto('/'); // Redirigir al dashboard
-		} else {
-			console.error('Error en login');
+		error = null;
+		try {
+			const res = await apiFetch('/auth/login', {
+				method: 'POST',
+				body: JSON.stringify({ username, password })
+			});
+			if (res.ok) {
+				const next = new URLSearchParams($page.url.search).get('next') ?? '/';
+				await goto(next);
+			} else if (res.status === 401) {
+				error = 'Credenciales inválidas';
+			} else {
+				error = 'Error de autenticación';
+			}
+		} catch (e) {
+			error = 'No se pudo conectar con el servidor';
 		}
-	}
-
-	// Función para recuperar contraseña
-	function handleRecoverPassword(): void {
-		// Aquí iría la lógica para recuperar contraseña
-		console.log('Recuperando contraseña para:', email);
 	}
 </script>
 
@@ -51,14 +48,23 @@
 		</div>
 
 		<!-- Formulario -->
-		<form class="space-y-4">
-			<!-- Campo Email -->
+		<form
+			class="space-y-4"
+			onsubmit={(e) => {
+				e.preventDefault();
+				void handleLogin();
+			}}
+		>
+			{#if error}
+				<div class="p-2 bg-red-900/40 text-red-200 rounded">{error}</div>
+			{/if}
+			<!-- Campo Usuario -->
 			<div>
 				<input
-					type="email"
-					id="email"
-					placeholder="Correo"
-					bind:value={email}
+					type="text"
+					id="username"
+					placeholder="Usuario"
+					bind:value={username}
 					class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 			</div>
@@ -76,8 +82,7 @@
 
 			<!-- Botón de inicio de sesión -->
 			<button
-				type="button"
-				onclick={handleLogin}
+				type="submit"
 				class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-md font-medium transition-colors"
 			>
 				Iniciar Sesión
@@ -86,20 +91,9 @@
 			<!-- Credenciales de prueba -->
 			<div class="mt-6 p-4 bg-[#2d3748] rounded-md text-gray-300 text-sm">
 				<div class="font-medium mb-1">Credenciales de prueba:</div>
-				<div>Email: m@gmail.com</div>
-				<div>Contraseña: 1234</div>
+				<div>Usuario: admin</div>
+				<div>Contraseña: admin</div>
 			</div>
 		</form>
-
-		<!-- Enlace para recuperar contraseña -->
-		<div class="mt-6 text-center">
-			<button
-				type="button"
-				onclick={handleRecoverPassword}
-				class="text-blue-400 hover:text-blue-300 text-sm"
-			>
-				Recuperar Contraseña
-			</button>
-		</div>
 	</div>
 </div>

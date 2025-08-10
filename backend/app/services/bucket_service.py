@@ -63,48 +63,40 @@ class BucketService:
     def upload(self, data, object_name: str, content_type: Optional[str] = None):
         """
         Sube un objeto al bucket.
-        - Si `data` es UploadFile (FastAPI), usa upload_fileobj.
-        - Si `data` es bytes o str, usa put_object (convierte str a UTF-8).
+        - Si `data` es UploadFile (FastAPI) o tiene atributo `.file`, lee bytes desde `data.file.read()`.
+        - Si `data` es bytes/bytearray o str, usa put_object.
+        - Si `data` es file-like object con `.read()`, lee bytes desde allí.
         - `content_type` es opcional; si no se provee se infiere por extensión.
         """
         self.set_public_read_policy()
         try:
-            # Caso 1: FastAPI UploadFile
-            if isinstance(data, UploadFile):
-                ct = content_type or self._infer_content_type(object_name)
-                # ExtraArgs solo es soportado por upload_file, no upload_fileobj; para asegurar ContentType usamos put_object
-                # leyendo el stream a memoria de forma segura.
-                file_bytes = data.file.read()
-                self.s3_client.put_object(
-                    Bucket=self.BUCKET_NAME,
-                    Key=object_name,
-                    Body=file_bytes,
-                    ContentType=ct
-                )
-                print(f"'{data.filename}' subido a '{self.BUCKET_NAME}/{object_name}'")
-                return
+            ct = content_type or self._infer_content_type(object_name)
+            body = None
 
-            # Caso 2: file-like object con método read()
-            if hasattr(data, 'read') and callable(getattr(data, 'read')):
-                ct = content_type or self._infer_content_type(object_name)
-                self.s3_client.put_object(
-                    Bucket=self.BUCKET_NAME,
-                    Key=object_name,
-                    Body=data.read(),
-                    ContentType=ct
-                )
-                print(f"Objeto file-like subido a '{self.BUCKET_NAME}/{object_name}'")
-                return
-
-            # Caso 3: bytes o str (por ejemplo JSON serializado)
-            if isinstance(data, bytes):
-                body = data
+            # Caso 1: FastAPI/Starlette UploadFile o cualquier objeto con `.file.read()`
+            if isinstance(data, UploadFile) or hasattr(data, 'file') and hasattr(getattr(data, 'file'), 'read'):
+                f = getattr(data, 'file', None) or data.file  # por claridad
+                try:
+                    f.seek(0)
+                except Exception:
+                    pass
+                body = f.read()
+            # Caso 2: bytes o bytearray
+            elif isinstance(data, (bytes, bytearray)):
+                body = bytes(data)
+            # Caso 3: str
             elif isinstance(data, str):
                 body = data.encode('utf-8')
+            # Caso 4: file-like con read() síncrono
+            elif hasattr(data, 'read') and callable(getattr(data, 'read')):
+                # Nota: si `data.read` es async (como UploadFile.read), no caemos aquí gracias a los casos previos
+                body = data.read()
             else:
                 raise TypeError("Tipo de dato no soportado para upload. Use UploadFile, bytes, str o file-like object.")
 
-            ct = content_type or self._infer_content_type(object_name)
+            if not isinstance(body, (bytes, bytearray)):
+                raise TypeError("El cuerpo a subir debe ser bytes; verifique si intentó usar un método async sin await.")
+
             self.s3_client.put_object(
                 Bucket=self.BUCKET_NAME,
                 Key=object_name,

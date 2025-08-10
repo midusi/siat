@@ -2,12 +2,23 @@
 // for information about these interfaces
 declare global {
 	namespace App {
-		// interface Error {}
-		// interface Locals {}
-		// interface PageData {}
+		interface Locals {
+			user: {
+				id: number;
+				username: string;
+				email: string;
+				first_name?: string | null;
+				last_name?: string | null;
+				role: string;
+				active: boolean;
+			} | null;
+		}
+		interface PageData {
+			user: App.Locals['user'];
+		}
 		// interface PageState {}
 		// interface Platform {}
 	}
 }
 
-export {};
+export { };

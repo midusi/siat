@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime, Text, Index
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 class Base(DeclarativeBase):
@@ -9,13 +9,14 @@ class User(Base):
     __tablename__ = "user"
 
     id= Column(Integer, primary_key=True)
-    username = Column(String, nullable=False, unique=True)
-    password = Column(String, nullable=False, unique=True)
-    email = Column(String, nullable=False)
+    username = Column(String, nullable=False, unique=True, index=True)
+    password = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True, index=True)
     active = Column(Boolean, default=True)
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     role = Column(String, nullable=False)
+    refresh_token_version = Column(Integer, nullable=False, default=0)
 
 class Province(Base):
     __tablename__ = "province"

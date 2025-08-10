@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, UploadFile, Form, File
-from app.auth.decorators import require_role
+# from app.auth.decorators import require_role
 from app.services.task_service import TaskService
 from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
 from app.services.dependencies import get_task_service
 from datetime import datetime
 from fastapi.responses import JSONResponse
+from app.auth.dependencies import get_current_user, require_role
 
-router = APIRouter(prefix="/task", tags=["task"])
+router = APIRouter(prefix="/task", tags=["task"], dependencies=[Depends(get_current_user)])
 
 @router.get("")
 def get_list(service: TaskService = Depends(get_task_service)):
@@ -22,13 +23,13 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
     print(f"Backend: Solicitud recibida para la tarea con ID: {task_id}")
     return service.get_task(task_id)
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 async def create(
     name: str = Form(...),
     locality_id: int = Form(...),
     date: datetime = Form(...), 
     file: UploadFile = File(...), 
-    service: TaskService = Depends(get_task_service)
+    service: TaskService = Depends(get_task_service),
 ):
     # Upload file to MinIO
     if not file.filename:
@@ -42,21 +43,21 @@ async def create(
     
     return {"task": task}
 
-@router.post("/{task_id}/config")
+@router.post("/{task_id}/config", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 async def config(
     task_id: int,
     task_config_request: TaskConfigRequest,
-    service: TaskService = Depends(get_task_service)
+    service: TaskService = Depends(get_task_service),
 ):
     print(f"Configurar tarea {task_id} con datos:", task_config_request)
     task = service.config(task_config_request, task_id)
     return {"task": task}
 
-@router.post("/{task_id}/update-data")
+@router.post("/{task_id}/update-data", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 async def update_data(
     task_id: int,
     updated_data: TaskUpdateData,
-    service: TaskService = Depends(get_task_service)
+    service: TaskService = Depends(get_task_service),
 ):
     """
     Recibe los datos actualizados de `rutas` e `indeterminados` desde el frontend y

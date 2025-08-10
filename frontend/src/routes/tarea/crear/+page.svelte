@@ -28,7 +28,7 @@
 
 	async function fetchProvinces() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/province`);
+			const response = await fetch(`${BACKEND_URL}/province`, { credentials: 'include' });
 			if (!response.ok) {
 				throw new Error(`Error fetching provinces: ${response.statusText}`);
 			}
@@ -41,7 +41,9 @@
 
 	async function fetchDistricts() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/province/${form.selectedProvince}/district`);
+			const response = await fetch(`${BACKEND_URL}/province/${form.selectedProvince}/district`, {
+				credentials: 'include'
+			});
 			if (!response.ok) {
 				throw new Error(`Error fetching districts: ${response.statusText}`);
 			}
@@ -54,7 +56,9 @@
 
 	async function fetchLocalities() {
 		try {
-			const response = await fetch(`${BACKEND_URL}/district/${form.selectedDistrict}/locality`);
+			const response = await fetch(`${BACKEND_URL}/district/${form.selectedDistrict}/locality`, {
+				credentials: 'include'
+			});
 			if (!response.ok) {
 				throw new Error(`Error fetching localities: ${response.statusText}`);
 			}
@@ -106,7 +110,8 @@
 		try {
 			const response = await fetch(`${BACKEND_URL}/task`, {
 				method: 'POST',
-				body: formData
+				body: formData,
+				credentials: 'include'
 			});
 
 			if (!response.ok) {

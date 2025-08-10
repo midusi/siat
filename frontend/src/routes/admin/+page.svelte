@@ -1,145 +1,383 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    
-    // Tipos para los usuarios y roles
-    type Role = 'Admin' | 'Operador';
-    
-    interface User {
-      id: number;
-      nombre: string;
-      email: string;
-      rol: Role;
-      estado: 'Activo' | 'Inactivo';
-    }
-    
-    // Estado para los usuarios
-    let users = $state<User[]>([
-      { 
-        id: 1, 
-        nombre: 'Juan Pérez', 
-        email: 'juan.perez@ejemplo.com', 
-        rol: 'Admin', 
-        estado: 'Activo' 
-      },
-      { 
-        id: 2, 
-        nombre: 'María López', 
-        email: 'maria.lopez@ejemplo.com', 
-        rol: 'Operador', 
-        estado: 'Activo' 
-      },
-      { 
-        id: 3, 
-        nombre: 'Carlos Gómez', 
-        email: 'carlos.gomez@ejemplo.com', 
-        rol: 'Operador', 
-        estado: 'Inactivo' 
-      },
-      { 
-        id: 4, 
-        nombre: 'Ana Martínez', 
-        email: 'ana.martinez@ejemplo.com', 
-        rol: 'Operador', 
-        estado: 'Activo' 
-      }
-    ]);
-    
-    // Estado para el filtro de búsqueda
-    let searchQuery = $state('');
-    
-    // Estado para el modal de edición/creación
-    let showModal = $state(false);
-    let editingUser = $state<User | null>(null);
-    let newUser = $state<Partial<User>>({
-      nombre: '',
-      email: '',
-      rol: 'Operador',
-      estado: 'Activo'
-    });
-    
-    // Estado para mensajes de error en el formulario
-    let formErrors = $state({
-      nombre: '',
-      email: ''
-    });
-    
-    // Función para abrir el modal de creación de usuario
-    function openCreateModal(): void {
-      editingUser = null;
-      newUser = {
-        nombre: '',
-        email: '',
-        rol: 'Operador',
-        estado: 'Activo'
-      };
-      formErrors = { nombre: '', email: '' };
-      showModal = true;
-    }
-    
-    // Función para abrir el modal de edición de usuario
-    function openEditModal(user: User): void {
-      editingUser = user;
-      newUser = { ...user };
-      formErrors = { nombre: '', email: '' };
-      showModal = true;
-    }
-    
-    // Función para cerrar el modal
-    function closeModal(): void {
-      showModal = false;
-    }
-    
-    // Función para guardar un usuario (crear o editar)
-    function saveUser(): void {
-      if (editingUser) {
-        // Editar usuario existente
-        users = users.map(u => 
-          u.id === editingUser.id ? { ...u, ...newUser as User } : u
-        );
-      } else {
-        // Crear nuevo usuario
-        const currentDate = new Date();
-        const formattedDate = `${currentDate.toISOString().split('T')[0]} ${currentDate.toTimeString().split(' ')[0].substring(0, 5)}`;
-        
-        const newId = users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1;
-        
-        users = [
-          ...users,
-          {
-            id: newId,
-            nombre: newUser.nombre!,
-            email: newUser.email!,
-            rol: newUser.rol as Role || 'Operador',
-            estado: newUser.estado as 'Activo' | 'Inactivo' || 'Activo'
-          }
-        ];
-      }
-      
-      closeModal();
-    }
-    
-    // Función para cambiar el rol de un usuario
-    function changeRole(user: User): void {
-      const newRole: Role = user.rol === 'Admin' ? 'Operador' : 'Admin';
-      users = users.map(u => 
-        u.id === user.id ? { ...u, rol: newRole } : u
-      );
-    }
-    
-    // Función para cambiar el estado de un usuario
-    function toggleStatus(user: User): void {
-      const newStatus = user.estado === 'Activo' ? 'Inactivo' : 'Activo';
-      users = users.map(u => 
-        u.id === user.id ? { ...u, estado: newStatus } : u
-      );
-    }
-    
-    // Función para eliminar un usuario
-    function deleteUser(userId: number): void {
-      if (confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
-        users = users.filter(u => u.id !== userId);
-      }
-    }
+	import { onMount } from 'svelte';
+	import { apiFetch } from '$lib/api';
+
+	// Tipos para los usuarios y roles
+	type Role = 'Admin' | 'Operador';
+
+	interface User {
+		id: number;
+		nombre: string;
+		email: string;
+		rol: Role;
+		estado: 'Activo' | 'Inactivo';
+		username: string;
+	}
+
+	// Estado para los usuarios (se cargan desde backend)
+	let users = $state<User[]>([]);
+
+	// Cargar usuarios reales desde la API al montar
+	type BackendUser = {
+		id: number;
+		username: string;
+		email: string;
+		role: 'ROLE_ADMIN' | 'ROLE_OPERADOR';
+		first_name: string;
+		last_name: string;
+		active: boolean;
+	};
+
+	onMount(async () => {
+		try {
+			const res = await apiFetch('/admin/user');
+			if (!res.ok) {
+				console.error('Error al cargar usuarios:', await res.text());
+				return;
+			}
+			const data = (await res.json()) as { users: BackendUser[] };
+			users = data.users.map((u) => ({
+				id: u.id,
+				nombre: `${u.first_name} ${u.last_name}`.trim(),
+				email: u.email,
+				rol: u.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
+				estado: u.active ? 'Activo' : 'Inactivo',
+				username: u.username
+			}));
+		} catch (e) {
+			console.error('Error de red al cargar usuarios', e);
+		}
+	});
+
+	// Estado para el filtro de búsqueda
+	let searchQuery = $state('');
+
+	// Estado para el modal de edición/creación
+	let showModal = $state(false);
+	let editingUser = $state<User | null>(null);
+	let newUser = $state<{
+		nombre: string;
+		email: string;
+		rol: Role;
+		estado: 'Activo' | 'Inactivo';
+		username: string;
+		password: string;
+		confirm_password: string;
+	}>({
+		nombre: '',
+		email: '',
+		rol: 'Operador',
+		estado: 'Activo',
+		username: '',
+		password: '',
+		confirm_password: ''
+	});
+
+	// Estado para mensajes de error en el formulario
+	let formErrors = $state({
+		nombre: '',
+		email: '',
+		username: '',
+		password: '',
+		confirm_password: '',
+		general: ''
+	});
+	let submitting = $state(false);
+	// Estado de carga por usuario al cambiar estado
+	let toggling = $state<Record<number, boolean>>({});
+	// Estado de eliminación por usuario
+	let deleting = $state<Record<number, boolean>>({});
+
+	// Función para abrir el modal de creación de usuario
+	function openCreateModal(): void {
+		editingUser = null;
+		newUser = {
+			nombre: '',
+			email: '',
+			rol: 'Operador',
+			estado: 'Activo',
+			username: '',
+			password: '',
+			confirm_password: ''
+		};
+		formErrors = {
+			nombre: '',
+			email: '',
+			username: '',
+			password: '',
+			confirm_password: '',
+			general: ''
+		};
+		showModal = true;
+	}
+
+	// Función para abrir el modal de edición de usuario (solo UI local por ahora)
+	function openEditModal(user: User): void {
+		editingUser = user;
+		// Para edición real habría que mapear a campos completos; mantenemos valores de muestra
+		newUser = {
+			nombre: user.nombre,
+			email: user.email,
+			rol: user.rol,
+			estado: user.estado,
+			username: user.username,
+			password: '',
+			confirm_password: ''
+		};
+		formErrors = {
+			nombre: '',
+			email: '',
+			username: '',
+			password: '',
+			confirm_password: '',
+			general: ''
+		};
+		showModal = true;
+	}
+
+	function closeModal(): void {
+		if (submitting) return;
+		showModal = false;
+	}
+
+	function validate(): boolean {
+		formErrors = {
+			nombre: '',
+			email: '',
+			username: '',
+			password: '',
+			confirm_password: '',
+			general: ''
+		};
+		let ok = true;
+		if (!newUser.nombre?.trim()) {
+			formErrors.nombre = 'Requerido';
+			ok = false;
+		}
+		if (!newUser.email?.trim()) {
+			formErrors.email = 'Requerido';
+			ok = false;
+		}
+		if (!newUser.username?.trim()) {
+			formErrors.username = 'Requerido';
+			ok = false;
+		}
+		if (!editingUser) {
+			if (!newUser.password) {
+				formErrors.password = 'Requerido';
+				ok = false;
+			}
+			if (newUser.password !== newUser.confirm_password) {
+				formErrors.confirm_password = 'No coincide';
+				ok = false;
+			}
+		} else {
+			// En edición, validar contraseña solo si se quiere cambiar
+			if (newUser.password || newUser.confirm_password) {
+				if (!newUser.password) {
+					formErrors.password = 'Requerido';
+					ok = false;
+				}
+				if (newUser.password !== newUser.confirm_password) {
+					formErrors.confirm_password = 'No coincide';
+					ok = false;
+				}
+			}
+		}
+		return ok;
+	}
+
+	async function handleSubmit(event?: SubmitEvent) {
+		// Prevent default submit in new event syntax
+		if (event?.preventDefault) event.preventDefault();
+		if (!validate()) return;
+		submitting = true;
+		try {
+			// Separar nombre en first/last
+			const parts = (newUser.nombre ?? '').trim().split(/\s+/);
+			const first_name = parts.shift() ?? '';
+			const last_name = parts.join(' ');
+
+			if (editingUser) {
+				// Actualización de datos del usuario
+				const updates: Record<string, unknown> = {};
+				// Enviar siempre nombres por simplicidad
+				updates.first_name = first_name;
+				updates.last_name = last_name;
+				if (newUser.email !== editingUser.email) updates.email = newUser.email;
+				if (newUser.rol !== editingUser.rol)
+					updates.role = newUser.rol === 'Admin' ? 'ROLE_ADMIN' : 'ROLE_OPERADOR';
+
+				if (Object.keys(updates).length > 0) {
+					const resUpdate = await apiFetch(`/admin/user/${editingUser.id}`, {
+						method: 'PATCH',
+						body: JSON.stringify(updates)
+					});
+					if (!resUpdate.ok) {
+						const err = await resUpdate.json().catch(() => ({}));
+						formErrors.general = err?.detail ?? 'Error al actualizar usuario';
+						return;
+					}
+					const data = await resUpdate.json();
+					const updated = data.user as {
+						id: number;
+						username: string;
+						email: string;
+						role: 'ROLE_ADMIN' | 'ROLE_OPERADOR';
+						first_name: string;
+						last_name: string;
+						active: boolean;
+					};
+					users = users.map((u) =>
+						u.id === updated.id
+							? {
+									id: updated.id,
+									nombre: `${updated.first_name} ${updated.last_name}`.trim(),
+									email: updated.email,
+									rol: updated.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
+									estado: updated.active ? 'Activo' : 'Inactivo',
+									username: updated.username
+								}
+							: u
+					);
+				}
+
+				// Cambio de contraseña (opcional en edición)
+				if (newUser.password) {
+					const resPwd = await apiFetch(`/admin/user/${editingUser.id}/reset-password`, {
+						method: 'POST',
+						body: JSON.stringify({
+							new_password: newUser.password,
+							confirm_password: newUser.confirm_password
+						})
+					});
+					if (!resPwd.ok) {
+						const err = await resPwd.json().catch(() => ({}));
+						formErrors.general = err?.detail ?? 'Error al cambiar contraseña';
+						return;
+					}
+					// 204 sin contenido esperado
+				}
+
+				showModal = false;
+				return;
+			}
+
+			// Creación de usuario
+			const payload = {
+				username: newUser.username,
+				password: newUser.password,
+				confirm_password: newUser.confirm_password,
+				email: newUser.email,
+				role: newUser.rol === 'Admin' ? 'ROLE_ADMIN' : 'ROLE_OPERADOR',
+				first_name,
+				last_name,
+				active: newUser.estado === 'Activo'
+			};
+			const res = await apiFetch('/admin/user-register', {
+				method: 'POST',
+				body: JSON.stringify(payload)
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				formErrors.general = err?.detail ?? 'Error al crear usuario';
+				return;
+			}
+			const data = await res.json();
+			const created = data.user as {
+				id: number;
+				email: string;
+				role: string;
+				first_name: string;
+				last_name: string;
+				active: boolean;
+				username: string;
+			};
+			// Actualizar lista local
+			users = [
+				...users,
+				{
+					id: created.id,
+					nombre: `${created.first_name} ${created.last_name}`.trim(),
+					email: created.email,
+					rol: created.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
+					estado: created.active ? 'Activo' : 'Inactivo',
+					username: created.username
+				}
+			];
+			showModal = false;
+		} catch (e) {
+			formErrors.general = 'Error de red';
+		} finally {
+			submitting = false;
+		}
+	}
+
+	// Funciones locales de UI
+	function changeRole(user: User): void {
+		const newRole: Role = user.rol === 'Admin' ? 'Operador' : 'Admin';
+		users = users.map((u) => (u.id === user.id ? { ...u, rol: newRole } : u));
+	}
+
+	async function toggleStatus(user: User): Promise<void> {
+		if (toggling[user.id]) return;
+		const prev = user.estado;
+		const targetActive = prev !== 'Activo';
+		// Optimistic update
+		toggling[user.id] = true;
+		users = users.map((u) =>
+			u.id === user.id ? { ...u, estado: targetActive ? 'Activo' : 'Inactivo' } : u
+		);
+		try {
+			const path = targetActive
+				? `/admin/user/${user.id}/enable`
+				: `/admin/user/${user.id}/disable`;
+			const res = await apiFetch(path, { method: 'PATCH' });
+			if (!res.ok) {
+				// revert on error
+				users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
+				const err = await res.json().catch(() => ({}) as any);
+				alert(err?.detail ?? 'No se pudo actualizar el estado');
+				return;
+			}
+			const data = await res.json().catch(() => null as any);
+			const active = data?.user?.active;
+			if (typeof active === 'boolean') {
+				users = users.map((u) =>
+					u.id === user.id ? { ...u, estado: active ? 'Activo' : 'Inactivo' } : u
+				);
+			}
+		} catch (e) {
+			users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
+			alert('Error de red al actualizar estado');
+		} finally {
+			toggling[user.id] = false;
+		}
+	}
+
+	async function deleteUser(userId: number): Promise<void> {
+		if (deleting[userId]) return;
+		if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
+		deleting[userId] = true;
+		const prev = users;
+		// Optimistic removal
+		users = users.filter((u) => u.id !== userId);
+		try {
+			const res = await apiFetch(`/admin/user/${userId}`, { method: 'DELETE' });
+			if (!res.ok) {
+				users = prev; // revert
+				const err = await res.json().catch(() => ({}));
+				alert(err?.detail ?? 'No se pudo eliminar el usuario');
+				return;
+			}
+			// 204 expected, nothing else
+		} catch (e) {
+			users = prev; // revert
+			alert('Error de red al eliminar usuario');
+		} finally {
+			deleting[userId] = false;
+		}
+	}
 </script>
 
 <div class="min-h-screen bg-[#1a1e2a] text-white">
@@ -221,7 +459,11 @@
 			</thead>
 			<!-- Cuerpo de la tabla -->
 			<tbody>
-				{#each users as user}
+				{#each users.filter((u) => u.nombre
+							.toLowerCase()
+							.includes(searchQuery.toLowerCase()) || u.email
+							.toLowerCase()
+							.includes(searchQuery.toLowerCase())) as user}
 					<tr class="border-b border-gray-700">
 						<td class="p-3">
 							<span class="font-medium">#{user.id}</span>
@@ -248,11 +490,14 @@
 						<td class="p-3">
 							<button
 								onclick={() => toggleStatus(user)}
+								aria-busy={toggling[user.id]}
+								disabled={toggling[user.id]}
 								class={`px-2 py-1 rounded text-xs font-medium ${
 									user.estado === 'Activo'
 										? 'bg-green-900 text-green-200'
 										: 'bg-red-900 text-red-200'
-								}`}
+								}
+								${toggling[user.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
 							>
 								{user.estado}
 							</button>
@@ -268,8 +513,9 @@
 								</button>
 								<button
 									onclick={() => deleteUser(user.id)}
-									class="bg-red-600 hover:bg-red-500 text-white text-sm py-1 px-3 rounded"
+									class="bg-red-600 hover:bg-red-500 text-white text-sm py-1 px-3 rounded disabled:opacity-50"
 									title="Eliminar usuario"
+									disabled={deleting[user.id]}
 								>
 									Eliminar
 								</button>
@@ -297,10 +543,12 @@
 					{editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
 				</h3>
 
-				<form class="space-y-4">
-					<!-- Campo Nombre -->
+				<form class="space-y-4" onsubmit={handleSubmit}>
+					<!-- Campo Nombre completo -->
 					<div>
-						<label for="nombre" class="block text-sm font-medium text-gray-400 mb-1">Nombre</label>
+						<label for="nombre" class="block text-sm font-medium text-gray-400 mb-1"
+							>Nombre completo</label
+						>
 						<input
 							type="text"
 							id="nombre"
@@ -326,6 +574,51 @@
 						{#if formErrors.email}
 							<p class="text-red-500 text-xs mt-1">{formErrors.email}</p>
 						{/if}
+					</div>
+
+					<!-- Campo Username -->
+					<div>
+						<label for="username" class="block text-sm font-medium text-gray-400 mb-1"
+							>Usuario</label
+						>
+						<input
+							type="text"
+							id="username"
+							bind:value={newUser.username}
+							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							class:border-red-500={formErrors.username}
+						/>
+						{#if formErrors.username}
+							<p class="text-red-500 text-xs mt-1">{formErrors.username}</p>
+						{/if}
+					</div>
+
+					<!-- Campo Password -->
+					<div>
+						<label for="password" class="block text-sm font-medium text-gray-400 mb-1"
+							>Contraseña</label
+						>
+						<input
+							type="password"
+							id="password"
+							bind:value={newUser.password}
+							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							class:border-red-500={formErrors.password}
+						/>
+					</div>
+
+					<!-- Campo Confirm Password -->
+					<div>
+						<label for="confirm_password" class="block text-sm font-medium text-gray-400 mb-1"
+							>Confirmar contraseña</label
+						>
+						<input
+							type="password"
+							id="confirm_password"
+							bind:value={newUser.confirm_password}
+							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							class:border-red-500={formErrors.confirm_password}
+						/>
 					</div>
 
 					<!-- Campo Rol -->
@@ -354,20 +647,26 @@
 						</select>
 					</div>
 
+					{#if formErrors.general}
+						<p class="text-red-500 text-sm">{formErrors.general}</p>
+					{/if}
+
 					<!-- Botones de acción -->
 					<div class="flex justify-end gap-3 mt-6">
 						<button
 							type="button"
 							onclick={closeModal}
 							class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"
+							aria-disabled={submitting}
 						>
 							Cancelar
 						</button>
 						<button
 							type="submit"
-							class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded"
+							class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+							disabled={submitting}
 						>
-							{editingUser ? 'Guardar Cambios' : 'Crear Usuario'}
+							{editingUser ? 'Guardar Cambios' : submitting ? 'Creando…' : 'Crear Usuario'}
 						</button>
 					</div>
 				</form>

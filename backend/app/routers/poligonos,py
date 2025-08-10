@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List
+from app.auth.dependencies import get_current_user, require_role
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class Punto(BaseModel):
@@ -14,7 +15,7 @@ class Poligono(BaseModel):
     sentido: str
     vertices: List[Punto]
 
-@router.post("/guardar_poligonos")
+@router.post("/guardar_poligonos", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 async def guardar_poligonos(poligonos: List[Poligono]):
     print("Polígonos recibidos:", poligonos)
     return {"mensaje": f"Recibí {len(poligonos)} polígonos"}

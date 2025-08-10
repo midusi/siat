@@ -1,6 +1,6 @@
 from fastapi import Depends
 from app.db import get_db_session
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 def get_auth_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.auth_service import AuthService
@@ -33,3 +33,12 @@ def get_video_service(db: sessionmaker = Depends(get_db_session)):
 def get_bucket_service():
     from app.services.bucket_service import BucketService
     return BucketService()
+
+def get_password_reset_service(db: Session = Depends(get_db_session)):
+    from app.services.password_reset_service import PasswordResetService
+    return PasswordResetService(db)
+
+
+def get_email_service():
+    from app.services.email_service import EmailService
+    return EmailService()

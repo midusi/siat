@@ -2,10 +2,11 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Form
 from app.services.bucket_service import BucketService
 from app.services.dependencies import get_bucket_service
+from app.auth.dependencies import get_current_user, require_role
 
-router = APIRouter(prefix="/example", tags=["example"])
+router = APIRouter(prefix="/example", tags=["example"], dependencies=[Depends(get_current_user)])
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 def upload(
         service: BucketService = Depends(get_bucket_service)
     ):

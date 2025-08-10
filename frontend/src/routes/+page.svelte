@@ -3,7 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
-	import { BACKEND_URL } from '$lib/constants';
+	// import { BACKEND_URL } from '$lib/constants';
+	import { apiFetch } from '$lib/api';
 
 	// Datos de ejemplo para la tabla
 	interface Task {
@@ -16,7 +17,7 @@
 		acciones: string[];
 	}
 
-	let tasks: Task[] = [];
+	let tasks = $state<Task[]>([]);
 
 	// Método para definir las acciones en base al estado de la tarea
 	const taskActions: Record<string, string[]> = {
@@ -26,9 +27,9 @@
 
 	onMount(async () => {
 		try {
-			const response = await fetch(`${BACKEND_URL}/task`);
+			const response = await apiFetch('/task');
 			if (!response.ok) {
-				throw new Error(`Error fetching tasks: ${response.statusText}`);
+				throw new Error(`Error fetching tasks: ${response.status} ${response.statusText}`);
 			}
 			const fetchedTasks = await response.json();
 			tasks = fetchedTasks.map((task: any) => ({
@@ -102,6 +103,8 @@
 	function goToCreateTask(): void {
 		goto('/tarea/crear');
 	}
+
+	let { data } = $props();
 </script>
 
 <div class="bg-[#1a202c] text-white h-full">
