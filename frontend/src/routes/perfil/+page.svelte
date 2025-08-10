@@ -23,7 +23,13 @@
 		if (/\d/.test(pwd)) score++;
 		if (/[^A-Za-z0-9]/.test(pwd)) score++;
 		const labels = ['Muy débil', 'Débil', 'Media', 'Fuerte', 'Muy fuerte'];
-		const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-emerald-600'];
+		const colors = [
+			'bg-red-500',
+			'bg-orange-500',
+			'bg-yellow-500',
+			'bg-green-500',
+			'bg-emerald-600'
+		];
 		return { score, label: labels[score] ?? labels[0], color: colors[score] ?? colors[0] };
 	}
 
@@ -104,19 +110,40 @@
 
 <div class="max-w-3xl mx-auto p-6">
 	<h1 class="text-2xl font-semibold text-gray-100 mb-2">Tu perfil</h1>
-	<p class="text-gray-400 mb-6">Actualizá tu contraseña. Por seguridad, se cerrará tu sesión luego del cambio.</p>
+	<p class="text-gray-400 mb-6">
+		Actualizá tu contraseña. Por seguridad, se cerrará tu sesión luego del cambio.
+	</p>
 
 	<section class="bg-[#12151c] rounded-lg p-6 border border-gray-700 shadow-lg">
 		<div class="flex items-center gap-2 mb-4">
-			<svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+			<svg
+				class="w-5 h-5 text-amber-400"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path
+					d="M7 11V7a5 5 0 0 1 10 0v4"
+				/></svg
+			>
 			<h2 class="text-lg font-medium text-gray-100">Cambiar contraseña</h2>
 		</div>
 
 		{#if errors.general}
-			<div class="rounded-md border border-red-800 bg-red-900/30 text-red-200 px-4 py-3 text-sm mb-4">{errors.general}</div>
+			<div
+				class="rounded-md border border-red-800 bg-red-900/30 text-red-200 px-4 py-3 text-sm mb-4"
+			>
+				{errors.general}
+			</div>
 		{/if}
 		{#if success}
-			<div class="rounded-md border border-emerald-800 bg-emerald-900/30 text-emerald-200 px-4 py-3 text-sm mb-4">{success}</div>
+			<div
+				class="rounded-md border border-emerald-800 bg-emerald-900/30 text-emerald-200 px-4 py-3 text-sm mb-4"
+			>
+				{success}
+			</div>
 		{/if}
 
 		<form onsubmit={handleSubmit} class="space-y-5">
@@ -124,9 +151,32 @@
 			<div>
 				<label class={labelClass()}>Contraseña actual</label>
 				<div class="relative">
-					<input type={showCurrent ? 'text' : 'password'} class={inputClass(!!errors.current)} bind:value={current_password} autocomplete="current-password" />
-					<button type="button" class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200" onclick={() => (showCurrent = !showCurrent)} aria-label="Mostrar u ocultar contraseña">
-						<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+					<input
+						type={showCurrent ? 'text' : 'password'}
+						class={inputClass(!!errors.current)}
+						bind:value={current_password}
+						autocomplete="current-password"
+					/>
+					<button
+						type="button"
+						class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200"
+						onclick={() => (showCurrent = !showCurrent)}
+						aria-label="Mostrar u ocultar contraseña"
+					>
+						<svg
+							class="h-5 w-5"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle
+								cx="12"
+								cy="12"
+								r="3"
+							/></svg
+						>
 					</button>
 				</div>
 				{#if errors.current}
@@ -138,19 +188,48 @@
 			<div>
 				<label class={labelClass()}>Nueva contraseña</label>
 				<div class="relative">
-					<input type={showNew ? 'text' : 'password'} class={inputClass(!!errors.new)} bind:value={new_password} autocomplete="new-password" />
-					<button type="button" class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200" onclick={() => (showNew = !showNew)} aria-label="Mostrar u ocultar contraseña">
-						<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+					<input
+						type={showNew ? 'text' : 'password'}
+						class={inputClass(!!errors.new)}
+						bind:value={new_password}
+						autocomplete="new-password"
+					/>
+					<button
+						type="button"
+						class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200"
+						onclick={() => (showNew = !showNew)}
+						aria-label="Mostrar u ocultar contraseña"
+					>
+						<svg
+							class="h-5 w-5"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle
+								cx="12"
+								cy="12"
+								r="3"
+							/></svg
+						>
 					</button>
 				</div>
 				<!-- Strength bar -->
 				<div class="mt-2">
 					<div class="flex gap-1">
 						{#each segments as i}
-							<div class={i < strength.score ? `h-1.5 flex-1 rounded ${strength.color}` : 'h-1.5 flex-1 rounded bg-gray-700'}></div>
+							<div
+								class={i < strength.score
+									? `h-1.5 flex-1 rounded ${strength.color}`
+									: 'h-1.5 flex-1 rounded bg-gray-700'}
+							></div>
 						{/each}
 					</div>
-					<p class={helpClass()}>Fuerza: <span class="font-medium text-gray-300">{strength.label}</span></p>
+					<p class={helpClass()}>
+						Fuerza: <span class="font-medium text-gray-300">{strength.label}</span>
+					</p>
 				</div>
 				{#if errors.new}
 					<p class={errorTextClass()}>{errors.new}</p>
@@ -162,9 +241,32 @@
 			<div>
 				<label class={labelClass()}>Confirmar nueva contraseña</label>
 				<div class="relative">
-					<input type={showConfirm ? 'text' : 'password'} class={inputClass(!!errors.confirm)} bind:value={confirm_password} autocomplete="new-password" />
-					<button type="button" class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200" onclick={() => (showConfirm = !showConfirm)} aria-label="Mostrar u ocultar contraseña">
-						<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+					<input
+						type={showConfirm ? 'text' : 'password'}
+						class={inputClass(!!errors.confirm)}
+						bind:value={confirm_password}
+						autocomplete="new-password"
+					/>
+					<button
+						type="button"
+						class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200"
+						onclick={() => (showConfirm = !showConfirm)}
+						aria-label="Mostrar u ocultar contraseña"
+					>
+						<svg
+							class="h-5 w-5"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle
+								cx="12"
+								cy="12"
+								r="3"
+							/></svg
+						>
 					</button>
 				</div>
 				{#if errors.confirm}
@@ -173,15 +275,36 @@
 			</div>
 
 			<div class="flex items-center gap-3 pt-2">
-				<button type="submit" class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-md disabled:opacity-60 disabled:cursor-not-allowed" disabled={submitting}>
+				<button
+					type="submit"
+					class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
+					disabled={submitting}
+				>
 					{#if submitting}
-						<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4A4 4 0 004 12z"></path></svg>
+						<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"
+							><circle
+								class="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								stroke-width="4"
+							></circle><path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8v4A4 4 0 004 12z"
+							></path></svg
+						>
 						Guardando...
 					{:else}
 						Guardar cambios
 					{/if}
 				</button>
-				<button type="button" class="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800" onclick={() => goto('/')}>Cancelar</button>
+				<button
+					type="button"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800"
+					onclick={() => goto('/')}>Cancelar</button
+				>
 			</div>
 		</form>
 	</section>
