@@ -4,7 +4,7 @@ from app.services.task_service import TaskService
 from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
 from app.services.dependencies import get_task_service
 from datetime import datetime
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from app.auth.dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/task", tags=["task"], dependencies=[Depends(get_current_user)])
@@ -93,3 +93,9 @@ async def get_first_frame_info(task_id: int, service: TaskService = Depends(get_
         "image_b64": first_frame_b64,
         "mimetype": "image/jpeg"
     })
+
+# NEW: Delete task completely
+@router.delete("/{task_id}", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))], status_code=204)
+def delete_task(task_id: int, service: TaskService = Depends(get_task_service)):
+    service.delete(task_id)
+    return Response(status_code=204)

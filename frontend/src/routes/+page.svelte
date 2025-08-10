@@ -18,8 +18,8 @@
 	let loading = $state({ active: false });
 
 	const taskActions: Record<string, string[]> = {
-		'Video subido': ['configurar'],
-		Revisión: ['revisar', 'archivar']
+		'Video subido': ['configurar', 'eliminar'],
+		Revisión: ['revisar', 'archivar', 'eliminar']
 	};
 
 	async function fetchActiveTasks() {
@@ -81,6 +81,8 @@
 				return 'bg-red-500 hover:bg-red-600';
 			case 'archivar':
 				return 'bg-gray-600 hover:bg-gray-700';
+			case 'eliminar':
+				return 'bg-red-700 hover:bg-red-800';
 			default:
 				return 'bg-blue-500 hover:bg-blue-600';
 		}
@@ -89,6 +91,16 @@
 	async function archiveTask(taskId: number) {
 		const res = await apiFetch(`/task/${taskId}/archive`, { method: 'POST' });
 		if (!res.ok) throw new Error('No se pudo archivar la tarea');
+		await fetchActiveTasks();
+	}
+
+	async function deleteTask(taskId: number) {
+		const confirmed = window.confirm(
+			'¿Seguro que querés eliminar esta tarea? Esta acción es permanente y no se puede deshacer.\nSe eliminarán todos los datos asociados (historiales, configuraciones) y los archivos del bucket.'
+		);
+		if (!confirmed) return;
+		const res = await apiFetch(`/task/${taskId}`, { method: 'DELETE' });
+		if (!res.ok) throw new Error('No se pudo eliminar la tarea');
 		await fetchActiveTasks();
 	}
 
@@ -103,6 +115,8 @@
 			console.log(`Cancelando tarea ${taskId}`);
 		} else if (action === 'archivar') {
 			archiveTask(taskId).catch((e) => console.error(e));
+		} else if (action === 'eliminar') {
+			deleteTask(taskId).catch((e) => console.error(e));
 		}
 	}
 

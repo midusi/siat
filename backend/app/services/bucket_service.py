@@ -114,3 +114,50 @@ class BucketService:
             print(f"'{object_name}' descargado a '{path}'")
         except Exception as e:
             print(f"Error al descargar el archivo: {e}")
+
+    # --- NEW: deletion helpers ---
+    def delete_object(self, key: str):
+        """Elimina un objeto por su key"""
+        try:
+            self.s3_client.delete_object(Bucket=self.BUCKET_NAME, Key=key)
+            print(f"Objeto eliminado '{self.BUCKET_NAME}/{key}'")
+        except Exception as e:
+            print(f"Error al eliminar el objeto: {e}")
+            raise
+
+    def delete_prefix(self, prefix: str):
+        """
+        Elimina recursivamente todos los objetos bajo un prefijo (carpeta lógica).
+        Ej: prefix='task/123' elimina 'task/123/...'
+        """
+        try:
+            continuation_token = None
+            while True:
+                kwargs = {
+                    'Bucket': self.BUCKET_NAME,
+                    'Prefix': prefix.rstrip('/') + '/',
+                    'MaxKeys': 1000,
+                }
+                if continuation_token:
+                    kwargs['ContinuationToken'] = continuation_token
+
+                resp = self.s3_client.list_objects_v2(**kwargs)
+                objects = resp.get('Contents', [])
+                if not objects:
+                    break
+
+                # Borrar por lotes (máximo 1000 por request)
+                delete_payload = {
+                    'Objects': [{'Key': obj['Key']} for obj in objects],
+                    'Quiet': True
+                }
+                self.s3_client.delete_objects(Bucket=self.BUCKET_NAME, Delete=delete_payload)
+
+                if resp.get('IsTruncated'):
+                    continuation_token = resp.get('NextContinuationToken')
+                else:
+                    break
+            print(f"Objetos bajo prefijo '{self.BUCKET_NAME}/{prefix}' eliminados")
+        except Exception as e:
+            print(f"Error al eliminar por prefijo: {e}")
+            raise

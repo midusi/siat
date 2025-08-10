@@ -564,3 +564,47 @@ class TaskService:
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    def delete(self, task_id: int) -> None:
+        """Elimina una tarea y todos sus datos relacionados, además de su carpeta en el bucket.
+        Orden de borrado en BD:
+        - TaskStatusHistory
+        - Inference
+        - Roads (por video)
+        - Task
+        - Video
+        Luego borra el prefijo "task/{id}" del bucket para eliminar video y JSONs.
+        """
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        video = task.video
+        if not video:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
+
+        # Prefijo en el bucket, p.ej. "task/123"
+        prefix = os.path.dirname(video.url)
+
+        try:
+            # 1) Eliminar historiales de estado
+            self.db.query(TaskStatusHistory).filter(TaskStatusHistory.task_id == task.id).delete(synchronize_session=False)
+            # 2) Eliminar inferencia (si existe)
+            if task.inference:
+                self.db.delete(task.inference)
+            # 3) Eliminar vías del video
+            self.db.query(Road).filter(Road.video_id == video.id).delete(synchronize_session=False)
+            # 4) Eliminar la tarea
+            self.db.delete(task)
+            # 5) Eliminar el video
+            self.db.delete(video)
+            self.db.flush()
+
+            # 6) Eliminar objetos del bucket bajo el prefijo
+            # Se hace antes del commit; si falla, se hace rollback de la BD para mantener consistencia
+            self.bucket_service.delete_prefix(prefix)
+
+            # 7) Confirmar transacción en BD
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No se pudo eliminar la tarea: {str(e)}")

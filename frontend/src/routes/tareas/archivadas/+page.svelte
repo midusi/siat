@@ -33,7 +33,7 @@
 				vias: task.name_video,
 				estado: 'Archivada',
 				detalle: `${Math.floor(task.duration / 60)}m ${task.duration % 60}s`,
-				acciones: ['desarchivar']
+				acciones: ['desarchivar', 'eliminar']
 			}));
 		} catch (e) {
 			console.error(e);
@@ -54,15 +54,35 @@
 	}
 
 	function getActionClass(accion: string): string {
-		return accion === 'desarchivar'
-			? 'bg-green-600 hover:bg-green-700'
-			: 'bg-blue-500 hover:bg-blue-600';
+		switch (accion) {
+			case 'desarchivar':
+				return 'bg-green-600 hover:bg-green-700';
+			case 'eliminar':
+				return 'bg-red-700 hover:bg-red-800';
+			default:
+				return 'bg-blue-500 hover:bg-blue-600';
+		}
 	}
 
 	async function unarchiveTask(taskId: number) {
 		const res = await apiFetch(`/task/${taskId}/unarchive`, { method: 'POST' });
 		if (!res.ok) return console.error('No se pudo desarchivar');
 		await fetchArchived();
+	}
+
+	async function deleteTask(taskId: number) {
+		const confirmed = window.confirm(
+			'¿Seguro que querés eliminar esta tarea? Esta acción es permanente y no se puede deshacer.\nSe eliminarán todos los datos asociados y los archivos del bucket.'
+		);
+		if (!confirmed) return;
+		const res = await apiFetch(`/task/${taskId}`, { method: 'DELETE' });
+		if (!res.ok) return console.error('No se pudo eliminar la tarea');
+		await fetchArchived();
+	}
+
+	function handleAction(action: string, taskId: number) {
+		if (action === 'desarchivar') return unarchiveTask(taskId);
+		if (action === 'eliminar') return deleteTask(taskId);
 	}
 </script>
 
@@ -106,11 +126,16 @@
 						</td>
 						<td class="p-3">{task.detalle}</td>
 						<td class="p-3">
-							<button
-								onclick={() => unarchiveTask(task.id)}
-								class={`${getActionClass('desarchivar')} text-white text-sm py-1 px-3 rounded`}
-								>Desarchivar</button
-							>
+							<div class="flex gap-2">
+								{#each task.acciones as accion}
+									<button
+										onclick={() => handleAction(accion, task.id)}
+										class={`${getActionClass(accion)} text-white text-sm py-1 px-3 rounded`}
+									>
+										{accion.charAt(0).toUpperCase() + accion.slice(1)}
+									</button>
+								{/each}
+							</div>
 						</td>
 					</tr>
 				{/each}
