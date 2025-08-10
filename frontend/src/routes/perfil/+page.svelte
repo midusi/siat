@@ -2,6 +2,7 @@
 	import { apiFetch } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { showSuccess } from '$lib/toast';
+	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
 
 	let current_password = $state('');
 	let new_password = $state('');
@@ -10,28 +11,6 @@
 	let errors = $state<{ current?: string; new?: string; confirm?: string; general?: string }>({});
 	let submitting = $state(false);
 	let showCurrent = $state(false);
-	let showNew = $state(false);
-	let showConfirm = $state(false);
-
-	const segments = [0, 1, 2, 3];
-	const strength = $derived(getStrength(new_password));
-
-	function getStrength(pwd: string) {
-		let score = 0;
-		if (pwd.length >= 8) score++;
-		if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
-		if (/\d/.test(pwd)) score++;
-		if (/[^A-Za-z0-9]/.test(pwd)) score++;
-		const labels = ['Muy débil', 'Débil', 'Media', 'Fuerte', 'Muy fuerte'];
-		const colors = [
-			'bg-red-500',
-			'bg-orange-500',
-			'bg-yellow-500',
-			'bg-green-500',
-			'bg-emerald-600'
-		];
-		return { score, label: labels[score] ?? labels[0], color: colors[score] ?? colors[0] };
-	}
 
 	function inputClass(hasError: boolean) {
 		return (
@@ -42,10 +21,6 @@
 
 	function labelClass() {
 		return 'block text-sm font-medium text-gray-200 mb-1';
-	}
-
-	function helpClass() {
-		return 'mt-1 text-xs text-gray-400';
 	}
 
 	function errorTextClass() {
@@ -176,95 +151,13 @@
 				{/if}
 			</div>
 
-			<!-- New password -->
-			<div>
-				<label class={labelClass()}>Nueva contraseña</label>
-				<div class="relative">
-					<input
-						type={showNew ? 'text' : 'password'}
-						class={inputClass(!!errors.new)}
-						bind:value={new_password}
-						autocomplete="new-password"
-					/>
-					<button
-						type="button"
-						class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200"
-						onclick={() => (showNew = !showNew)}
-						aria-label="Mostrar u ocultar contraseña"
-					>
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle
-								cx="12"
-								cy="12"
-								r="3"
-							/></svg
-						>
-					</button>
-				</div>
-				<!-- Strength bar -->
-				<div class="mt-2">
-					<div class="flex gap-1">
-						{#each segments as i}
-							<div
-								class={i < strength.score
-									? `h-1.5 flex-1 rounded ${strength.color}`
-									: 'h-1.5 flex-1 rounded bg-gray-700'}
-							></div>
-						{/each}
-					</div>
-					<p class={helpClass()}>
-						Fuerza: <span class="font-medium text-gray-300">{strength.label}</span>
-					</p>
-				</div>
-				{#if errors.new}
-					<p class={errorTextClass()}>{errors.new}</p>
-				{/if}
-				<p class={helpClass()}>Requisitos mínimos: 6+ caracteres, incluir letras y números.</p>
-			</div>
-
-			<!-- Confirm password -->
-			<div>
-				<label class={labelClass()}>Confirmar nueva contraseña</label>
-				<div class="relative">
-					<input
-						type={showConfirm ? 'text' : 'password'}
-						class={inputClass(!!errors.confirm)}
-						bind:value={confirm_password}
-						autocomplete="new-password"
-					/>
-					<button
-						type="button"
-						class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200"
-						onclick={() => (showConfirm = !showConfirm)}
-						aria-label="Mostrar u ocultar contraseña"
-					>
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle
-								cx="12"
-								cy="12"
-								r="3"
-							/></svg
-						>
-					</button>
-				</div>
-				{#if errors.confirm}
-					<p class={errorTextClass()}>{errors.confirm}</p>
-				{/if}
-			</div>
+			<!-- New/Confirm password using reusable component -->
+			<PasswordNewConfirm
+				bind:newPassword={new_password}
+				bind:confirmPassword={confirm_password}
+				errorNew={errors.new ?? ''}
+				errorConfirm={errors.confirm ?? ''}
+			/>
 
 			<div class="flex items-center gap-3 pt-2">
 				<button

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
 	import { showAlert, showConfirm } from '$lib/dialog';
+	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
 
 	// Tipos para los usuarios y roles
 	type Role = 'Admin' | 'Operador';
@@ -164,11 +165,31 @@
 			ok = false;
 		}
 		if (!editingUser) {
+			// Validaciones de creación (requerido + políticas básicas)
 			if (!newUser.password) {
 				formErrors.password = 'Requerido';
 				ok = false;
 			}
-			if (newUser.password !== newUser.confirm_password) {
+			if (!newUser.confirm_password) {
+				formErrors.confirm_password = 'Requerido';
+				ok = false;
+			}
+			if (newUser.password && newUser.password.length < 6) {
+				formErrors.password = 'La contraseña debe tener al menos 6 caracteres';
+				ok = false;
+			}
+			if (
+				newUser.password &&
+				(!/[A-Za-z]/.test(newUser.password) || !/\d/.test(newUser.password))
+			) {
+				formErrors.password = 'Debe incluir letras y números';
+				ok = false;
+			}
+			if (
+				newUser.password &&
+				newUser.confirm_password &&
+				newUser.password !== newUser.confirm_password
+			) {
 				formErrors.confirm_password = 'No coincide';
 				ok = false;
 			}
@@ -179,7 +200,26 @@
 					formErrors.password = 'Requerido';
 					ok = false;
 				}
-				if (newUser.password !== newUser.confirm_password) {
+				if (!newUser.confirm_password) {
+					formErrors.confirm_password = 'Requerido';
+					ok = false;
+				}
+				if (newUser.password && newUser.password.length < 6) {
+					formErrors.password = 'La contraseña debe tener al menos 6 caracteres';
+					ok = false;
+				}
+				if (
+					newUser.password &&
+					(!/[A-Za-z]/.test(newUser.password) || !/\d/.test(newUser.password))
+				) {
+					formErrors.password = 'Debe incluir letras y números';
+					ok = false;
+				}
+				if (
+					newUser.password &&
+					newUser.confirm_password &&
+					newUser.password !== newUser.confirm_password
+				) {
 					formErrors.confirm_password = 'No coincide';
 					ok = false;
 				}
@@ -551,8 +591,52 @@
 
 	<!-- Modal para crear/editar usuario -->
 	{#if showModal}
-		<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-			<div class="bg-[#1a202c] rounded-lg shadow-lg p-6 w-full max-w-md">
+		<div
+			class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+			role="presentation"
+			tabindex="-1"
+			onclick={(e) => {
+				// Cerrar al clickear fuera del modal
+				if (e.target === e.currentTarget) closeModal();
+			}}
+			onkeydown={(e) => {
+				// Permitir cerrar con Escape
+				if (e.key === 'Escape') closeModal();
+			}}
+		>
+			<div
+				class="relative bg-[#1a202c] rounded-lg shadow-lg p-6 w-full max-w-md"
+				role="dialog"
+				aria-modal="true"
+				tabindex="0"
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => {
+					// Permitir cerrar con Escape desde el dialog
+					if (e.key === 'Escape') closeModal();
+				}}
+			>
+				<button
+					type="button"
+					class="absolute top-3 right-3 text-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-600 rounded"
+					onclick={closeModal}
+					aria-label="Cerrar"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="h-5 w-5"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
+					</svg>
+				</button>
+
 				<h3 class="text-xl font-semibold mb-4">
 					{editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
 				</h3>
@@ -607,33 +691,13 @@
 						{/if}
 					</div>
 
-					<!-- Campo Password -->
-					<div>
-						<label for="password" class="block text-sm font-medium text-gray-400 mb-1"
-							>Contraseña</label
-						>
-						<input
-							type="password"
-							id="password"
-							bind:value={newUser.password}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-							class:border-red-500={formErrors.password}
-						/>
-					</div>
-
-					<!-- Campo Confirm Password -->
-					<div>
-						<label for="confirm_password" class="block text-sm font-medium text-gray-400 mb-1"
-							>Confirmar contraseña</label
-						>
-						<input
-							type="password"
-							id="confirm_password"
-							bind:value={newUser.confirm_password}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-							class:border-red-500={formErrors.confirm_password}
-						/>
-					</div>
+					<!-- Password + Confirm reutilizando componente con barra de fuerza -->
+					<PasswordNewConfirm
+						bind:newPassword={newUser.password}
+						bind:confirmPassword={newUser.confirm_password}
+						errorNew={formErrors.password}
+						errorConfirm={formErrors.confirm_password}
+					/>
 
 					<!-- Campo Rol -->
 					<div>
