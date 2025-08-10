@@ -2,11 +2,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-
-	// import { BACKEND_URL } from '$lib/constants';
 	import { apiFetch } from '$lib/api';
 
-	// Datos de ejemplo para la tabla
 	interface Task {
 		id: number;
 		fecha: string;
@@ -18,19 +15,19 @@
 	}
 
 	let tasks = $state<Task[]>([]);
+	let loading = $state({ active: false });
 
-	// Método para definir las acciones en base al estado de la tarea
 	const taskActions: Record<string, string[]> = {
 		'Video subido': ['configurar'],
 		Revisión: ['revisar', 'archivar']
 	};
 
-	onMount(async () => {
+	async function fetchActiveTasks() {
+		loading.active = true;
 		try {
 			const response = await apiFetch('/task');
-			if (!response.ok) {
+			if (!response.ok)
 				throw new Error(`Error fetching tasks: ${response.status} ${response.statusText}`);
-			}
 			const fetchedTasks = await response.json();
 			tasks = fetchedTasks.map((task: any) => ({
 				id: task.id,
@@ -40,37 +37,42 @@
 					day: '2-digit'
 				}),
 				localidad: task.locality.name,
-				vias: task.name_video, // Using video name as a placeholder for vias
+				vias: task.name_video,
 				estado: task.status.name,
-				detalle: `${Math.floor(task.duration / 60)}m ${task.duration % 60}s`, // Formatting duration
+				detalle: `${Math.floor(task.duration / 60)}m ${task.duration % 60}s`,
 				acciones: taskActions[task.status.name] || []
 			}));
 		} catch (error) {
 			console.error('Error fetching tasks:', error);
+		} finally {
+			loading.active = false;
 		}
+	}
+
+	onMount(async () => {
+		await fetchActiveTasks();
 	});
 
-	// Función para obtener el ícono según el estado
 	function getStatusIcon(estado: string): string {
 		switch (estado) {
 			case 'Subido':
-				return '⚪'; // Círculo
+			case 'Video subido':
+				return '⚪';
 			case 'Procesando':
-				return '▶️'; // Triángulo play
+				return '▶️';
 			case 'Revisión':
-				return '📄'; // Documento
+				return '📄';
 			case 'Aprobado':
-				return '✓'; // Check
+				return '✓';
 			default:
 				return '';
 		}
 	}
 
-	// Función para obtener la clase de color según la acción
 	function getActionClass(accion: string): string {
 		switch (accion) {
 			case 'configurar':
-				return 'bg-blue-500 hover:bg-blue-600'; // Misma clase que tenía 'asignar'
+				return 'bg-blue-500 hover:bg-blue-600';
 			case 'exportar':
 				return 'bg-blue-500 hover:bg-blue-600';
 			case 'revisar':
@@ -84,7 +86,12 @@
 		}
 	}
 
-	// Función para manejar las acciones de los botones
+	async function archiveTask(taskId: number) {
+		const res = await apiFetch(`/task/${taskId}/archive`, { method: 'POST' });
+		if (!res.ok) throw new Error('No se pudo archivar la tarea');
+		await fetchActiveTasks();
+	}
+
 	function handleAction(action: string, taskId: number): void {
 		if (action === 'configurar') {
 			goto(`/tarea/${taskId}/configurar`);
@@ -95,11 +102,10 @@
 		} else if (action === 'cancelar') {
 			console.log(`Cancelando tarea ${taskId}`);
 		} else if (action === 'archivar') {
-			console.log(`Archivando tarea ${taskId}`);
+			archiveTask(taskId).catch((e) => console.error(e));
 		}
 	}
 
-	// Función para navegar a la página de crear tarea
 	function goToCreateTask(): void {
 		goto('/tarea/crear');
 	}

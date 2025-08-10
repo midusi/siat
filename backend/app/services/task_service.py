@@ -23,6 +23,8 @@ from app.models import Task, Video, TaskStatusHistory, Road, Inference
 from app.enums.road_direction import RoadDirection
 from app.services.bucket_service import BucketService
 
+ARCHIVED_STATUS_ID = "ARCHIVED"
+
 class TaskService:
     def __init__(self, db: sessionmaker):
         self.db = db
@@ -33,33 +35,37 @@ class TaskService:
         self.task_status_history_service = TaskStatusHistoryService(db)
         self.road_service = RoadService(db)
         
+    def _to_response(self, task: Task) -> TaskResponse:
+        history = task.status_history[0]
+        return TaskResponse.model_validate({
+            "id": task.id,
+            "name": task.name,
+            "locality": {
+                "id": task.locality.id,
+                "name": task.locality.name,
+                "district": {
+                    "id": task.locality.district.id,
+                    "name": task.locality.district.name
+                }
+            },
+            "name_video": task.video.name,
+            "duration": int(task.video.duration),
+            "status": {
+                "id": history.task_status.id,
+                "name": history.task_status.name
+            },
+            "date": task.date, 
+            "created_at": task.created_at.isoformat()
+        })
+        
     def get_list(self) -> list[TaskResponse]:
-        tasks = task_crud.find_all(self.db)
-        responses = []
-        for task in tasks:
-            history = task.status_history[0]
-            task_response = TaskResponse.model_validate({
-                "id": task.id,
-                "name": task.name,
-                "locality": {
-                    "id": task.locality.id,
-                    "name": task.locality.name,
-                    "district": {
-                        "id": task.locality.district.id,
-                        "name": task.locality.district.name
-                    }
-                },
-                "name_video": task.video.name,
-                "duration": int(task.video.duration),
-                "status": {
-                    "id": history.task_status.id,
-                    "name": history.task_status.name
-                },
-                "date": task.date, 
-                "created_at": task.created_at.isoformat()
-            })
-            responses.append(task_response)
-        return responses
+        # Exclude archived tasks by default
+        tasks = task_crud.find_all_active(self.db)
+        return [self._to_response(t) for t in tasks]
+
+    def get_archived_list(self) -> list[TaskResponse]:
+        tasks = task_crud.find_all_archived(self.db)
+        return [self._to_response(t) for t in tasks]
     
     def get_task(self, task_id: int) -> dict:
         """Devuelve la información real desde la BD y MinIO para el frontend.
@@ -498,3 +504,63 @@ class TaskService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"No se pudo actualizar los datos: {str(e)}",
             )
+
+    # NEW: Archive and unarchive tasks by changing current TaskStatusHistory
+    def archive(self, task_id: int) -> TaskResponse:
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        current = self.task_status_history_service.get_current_by_task(task.id)
+        if current.status_id == ARCHIVED_STATUS_ID:
+            return self._to_response(task)
+        try:
+            current.to_date = datetime.datetime.now()
+            self.db.flush()
+            archived_status = self.task_status_service.get_by_id(ARCHIVED_STATUS_ID)
+            if not archived_status:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estado ARCHIVED no existe")
+            new_hist = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=archived_status.id,
+            )
+            self.db.add(new_hist)
+            self.db.commit()
+            # Reload associations for response (optional)
+            return self._to_response(task)
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    def unarchive(self, task_id: int) -> TaskResponse:
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        current = self.task_status_history_service.get_current_by_task(task.id)
+        if current.status_id != ARCHIVED_STATUS_ID:
+            return self._to_response(task)
+        try:
+            # Find last non-archived status in history
+            prev_non_archived = (
+                self.db.query(TaskStatusHistory)
+                .filter(TaskStatusHistory.task_id == task.id, TaskStatusHistory.status_id != ARCHIVED_STATUS_ID)
+                .order_by(TaskStatusHistory.id.desc())
+                .first()
+            )
+            target_status_id = prev_non_archived.status_id if prev_non_archived else "REVIEW"
+            target_status = self.task_status_service.get_by_id(target_status_id)
+            if not target_status:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estado de destino inválido")
+            current.to_date = datetime.datetime.now()
+            self.db.flush()
+            new_hist = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=target_status.id,
+            )
+            self.db.add(new_hist)
+            self.db.commit()
+            return self._to_response(task)
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

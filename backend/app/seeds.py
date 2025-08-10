@@ -52,10 +52,17 @@ def seed_static_data():
                 TaskStatus(id="PROCESSING", name="Procesando"),
                 TaskStatus(id="REVIEW", name="Revisión"),
                 TaskStatus(id="APPROVED", name="Aprobada"),
+                TaskStatus(id="ARCHIVED", name="Archivada"),
             ])
             print("✔ TaskStatus cargado.")
         else:
-            print("🔁 TaskStatus ya tiene datos.")
+            # Ensure ARCHIVED exists even if statuses were already seeded
+            archived = session.exec(select(TaskStatus).where(TaskStatus.id == "ARCHIVED")).first()
+            if not archived:
+                session.add(TaskStatus(id="ARCHIVED", name="Archivada"))
+                print("✔ TaskStatus ARCHIVED agregado.")
+            else:
+                print("🔁 TaskStatus ya tiene datos.")
 
         session.commit()
 

@@ -13,6 +13,18 @@ router = APIRouter(prefix="/task", tags=["task"], dependencies=[Depends(get_curr
 def get_list(service: TaskService = Depends(get_task_service)):
     return service.get_list()
 
+@router.get("/archived")
+def get_archived(service: TaskService = Depends(get_task_service)):
+    return service.get_archived_list()
+
+@router.post("/{task_id}/archive", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
+def archive(task_id: int, service: TaskService = Depends(get_task_service)):
+    return service.archive(task_id)
+
+@router.post("/{task_id}/unarchive", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
+def unarchive(task_id: int, service: TaskService = Depends(get_task_service)):
+    return service.unarchive(task_id)
+
 @router.get("/{task_id}")
 def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
     """
