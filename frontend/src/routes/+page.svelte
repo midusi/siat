@@ -1,27 +1,89 @@
-<!-- src/routes/+page.svelte -->
+<!-- src/routes/+page.svelte (refactor) -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
 	import { showConfirm } from '$lib/dialog';
 
-	interface Task {
+	// Backend response types
+	interface TaskResponse {
 		id: number;
-		fecha: string;
-		localidad: string;
-		vias: string;
-		estado: string;
-		detalle: string;
-		acciones: string[];
+		name: string;
+		locality: { id: number; name: string; district: { id: number; name: string } };
+		name_video: string;
+		duration: number; // seconds
+		status: { id: string; name: string };
+		date: string | Date;
+		created_at: string;
 	}
 
-	let tasks = $state<Task[]>([]);
-	let loading = $state({ active: false });
+	type ActionType = 'configurar' | 'revisar' | 'exportar' | 'cancelar' | 'archivar' | 'eliminar';
 
-	const taskActions: Record<string, string[]> = {
-		'Video subido': ['configurar', 'eliminar'],
-		Revisión: ['revisar', 'archivar', 'eliminar']
+	// Centralized status metadata to keep UI logic in one place
+	const STATUS_META: Record<string, { badgeClass: string; actions: ActionType[] }> = {
+		VIDEO_UPLOADED: {
+			badgeClass: 'bg-gray-900 text-gray-200',
+			actions: ['configurar', 'eliminar']
+		},
+		CONFIGURED: { badgeClass: 'bg-indigo-900 text-indigo-200', actions: ['configurar'] },
+		PROCESSING: { badgeClass: 'bg-blue-900 text-blue-200', actions: [] },
+		REVIEW: {
+			badgeClass: 'bg-yellow-900 text-yellow-200',
+			actions: ['revisar', 'archivar', 'eliminar']
+		},
+		APPROVED: { badgeClass: 'bg-green-900 text-green-200', actions: [] },
+		ARCHIVED: { badgeClass: 'bg-gray-800 text-gray-300', actions: [] }
 	};
+
+	const ACTION_STYLES: Record<ActionType, string> = {
+		configurar: 'bg-blue-500 hover:bg-blue-600',
+		exportar: 'bg-blue-500 hover:bg-blue-600',
+		revisar: 'bg-blue-500 hover:bg-blue-600',
+		cancelar: 'bg-red-500 hover:bg-red-600',
+		archivar: 'bg-gray-600 hover:bg-gray-700',
+		eliminar: 'bg-red-700 hover:bg-red-800'
+	};
+
+	// View-model used by the table
+	interface TaskRow {
+		id: number;
+		fecha: string;
+		nombre: string;
+		localidad: string;
+		estadoNombre: string;
+		estadoBadgeClass: string;
+		detalle: string;
+		acciones: ActionType[];
+	}
+
+	let rows = $state<TaskRow[]>([]);
+	let loading = $state({ active: false });
+	let filter = $state('');
+
+	function formatDate(d: string | Date): string {
+		const date = typeof d === 'string' ? new Date(d) : d;
+		return date.toLocaleDateString('es-AR', { year: '2-digit', month: '2-digit', day: '2-digit' });
+	}
+
+	function formatDuration(seconds: number): string {
+		const m = Math.floor(seconds / 60);
+		const s = Math.floor(seconds % 60);
+		return `${m}m ${s}s`;
+	}
+
+	function mapToRow(task: TaskResponse): TaskRow {
+		const meta = STATUS_META[task.status.id] ?? { badgeClass: '', actions: [] };
+		return {
+			id: task.id,
+			fecha: formatDate(task.date),
+			nombre: task.name,
+			localidad: task.locality.name,
+			estadoNombre: task.status.name,
+			estadoBadgeClass: meta.badgeClass,
+			detalle: formatDuration(task.duration),
+			acciones: meta.actions
+		};
+	}
 
 	async function fetchActiveTasks() {
 		loading.active = true;
@@ -29,20 +91,8 @@
 			const response = await apiFetch('/task');
 			if (!response.ok)
 				throw new Error(`Error fetching tasks: ${response.status} ${response.statusText}`);
-			const fetchedTasks = await response.json();
-			tasks = fetchedTasks.map((task: any) => ({
-				id: task.id,
-				fecha: new Date(task.date).toLocaleDateString('es-AR', {
-					year: '2-digit',
-					month: '2-digit',
-					day: '2-digit'
-				}),
-				localidad: task.locality.name,
-				vias: task.name_video,
-				estado: task.status.name,
-				detalle: `${Math.floor(task.duration / 60)}m ${task.duration % 60}s`,
-				acciones: taskActions[task.status.name] || []
-			}));
+			const fetched: TaskResponse[] = await response.json();
+			rows = fetched.map(mapToRow);
 		} catch (error) {
 			console.error('Error fetching tasks:', error);
 		} finally {
@@ -53,41 +103,6 @@
 	onMount(async () => {
 		await fetchActiveTasks();
 	});
-
-	function getStatusIcon(estado: string): string {
-		switch (estado) {
-			case 'Subido':
-			case 'Video subido':
-				return '⚪';
-			case 'Procesando':
-				return '▶️';
-			case 'Revisión':
-				return '📄';
-			case 'Aprobado':
-				return '✓';
-			default:
-				return '';
-		}
-	}
-
-	function getActionClass(accion: string): string {
-		switch (accion) {
-			case 'configurar':
-				return 'bg-blue-500 hover:bg-blue-600';
-			case 'exportar':
-				return 'bg-blue-500 hover:bg-blue-600';
-			case 'revisar':
-				return 'bg-blue-500 hover:bg-blue-600';
-			case 'cancelar':
-				return 'bg-red-500 hover:bg-red-600';
-			case 'archivar':
-				return 'bg-gray-600 hover:bg-gray-700';
-			case 'eliminar':
-				return 'bg-red-700 hover:bg-red-800';
-			default:
-				return 'bg-blue-500 hover:bg-blue-600';
-		}
-	}
 
 	async function archiveTask(taskId: number) {
 		const res = await apiFetch(`/task/${taskId}/archive`, { method: 'POST' });
@@ -109,19 +124,26 @@
 		await fetchActiveTasks();
 	}
 
-	function handleAction(action: string, taskId: number): void {
-		if (action === 'configurar') {
-			goto(`/tarea/${taskId}/configurar`);
-		} else if (action === 'revisar') {
-			goto(`/tarea/${taskId}/revisar`);
-		} else if (action === 'exportar') {
-			console.log(`Exportando tarea ${taskId}`);
-		} else if (action === 'cancelar') {
-			console.log(`Cancelando tarea ${taskId}`);
-		} else if (action === 'archivar') {
-			archiveTask(taskId).catch((e) => console.error(e));
-		} else if (action === 'eliminar') {
-			deleteTask(taskId).catch((e) => console.error(e));
+	function handleAction(action: ActionType, taskId: number): void {
+		switch (action) {
+			case 'configurar':
+				goto(`/tarea/${taskId}/configurar`);
+				break;
+			case 'revisar':
+				goto(`/tarea/${taskId}/revisar`);
+				break;
+			case 'exportar':
+				console.log(`Exportando tarea ${taskId}`);
+				break;
+			case 'cancelar':
+				console.log(`Cancelando tarea ${taskId}`);
+				break;
+			case 'archivar':
+				archiveTask(taskId).catch((e) => console.error(e));
+				break;
+			case 'eliminar':
+				deleteTask(taskId).catch((e) => console.error(e));
+				break;
 		}
 	}
 
@@ -154,17 +176,16 @@
 		</div>
 		<button
 			onclick={goToCreateTask}
-			class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+			class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded">Crear Tarea</button
 		>
-			Crear Tarea
-		</button>
 	</div>
 
 	<!-- Barra de filtro -->
 	<div class="p-4">
 		<input
 			type="text"
-			placeholder="Filtrar..."
+			placeholder="Filtrar por nombre o localidad..."
+			bind:value={filter}
 			class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
 		/>
 	</div>
@@ -177,8 +198,8 @@
 				<tr class="bg-[#2d3748] text-gray-300">
 					<th class="p-3 text-left font-medium">ID</th>
 					<th class="p-3 text-left font-medium">Fecha</th>
+					<th class="p-3 text-left font-medium">Nombre</th>
 					<th class="p-3 text-left font-medium">Localidad</th>
-					<th class="p-3 text-left font-medium">Vias</th>
 					<th class="p-3 text-left font-medium">Estado</th>
 					<th class="p-3 text-left font-medium">Detalle</th>
 					<th class="p-3 text-left font-medium">Acciones</th>
@@ -186,35 +207,30 @@
 			</thead>
 			<!-- Cuerpo de la tabla -->
 			<tbody>
-				{#each tasks as task}
+				{#each rows.filter((r) => (filter.trim() === '' ? true : r.nombre
+								.toLowerCase()
+								.includes(filter.toLowerCase()) || r.localidad
+								.toLowerCase()
+								.includes(filter.toLowerCase()))) as task}
 					<tr class="border-b border-gray-700">
+						<td class="p-3"><span class="font-medium">#{task.id}</span></td>
+						<td class="p-3">{task.fecha}</td>
+						<td class="p-3">{task.nombre}</td>
+						<td class="p-3">{task.localidad}</td>
 						<td class="p-3">
-							<span class="font-medium">#{task.id}</span>
-						</td>
-						<td class="p-3">
-							{task.fecha}
-						</td>
-						<td class="p-3">
-							{task.localidad}
-						</td>
-						<td class="p-3">
-							{task.vias}
-						</td>
-						<td class="p-3">
-							<div class="flex items-center gap-2">
-								<span class="text-lg">{getStatusIcon(task.estado)}</span>
-								<span>{task.estado}</span>
+							<div class="flex items-center">
+								<span class={`px-2 py-1 rounded text-xs font-medium ${task.estadoBadgeClass}`}
+									>{task.estadoNombre}</span
+								>
 							</div>
 						</td>
-						<td class="p-3">
-							{task.detalle}
-						</td>
+						<td class="p-3">{task.detalle}</td>
 						<td class="p-3">
 							<div class="flex gap-2">
 								{#each task.acciones as accion}
 									<button
 										onclick={() => handleAction(accion, task.id)}
-										class={`${getActionClass(accion)} text-white text-sm py-1 px-3 rounded`}
+										class={`${ACTION_STYLES[accion]} text-white text-sm py-1 px-3 rounded`}
 									>
 										{accion.charAt(0).toUpperCase() + accion.slice(1)}
 									</button>

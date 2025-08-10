@@ -816,30 +816,6 @@
 			0 0 7px rgba(255, 255, 255, 0.7);
 	}
 
-	/* --- Overrides para los elementos internos cuando la tarjeta está seleccionada --- */
-
-	.ind-card.selected p,
-	.ind-card.selected label {
-		color: #1f2937; /* Texto principal oscuro */
-	}
-
-	.ind-card.selected .text-red-400 {
-		color: #dc2626; /* Un rojo más oscuro y visible */
-	}
-
-	.ind-card.selected .text-red-400:hover {
-		color: #b91c1c;
-	}
-
-	.ind-card.selected span.text-gray-400 {
-		color: #4b5567; /* La flecha '→' */
-	}
-
-	.ind-card.selected select {
-		background-color: #f3f4f6; /* Fondo gris claro para los selects */
-		border-color: #9ca3af;
-		color: #1f2937;
-	}
 	/* --- ESTILO AÑADIDO PARA LA ETIQUETA DEL ID DE LA BBOX --- */
 	.bbox-id-label {
 		/* Posicionamiento: arriba y a la izquierda de la BBox */
