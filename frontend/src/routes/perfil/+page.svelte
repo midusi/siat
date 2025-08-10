@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { apiFetch } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import { showSuccess } from '$lib/toast';
 
 	let current_password = $state('');
 	let new_password = $state('');
 	let confirm_password = $state('');
 
 	let errors = $state<{ current?: string; new?: string; confirm?: string; general?: string }>({});
-	let success = $state('');
 	let submitting = $state(false);
 	let showCurrent = $state(false);
 	let showNew = $state(false);
@@ -63,7 +63,7 @@
 			});
 			if (res.status === 204 || res.ok) {
 				await apiFetch('/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': '1' } });
-				success = 'Contraseña cambiada con éxito. Vas a ser redirigido al inicio de sesión.';
+				showSuccess('Contraseña cambiada con éxito. Vas a ser redirigido al inicio de sesión.');
 				setTimeout(() => goto('/login'), 900);
 				return;
 			}
@@ -78,7 +78,6 @@
 
 	function validate(): boolean {
 		errors = {};
-		success = '';
 		let ok = true;
 		if (!current_password) {
 			errors.current = 'Ingresá tu contraseña actual';
@@ -136,13 +135,6 @@
 				class="rounded-md border border-red-800 bg-red-900/30 text-red-200 px-4 py-3 text-sm mb-4"
 			>
 				{errors.general}
-			</div>
-		{/if}
-		{#if success}
-			<div
-				class="rounded-md border border-emerald-800 bg-emerald-900/30 text-emerald-200 px-4 py-3 text-sm mb-4"
-			>
-				{success}
 			</div>
 		{/if}
 

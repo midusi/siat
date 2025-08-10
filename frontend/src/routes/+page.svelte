@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
+	import { showConfirm } from '$lib/dialog';
 
 	interface Task {
 		id: number;
@@ -95,9 +96,13 @@
 	}
 
 	async function deleteTask(taskId: number) {
-		const confirmed = window.confirm(
-			'¿Seguro que querés eliminar esta tarea? Esta acción es permanente y no se puede deshacer.\nSe eliminarán todos los datos asociados (historiales, configuraciones) y los archivos del bucket.'
-		);
+		const confirmed = await showConfirm({
+			message:
+				'¿Seguro que querés eliminar esta tarea? Esta acción es permanente y no se puede deshacer.\nSe eliminarán todos los datos asociados (historiales, configuraciones) y los archivos del bucket.',
+			variant: 'danger',
+			confirmText: 'Eliminar',
+			cancelText: 'Cancelar'
+		});
 		if (!confirmed) return;
 		const res = await apiFetch(`/task/${taskId}`, { method: 'DELETE' });
 		if (!res.ok) throw new Error('No se pudo eliminar la tarea');

@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { BACKEND_URL } from '$lib/constants';
 	import { apiFetch } from '$lib/api';
+	import { showSuccess, showError } from '$lib/toast';
 
 	// --- Props y estado inicial ---
 	let { data } = $props();
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let notification = $state<string | null>(null);
 
 	// --- Referencias a elementos del DOM ---
 	let videoElement = $state<HTMLVideoElement | null>(null);
@@ -228,24 +227,31 @@
 		if (!key) return 'N/A';
 		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
 	}
-	function showNotification(message: string, duration: number = 3000) {
-		notification = message;
-		setTimeout(() => {
-			notification = null;
-		}, duration);
-	}
 	async function updateBackendData() {
 		try {
 			const res = await apiFetch(`/task/${data.id}/update-data`, {
 				method: 'POST',
-				body: JSON.stringify({
-					rutas: rutas,
-					indeterminados: indeterminados
-				})
+				headers: { 'X-CSRF-Token': '1' },
+				body: JSON.stringify({ rutas: rutas, indeterminados: indeterminados })
 			});
-			if (!res.ok) throw new Error('No se pudo guardar los cambios en el servidor.');
+			if (!res.ok) {
+				let detail = '';
+				try {
+					const txt = await res.text();
+					detail = txt;
+				} catch {}
+				throw new Error(detail || 'No se pudo guardar los cambios en el servidor.');
+			}
+			return true;
 		} catch (e: any) {
-			error = e.message;
+			// No cambiar a estado de error global para no ocultar la UI
+			const message = e?.message || 'No se pudo guardar los cambios en el servidor.';
+			showError(message);
+			// Re-sincronizar estado con el backend para evitar inconsistencias
+			try {
+				if (data?.id) await fetchData(data.id);
+			} catch {}
+			return false;
 		}
 	}
 	async function fetchData(taskId: string) {
@@ -262,11 +268,14 @@
 			videoHeight = +apiData.videoHeight;
 			videoFps = +apiData.videoFps;
 
+			// Helper para evitar caché del navegador en JSON estáticos de MinIO
+			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
+
 			// Obtener rutas e indeterminados: inline o vía URLs públicas (MinIO)
 			const rutasPromise: Promise<any> = apiData.rutas
 				? Promise.resolve(apiData.rutas)
 				: apiData.rutasUrl
-					? fetch(apiData.rutasUrl)
+					? fetch(bust(apiData.rutasUrl))
 							.then((r) => {
 								if (!r.ok) throw new Error(`Error al obtener rutas: ${r.statusText}`);
 								return r.json();
@@ -277,7 +286,7 @@
 			const indeterminadosPromise: Promise<any> = apiData.indeterminados
 				? Promise.resolve(apiData.indeterminados)
 				: apiData.indeterminadosUrl
-					? fetch(apiData.indeterminadosUrl)
+					? fetch(bust(apiData.indeterminadosUrl))
 							.then((r) => {
 								if (!r.ok) throw new Error(`Error al obtener indeterminados: ${r.statusText}`);
 								return r.json();
@@ -325,7 +334,7 @@
 			handleIndeterminateClick(trackId);
 		}
 	}
-	function handleConfirm(trackId: string, event: MouseEvent) {
+	async function handleConfirm(trackId: string, event: MouseEvent) {
 		event.stopPropagation();
 		const item = indeterminados[trackId];
 		if (!item) return;
@@ -353,10 +362,13 @@
 		delete indeterminados[trackId];
 		indeterminados = { ...indeterminados };
 		rutas = { ...rutas };
-		showNotification(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
-		updateBackendData();
+
+		const ok = await updateBackendData();
+		if (ok) {
+			showSuccess(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
+		}
 	}
-	function handleDelete(trackId: string, event: MouseEvent) {
+	async function handleDelete(trackId: string, event: MouseEvent) {
 		event.stopPropagation();
 		const item = indeterminados[trackId];
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
@@ -366,8 +378,11 @@
 
 		delete indeterminados[trackId];
 		indeterminados = { ...indeterminados };
-		showNotification(`Vehículo indeterminado ${trackId} eliminado.`);
-		updateBackendData();
+
+		const ok = await updateBackendData();
+		if (ok) {
+			showSuccess(`Vehículo indeterminado ${trackId} eliminado.`);
+		}
 	}
 	let vehicleTypes = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return [];
@@ -475,13 +490,6 @@
 		return { titulo: 'Detalle de Rutas (Entrada -> Salida)', entradasDetalle };
 	});
 </script>
-
-<!-- Notificación Flotante -->
-{#if notification}
-	<div class="fixed top-5 right-5 bg-green-600 text-white py-2 px-4 rounded-lg shadow-lg z-50">
-		{notification}
-	</div>
-{/if}
 
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
 	<h1 class="text-3xl font-bold mb-8 text-center">Revisar Video Analizado</h1>
@@ -804,16 +812,6 @@
 		transition: none;
 		border-color: #ffffff;
 		box-shadow:
-			0 0 3px rgba(255, 255, 255, 0.5),
-			0 0 7px rgba(255, 255, 255, 0.7);
-	}
-
-	/* 3. Estilo para la tarjeta seleccionada manualmente (la más importante) */
-	.ind-card.selected {
-		background-color: #ffffff;
-		color: #1a1e2a; /* Color de texto por defecto para fondo blanco */
-		border-color: #ffffff; /* Mantiene el borde blanco del glow */
-		box-shadow: /* Mantiene el mismo glow fuerte */
 			0 0 3px rgba(255, 255, 255, 0.5),
 			0 0 7px rgba(255, 255, 255, 0.7);
 	}

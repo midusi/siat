@@ -4,6 +4,8 @@
 	import Header from '$lib/components/Header.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import { page } from '$app/stores';
+	import DialogHost from '$lib/components/DialogHost.svelte';
+	import ToastHost from '$lib/components/ToastHost.svelte';
 
 	const user = $derived(data.user);
 	let isLoginPage = $derived($page.url.pathname === '/login');
@@ -23,4 +25,6 @@
 			{@render children()}
 		</main>
 	{/if}
+	<DialogHost />
+	<ToastHost />
 </div>

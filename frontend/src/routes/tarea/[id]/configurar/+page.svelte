@@ -6,6 +6,7 @@
 	import { BACKEND_URL } from '$lib/constants';
 	import { apiFetch } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import { showAlert } from '$lib/dialog';
 
 	// --- Estado de la Carga de Datos ---
 	let imageSrc: string = '/images/rotonda_manual.png';
@@ -258,13 +259,16 @@
 			if (!response.ok) throw new Error('Error en el servidor');
 			const result = await response.json();
 			console.log('Respuesta del servidor:', result);
-			alert('Vías guardadas correctamente.');
-			window.location.href = '/';
+			await showAlert({ message: 'Vías guardadas correctamente.', variant: 'success' });
+			goto('/');
 			// Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.
 			// poligonos = [];
 		} catch (error) {
 			console.error('Fallo al enviar los datos:', error);
-			alert('Hubo un error al guardar las vías. Inténtalo de nuevo.');
+			await showAlert({
+				message: 'Hubo un error al guardar las vías. Inténtalo de nuevo.',
+				variant: 'danger'
+			});
 		} finally {
 			isSubmitting = false;
 		}

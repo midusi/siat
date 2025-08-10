@@ -6,6 +6,7 @@
 	import { BACKEND_URL } from '$lib/constants';
 	import { TaskFormSchema } from '$lib/types/task';
 	import { z } from 'zod';
+	import { showAlert } from '$lib/dialog';
 
 	// Estado agrupado en un objeto form
 	let form = $state<TaskForm>({
@@ -35,7 +36,7 @@
 			provinces = await response.json();
 		} catch (error) {
 			console.error(error);
-			alert('Error al cargar las provincias.');
+			await showAlert({ message: 'Error al cargar las provincias.', variant: 'danger' });
 		}
 	}
 
@@ -50,7 +51,7 @@
 			districts = await response.json();
 		} catch (error) {
 			console.error(error);
-			alert('Error al cargar los distritos.');
+			await showAlert({ message: 'Error al cargar los distritos.', variant: 'danger' });
 		}
 	}
 
@@ -65,7 +66,7 @@
 			localities = await response.json();
 		} catch (error) {
 			console.error(error);
-			alert('Error al cargar las localidades.');
+			await showAlert({ message: 'Error al cargar las localidades.', variant: 'danger' });
 		}
 	}
 
@@ -77,7 +78,7 @@
 			const allowedExtensions = ['.mp4', '.avi', '.mov'];
 			const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 			if (!allowedExtensions.includes(ext)) {
-				alert('El archivo debe ser .mp4, .avi o .mov');
+				showAlert({ message: 'El archivo debe ser .mp4, .avi o .mov', variant: 'warning' });
 				form.file = null;
 				input.value = '';
 				return;
@@ -124,7 +125,7 @@
 			goto('/');
 		} catch (error) {
 			console.error('Error al crear la tarea:', error);
-			alert('Hubo un error al crear la tarea.');
+			await showAlert({ message: 'Hubo un error al crear la tarea.', variant: 'danger' });
 		}
 	}
 

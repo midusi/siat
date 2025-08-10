@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
+	import { showAlert, showConfirm } from '$lib/dialog';
 
 	// Tipos para los usuarios y roles
 	type Role = 'Admin' | 'Operador';
@@ -337,7 +338,10 @@
 				// revert on error
 				users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
 				const err = await res.json().catch(() => ({}) as any);
-				alert(err?.detail ?? 'No se pudo actualizar el estado');
+				await showAlert({
+					message: err?.detail ?? 'No se pudo actualizar el estado',
+					variant: 'danger'
+				});
 				return;
 			}
 			const data = await res.json().catch(() => null as any);
@@ -349,7 +353,7 @@
 			}
 		} catch (e) {
 			users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
-			alert('Error de red al actualizar estado');
+			await showAlert({ message: 'Error de red al actualizar estado', variant: 'danger' });
 		} finally {
 			toggling[user.id] = false;
 		}
@@ -357,7 +361,14 @@
 
 	async function deleteUser(userId: number): Promise<void> {
 		if (deleting[userId]) return;
-		if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
+		const confirmed = await showConfirm({
+			message:
+				'¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.',
+			variant: 'danger',
+			confirmText: 'Eliminar',
+			cancelText: 'Cancelar'
+		});
+		if (!confirmed) return;
 		deleting[userId] = true;
 		const prev = users;
 		// Optimistic removal
@@ -367,13 +378,16 @@
 			if (!res.ok) {
 				users = prev; // revert
 				const err = await res.json().catch(() => ({}));
-				alert(err?.detail ?? 'No se pudo eliminar el usuario');
+				await showAlert({
+					message: err?.detail ?? 'No se pudo eliminar el usuario',
+					variant: 'danger'
+				});
 				return;
 			}
 			// 204 expected, nothing else
 		} catch (e) {
 			users = prev; // revert
-			alert('Error de red al eliminar usuario');
+			await showAlert({ message: 'Error de red al eliminar usuario', variant: 'danger' });
 		} finally {
 			deleting[userId] = false;
 		}
