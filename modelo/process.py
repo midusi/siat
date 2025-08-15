@@ -121,8 +121,8 @@ class ObjectTracker:
         self.transition_counts: defaultdict[str, defaultdict[str, defaultdict[str, int]]] = \
             defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         # Matriz de transición de zonas
-        self.transition_determined_object: defaultdict[int, list[str, str]] = defaultdict(list)
-        self.transition_undetermined_object: defaultdict[int, list[str, str]] = defaultdict(list)
+        self.transition_determined_object: defaultdict[int, list[dict]] = defaultdict(list)
+        self.transition_undetermined_object: defaultdict[int, list[dict]] = defaultdict(list)
             
         print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
 
@@ -132,14 +132,18 @@ class ObjectTracker:
         y la disponibilidad del hardware.
         """
         if torch is None:
+            print("Usando CPU0")
             return torch.device("cpu") # PyTorch no está disponible, forzar CPU
 
         if preferred_device == "cpu":
+            print("Usando CPU1")
             return torch.device("cpu")
         elif preferred_device == "auto":
             if torch.cuda.is_available():
+                print("Usando GPU")
                 return torch.device("cuda")
             else:
+                print("Usando CPU2")
                 return torch.device("cpu")
         elif preferred_device and preferred_device.isdigit(): # Para "0", "1", etc.
             if torch.cuda.is_available() and int(preferred_device) < torch.cuda.device_count():
@@ -354,6 +358,14 @@ class ObjectTracker:
             
             self.total_vehicles_by_class[display_class] += 1
             
+            # Crear el historial del objeto con sus datos
+            history_track = {}
+            if track_id in self.data_obj_history:
+                obj = self.data_obj_history[track_id][0]
+                history_track["frame"] = obj.get("act_frame")
+                history_track["class"] = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(obj.get("class_id"))
+                history_track["boundingBox"] = obj.get("box")
+            
             # Conteo para la tabla "Entradas"
             if track_id in self.track_first_in_zone:
                 in_zone_idx = self.track_first_in_zone[track_id]
@@ -372,18 +384,26 @@ class ObjectTracker:
                 
                 if track_id in self.track_first_out_zone:
                     out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
-                    self.transition_determined_object[track_id].append((in_zone_label, out_zone_label))
+                    transition_data = history_track.copy()
+                    transition_data["labels"] = [in_zone_label, out_zone_label]
+                    self.transition_determined_object[track_id].append(transition_data)
                     self.transition_counts[display_class][in_zone_label][out_zone_label] += 1
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
-                    self.transition_undetermined_object[track_id].append((in_zone_label, "IND"))
+                    transition_data = history_track.copy()
+                    transition_data["labels"] = [in_zone_label, "IND"]
+                    self.transition_undetermined_object[track_id].append(transition_data)
                     self.transition_counts[display_class][in_zone_label]["IND"] += 1
             elif track_id in self.track_first_out_zone:
                 out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
-                self.transition_undetermined_object[track_id].append(("IND", out_zone_label))
+                transition_data = history_track.copy()
+                transition_data["labels"] = ["IND", out_zone_label]
+                self.transition_undetermined_object[track_id].append(transition_data)
                 self.transition_counts[display_class]["IND"][out_zone_label] += 1
             else:
-                self.transition_undetermined_object[track_id].append(("IND", "IND"))
+                transition_data = history_track.copy()
+                transition_data["labels"] = ["IND", "IND"]
+                self.transition_undetermined_object[track_id].append(transition_data)
                 self.transition_counts[display_class]["IND"]["IND"] += 1
 
 
