@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime, Text, Index
+from sqlalchemy import Column, Integer, ForeignKey, String, Float, Boolean, DateTime, Text, Index, JSON
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 class Base(DeclarativeBase):
@@ -95,7 +95,7 @@ class Road(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     number = Column(Integer, nullable=False)
-    polygon = Column(Text, nullable=False)
+    polygon = Column(JSON, nullable=False)
     direction = Column(String, nullable=False)
     video_id = Column(Integer, ForeignKey("video.id"), nullable=False)
     

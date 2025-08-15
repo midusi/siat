@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Optional, Dict, List, Tuple
 import sys # Importar sys para manejar la salida en la terminal
 import argparse # Importar argparse para manejar argumentos de línea de comandos
+import ast # Para convertir strings a listas/arrays
 import os # Importar os para operaciones de sistema de archivos (rutas)
 import json
 
@@ -66,7 +67,7 @@ class ObjectTracker:
     y la interacción con zonas predefinidas en un feed de video.
     """
 
-    def __init__(self, model_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None):
+    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None):
         """
         Inicializa el ObjectTracker.
 
@@ -83,6 +84,9 @@ class ObjectTracker:
         self.model = YOLO(model_path)
         # Mover el modelo al dispositivo especificado
         self.model.to(str(self.device))
+        
+        # Guardar el path del tracker
+        self.tracker_path = tracker_path
         
         # self.class_names = self.model.model.names # Nombres de clases del modelo (ej: 'car', 'bus')
         self.class_names = SIMPLIFIED_CLASS_DISPLAY_NAMES
@@ -194,7 +198,17 @@ class ObjectTracker:
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1
         color = ZONE_COLORS.colors[zone_type.value].as_bgr() # Utiliza el valor del Enum como índice
-
+        print(f"Tipo de polygon: {type(polygon)}", file=sys.stderr, flush=True)
+        print(f"Polygon: {polygon}", file=sys.stderr, flush=True)
+        print(f"Polygon dtype: {polygon.dtype if hasattr(polygon, 'dtype') else 'No dtype'}", file=sys.stderr, flush=True)
+        
+        # Asegurar que el polígono sea un numpy array con el tipo correcto para OpenCV
+        if not isinstance(polygon, np.ndarray):
+            polygon = np.array(polygon)
+        polygon = polygon.astype(np.int32)
+        
+        print(f"Después de conversión - Tipo: {type(polygon)}, dtype: {polygon.dtype}", file=sys.stderr, flush=True)
+        
         cv2.polylines(
             annotated_frame, [polygon], isClosed=True, color=color, thickness=thickness
         )
@@ -516,7 +530,7 @@ class ObjectTracker:
                 # frame = cv2.resize(frame, (ancho_nuevo, alto_nuevo))
 
                 # Realizar seguimiento de objetos
-                results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker="botsort_custom.yaml")
+                results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
                 
                 # Procesar el frame (dibujar zonas, BBs, etc.)
                 processed_frame = self.process_frame(frame, results, act_frame)
@@ -565,6 +579,18 @@ if __name__ == "__main__":
         help='Ruta al archivo del modelo YOLO (.pt). Obligatorio.'
     )
     parser.add_argument(
+        '--tracker_path', '-t', type=str, required=True,
+        help='Ruta al archivo del tracker. Obligatorio.'
+    )
+    parser.add_argument(
+        '--polygons_in', '-pi', type=ast.literal_eval, required=True,
+        help='Polígonos de entrada como lista de listas. Ejemplo: "[[816, 922], [905, 869], [1095, 908], [987, 990]]". Obligatorio.'
+    )
+    parser.add_argument(
+        '--polygons_out', '-po', type=ast.literal_eval, required=True,
+        help='Polígonos de salida como lista de listas. Ejemplo: "[[816, 922], [905, 869], [1095, 908], [987, 990]]". Obligatorio.'
+    )
+    parser.add_argument(
         '--output_video_path', '-o', type=str, default=None,
         help='Ruta opcional para guardar el video de salida. \n'
              'Por defecto, el video se guarda en la misma ubicación del video de entrada, \n'
@@ -584,7 +610,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # --- Determinar la ruta de salida del video ---
+    # 1. Determinar la ruta de salida del video
     final_output_video_path = args.output_video_path
     
     # Si no se proporcionó una ruta de salida, generar la por defecto
@@ -605,25 +631,18 @@ if __name__ == "__main__":
     
     show_video_window = not args.no_display
     
-    # 1. Obtener las zonas de entrada y salida del video
-    with open('polygons_dictionary.json', 'r') as f:
-        polygons_dictionary = json.load(f)
+    print("antes:")
+    print(args.polygons_in)
+    # 2. Obtener las zonas de entrada y salida del video
+    ZONE_IN_POLYGONS = [np.array(p) for p in args.polygons_in]
+    ZONE_OUT_POLYGONS = [np.array(p) for p in args.polygons_out]
     
-    video_name = os.path.splitext(os.path.basename(args.input_video_path))[0]
-    if video_name not in polygons_dictionary:
-        print(f"Error: El video '{video_name}' no tiene zonas definidas en polygons_dictionary.json.")
-        sys.exit(1)
-    if "ZONE_IN_POLYGONS" not in polygons_dictionary[video_name] or "ZONE_OUT_POLYGONS" not in polygons_dictionary[video_name]:
-        print(f"Error: Faltan claves 'ZONE_IN_POLYGONS' o 'ZONE_OUT_POLYGONS' para el video '{video_name}' en polygons_dictionary.json.")
-        sys.exit(1)
-        
-    ZONE_IN_POLYGONS = [np.array(p) for p in polygons_dictionary[video_name]["ZONE_IN_POLYGONS"]]
-    ZONE_OUT_POLYGONS = [np.array(p) for p in polygons_dictionary[video_name]["ZONE_OUT_POLYGONS"]]
+    print(f"despues: {ZONE_IN_POLYGONS}")
     
-    # 2. Crear una instancia del ObjectTracker
-    tracker = ObjectTracker(args.model_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
+    # 3. Crear una instancia del ObjectTracker
+    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
 
-    # 3. Ejecutar el proceso de seguimiento
+    # 4. Ejecutar el proceso de seguimiento
     tracker.run(
         video_path=args.input_video_path, 
         max_frames=args.max_frames, 
@@ -631,7 +650,7 @@ if __name__ == "__main__":
         display_video=show_video_window
     )
 
-    # 4. Guardar resultados en archivos JSON
+    # 5. Guardar resultados en archivos JSON
     with open(f"{output_dir}/data_obj_history.json", "w", encoding="utf-8") as f:
         serializable_dict = {str(k): v for k, v in tracker.data_obj_history.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)

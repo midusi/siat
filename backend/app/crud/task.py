@@ -1,6 +1,6 @@
 # crud/task.py
 from sqlalchemy.orm import sessionmaker, joinedload
-from sqlalchemy.sql import and_, or_
+from sqlalchemy.sql import and_, or_, asc
 from app.models import Task, TaskStatusHistory, Locality
 import datetime
 
@@ -70,7 +70,7 @@ def find_all_archived(db: sessionmaker) -> list[Task]:
     )
     return tasks
 
-def find_by_fields(db: sessionmaker, **filters) -> list[Task]:
+def find_by_fields(db: sessionmaker, status_id: str = None) -> list[Task] | None:
     now = datetime.datetime.now()
     
     # Construir las condiciones de filtro dinámicamente
@@ -79,18 +79,14 @@ def find_by_fields(db: sessionmaker, **filters) -> list[Task]:
         or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
     ]
     
-    # Agregar los filtros dinámicos
-    for field, value in filters.items():
-        if hasattr(Task, field):
-            filter_conditions.append(getattr(Task, field) == value)
-    
-    if (filters.get("status_id")):
-        filter_conditions.append(TaskStatusHistory.status_id == filters.get("status_id"))
+    if status_id:
+        filter_conditions.append(TaskStatusHistory.status_id == status_id)
     
     return (
         db.query(Task)
         .join(Task.status_history)
         .filter(and_(*filter_conditions))
+        .order_by(asc(TaskStatusHistory.from_date))
         .options(
             joinedload(Task.locality).joinedload(Locality.district),
             joinedload(Task.video),

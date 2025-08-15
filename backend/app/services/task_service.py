@@ -226,7 +226,7 @@ class TaskService:
                     name=f"Vía {i+1}",
                     number=i+1,
                     direction=RoadDirection.OUT,
-                    polygon=json.dumps(polygon),
+                    polygon=polygon,
                     video_id=task.video.id,
                 )
                 self.db.add(road)
@@ -245,7 +245,7 @@ class TaskService:
             self.db.add(new_task_status_history)
 
             self.db.commit()
-            self.process_video(task.id)
+            # self.process_video(task.id)
             return task
         except Exception as e:
             self.db.rollback()
@@ -609,5 +609,8 @@ class TaskService:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No se pudo eliminar la tarea: {str(e)}")
 
-    def get_task_by_status(self, status_id: str) -> list[Task]:
+    def get_tasks_by_status(self, status_id: str) -> list[Task]:
         return task_crud.find_by_fields(self.db, status_id=status_id)
+    
+    def get_roads_by_task(self, task: Task) -> list[Road]:
+        return self.road_service.find_by_fields(video_id=task.video_id)

@@ -21,6 +21,6 @@ class RoadService:
             name=f"Vía {number}",
             number=number,
             direction=direction,
-            polygon=json.dumps(polygon),
+            polygon=polygon,
             video_id=video_id,
         )
