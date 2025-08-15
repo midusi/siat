@@ -608,3 +608,6 @@ class TaskService:
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No se pudo eliminar la tarea: {str(e)}")
+
+    def get_task_by_status(self, status_id: str) -> list[Task]:
+        return task_crud.find_by_fields(self.db, status_id=status_id)
