@@ -1,11 +1,14 @@
 import subprocess
 import os
+import json
 from pathlib import Path
 
 import typer
 
 from app.services.dependencies import get_task_service, get_bucket_service, get_inference_service
 from app.db import get_db_session
+
+
 
 # Crea una instancia de Typer para tu aplicación CLI
 app = typer.Typer(
@@ -76,21 +79,45 @@ def run_process():
         # Ejecuta el comando en un subproceso
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         
-        # Paso 8: Almacenar los json resultantes en el bucket
-        url_counts = "task/" + str(task_to_process.id) + "/transitions_count.json"
-        url_undetermined = "task/" + str(task_to_process.id) + "/transitions_undetermined.json"
-        url_determined = "task/" + str(task_to_process.id) + "/transitions_determined.json"
+        # Paso 6: Subir archivos JSON generados al bucket
+        # Obtener el directorio donde process.py generó los archivos
+        video_name = os.path.splitext(os.path.basename(input_video_path))[0]
+        output_dir = os.path.join(os.path.dirname(input_video_path), video_name)
         
-        bucket_service.upload(input_video_path + "/transitions_count.json", url_counts)
-        bucket_service.upload(input_video_path + "/transitions_undetermined.json", url_undetermined)
-        bucket_service.upload(input_video_path + "/transitions_determined.json", url_determined)
+        # Rutas locales de los archivos generados
+        local_counts_path = os.path.join(output_dir, "transition_counts.json")
+        local_undetermined_path = os.path.join(output_dir, "transition_undetermined_object.json")
+        local_determined_path = os.path.join(output_dir, "transition_determined_object.json")
+        
+        # Rutas en el bucket
+        bucket_counts_key = f"task/{task_to_process.id}/transition_counts.json"
+        bucket_undetermined_key = f"task/{task_to_process.id}/transition_undetermined_object.json"
+        bucket_determined_key = f"task/{task_to_process.id}/transition_determined_object.json"
+        
+        # Subir archivos al bucket
+        typer.echo("Subiendo archivos JSON al bucket...")
+        
+        # Leer y subir transition_counts.json
+        with open(local_counts_path, 'r', encoding='utf-8') as f:
+            counts_content = f.read()
+        bucket_service.upload(counts_content, bucket_counts_key)
+        
+        # Leer y subir transition_undetermined_object.json
+        with open(local_undetermined_path, 'r', encoding='utf-8') as f:
+            undetermined_content = f.read()
+        bucket_service.upload(undetermined_content, bucket_undetermined_key)
+        
+        # Leer y subir transition_determined_object.json
+        with open(local_determined_path, 'r', encoding='utf-8') as f:
+            determined_content = f.read()
+        bucket_service.upload(determined_content, bucket_determined_key)
         
         # Paso 7: Crear el objeto de inferencia
         inference = inference_service.create_inference(
             task_id=task_to_process.id,
-            url_counts=url_counts,
-            url_undetermined=url_undetermined,
-            url_determined=url_determined
+            url_counts=bucket_counts_key,
+            url_undetermined=bucket_undetermined_key,
+            url_determined=bucket_determined_key
         )
         
         # Paso 8: Cambiar estado de tarea a REVIEW
