@@ -112,8 +112,8 @@ def run_process():
             transition_determined=determined_content
         )
         
-        # Paso 8: Cambiar estado de tarea a REVIEW
-        task_service.update_task_status(task_to_process.id, "REVIEW")
+        # Paso 8: Cambiar estado de tarea a PROCESSED
+        task_service.update_task_status(task_to_process.id, "PROCESSED")
         
         db.commit()
         

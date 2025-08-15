@@ -51,7 +51,7 @@ def seed_static_data():
                 TaskStatus(id="CONFIGURED", name="Configurada"),
                 TaskStatus(id="READY_TO_PROCESS", name="Lista para procesar"),
                 TaskStatus(id="PROCESSING", name="Procesando"),
-                TaskStatus(id="REVIEW", name="Revisión"),
+                TaskStatus(id="PROCESSED", name="Procesado"),
                 TaskStatus(id="APPROVED", name="Aprobada"),
                 TaskStatus(id="ARCHIVED", name="Archivada"),
             ])

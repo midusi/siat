@@ -94,7 +94,6 @@ class Road(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    number = Column(Integer, nullable=False)
     polygon = Column(JSON, nullable=False)
     direction = Column(String, nullable=False)
     video_id = Column(Integer, ForeignKey("video.id"), nullable=False)

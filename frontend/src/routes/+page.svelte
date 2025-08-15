@@ -27,7 +27,7 @@
 		},
 		CONFIGURED: { badgeClass: 'bg-indigo-900 text-indigo-200', actions: ['configurar'] },
 		PROCESSING: { badgeClass: 'bg-blue-900 text-blue-200', actions: [] },
-		REVIEW: {
+		PROCESSED: {
 			badgeClass: 'bg-yellow-900 text-yellow-200',
 			actions: ['revisar', 'archivar', 'eliminar']
 		},
