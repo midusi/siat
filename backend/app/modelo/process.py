@@ -631,13 +631,9 @@ if __name__ == "__main__":
     
     show_video_window = not args.no_display
     
-    print("antes:")
-    print(args.polygons_in)
     # 2. Obtener las zonas de entrada y salida del video
     ZONE_IN_POLYGONS = [np.array(p) for p in args.polygons_in]
     ZONE_OUT_POLYGONS = [np.array(p) for p in args.polygons_out]
-    
-    print(f"despues: {ZONE_IN_POLYGONS}")
     
     # 3. Crear una instancia del ObjectTracker
     tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)

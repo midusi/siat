@@ -4,21 +4,8 @@ from pathlib import Path
 
 import typer
 
-from app.services.dependencies import get_task_service, get_bucket_service
+from app.services.dependencies import get_task_service, get_bucket_service, get_inference_service
 from app.db import get_db_session
-
-def get_params_from_db(video_id: str):
-    """
-    Función que simula la obtención de parámetros desde una base de datos.
-    Aquí iría tu lógica de conexión a la BD, una consulta, etc.
-    """
-    # En un caso real, esto sería una consulta a SQLAlchemy o similar
-    # Ejemplo de datos simulados:
-    return {
-        "input_video_path": f"/path/to/videos/{video_id}.mp4",
-        "polygons_in": "[0,0,10,10],[20,20,30,30]",
-        "polygons_out": "[0,100,10,110],[20,120,30,130]"
-    }
 
 # Crea una instancia de Typer para tu aplicación CLI
 app = typer.Typer(
@@ -35,6 +22,7 @@ def run_process():
     # Obtener la sesión de base de datos y los servicios
     db = next(get_db_session())
     task_service = get_task_service(db)
+    inference_service = get_inference_service(db)
     bucket_service = get_bucket_service()
     
     # Paso1: Verificar si hay alguna tarea en estado "processing"
@@ -61,40 +49,66 @@ def run_process():
     
     # Paso 4: Obtener los polígonos de entrada y salida
     roads = task_service.get_roads_by_task(task_to_process)
-    print(f"Tipo de roads[0].polygon: {type(roads[0].polygon)}")
-    print(f"roads[0].polygon: {roads[0].polygon}")
     
-    # Usar directamente como listas (después de la migración a JSON)
     polygons_in = [road.polygon for road in roads if road.direction == "Entrada"]
     polygons_out = [road.polygon for road in roads if road.direction == "Salida"]
     
-    typer.echo("Parámetros obtenidos de la base de datos. Procediendo a ejecutar el script `process.py`.")
+    typer.echo("Parámetros obtenidos de la base de datos.")
     
-    # Paso 5: Construir y ejecutar el comando
+    # Manejar la transacción completa
     try:
+        typer.echo("Cambiando estado de tarea a PROCESSING...")
+        task_service.update_task_status(task_to_process.id, "PROCESSING")
+        
+        # Paso 5: Construir y ejecutar el comando
         path_modelo = Path(__file__).resolve().parent.parent / "modelo"
         command = [
             "python",
             str(path_modelo / "process.py"),
             f"--input_video_path={input_video_path}",
-            f"--model_path={path_modelo / 'modelo.pt'}",
+            f"--model_path={path_modelo / 'model-v5.pt'}",
             f"--tracker_path={path_modelo / 'botsort_custom.yaml'}",
             f"--polygons_in={polygons_in}",
             f"--polygons_out={polygons_out}"
         ]
         
+        typer.echo("Ejecutando el script `process.py`...")
         # Ejecuta el comando en un subproceso
-        # `check=True` hará que Python lance una excepción si el comando falla
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         
-        # Opcional: imprimir la salida del subproceso en el log principal
+        # Paso 8: Almacenar los json resultantes en el bucket
+        url_counts = "task/" + str(task_to_process.id) + "/transitions_count.json"
+        url_undetermined = "task/" + str(task_to_process.id) + "/transitions_undetermined.json"
+        url_determined = "task/" + str(task_to_process.id) + "/transitions_determined.json"
+        
+        bucket_service.upload(input_video_path + "/transitions_count.json", url_counts)
+        bucket_service.upload(input_video_path + "/transitions_undetermined.json", url_undetermined)
+        bucket_service.upload(input_video_path + "/transitions_determined.json", url_determined)
+        
+        # Paso 7: Crear el objeto de inferencia
+        inference = inference_service.create_inference(
+            task_id=task_to_process.id,
+            url_counts=url_counts,
+            url_undetermined=url_undetermined,
+            url_determined=url_determined
+        )
+        
+        # Paso 8: Cambiar estado de tarea a REVIEW
+        task_service.update_task_status(task_to_process.id, "REVIEW")
+        
+        db.commit()
+        
+        # Mostrar resultados
         typer.echo("\n--- Salida del script process.py ---")
         typer.echo(result.stdout)
         typer.echo("-------------------------------------\n")
-        
         typer.echo(f"Tarea finalizada exitosamente para el video {task_to_process.id}.")
         
     except subprocess.CalledProcessError as e:
+        # Hacer rollback de toda la transacción
+        db.rollback()
+        typer.echo("Error en el procesamiento. Haciendo rollback de todos los cambios...")
+        
         typer.echo(f"Error: El script `process.py` falló con código {e.returncode}")
         typer.echo("\n--- Salida estándar (stdout) ---")
         typer.echo(e.stdout)
@@ -103,7 +117,15 @@ def run_process():
         typer.echo("-------------------------------------\n")
         
     except FileNotFoundError:
+        # Hacer rollback de toda la transacción
+        db.rollback()
+        typer.echo("Error: Archivo no encontrado. Haciendo rollback de todos los cambios...")
         typer.echo("Error: Asegúrate de que `process.py` existe en la ruta especificada.")
+        
+    except Exception as e:
+        # Cualquier otro error
+        db.rollback()
+        typer.echo(f"Error inesperado: {str(e)}. Haciendo rollback de todos los cambios...")
         
     finally:
         # Limpiar el archivo temporal del video

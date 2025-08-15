@@ -614,3 +614,25 @@ class TaskService:
     
     def get_roads_by_task(self, task: Task) -> list[Road]:
         return self.road_service.find_by_fields(video_id=task.video_id)
+    
+    def update_task_status(self, task_id: int, status_id: str, commit: bool = False):
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        try:
+            current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
+            current_task_status_history.to_date = datetime.datetime.now()
+            self.db.flush()
+            task_status = self.task_status_service.get_by_id(status_id)
+            new_task_status_history = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=task_status.id,
+            )
+            self.db.add(new_task_status_history)
+            self.db.flush()
+            if commit:
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

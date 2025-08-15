@@ -38,6 +38,9 @@ def get_password_reset_service(db: Session = Depends(get_db_session)):
     from app.services.password_reset_service import PasswordResetService
     return PasswordResetService(db)
 
+def get_inference_service(db: sessionmaker = Depends(get_db_session)):
+    from app.services.inference_service import InferenceService
+    return InferenceService(db)
 
 def get_email_service():
     from app.services.email_service import EmailService
