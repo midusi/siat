@@ -8,12 +8,12 @@ class InferenceService:
     def __init__(self, db: sessionmaker):
         self.db = db
 
-    def create_inference(self, task_id: int, url_counts: str, url_undetermined: str, url_determined: str) -> Inference:
+    def create_inference(self, task_id: int, transition_counts: str, transition_undetermined: str, transition_determined: str) -> Inference:
       inference_obj = Inference(
           task_id=task_id,
-          url_transition_counts=url_counts,
-          url_transition_undetermined=url_undetermined,
-          url_video_processed=url_determined,
+          transition_counts=transition_counts,
+          transition_undetermined=transition_undetermined,
+          transition_determined=transition_determined,
           inferred_at=datetime.datetime.now()
       )
       self.db.add(inference_obj)

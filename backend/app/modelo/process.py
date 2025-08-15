@@ -122,7 +122,7 @@ class ObjectTracker:
         self.total_vehicles_by_class: Counter[str] = Counter()
         self.entry_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
         self.exit_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
-        self.transition_counts: defaultdict[str, defaultdict[str, defaultdict[str, int]]] = \
+        self.transition_counts: defaultdict[int, defaultdict[int, defaultdict[str, int]]] = \
             defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         # Matriz de transición de zonas
         self.transition_determined_object: defaultdict[int, list[dict]] = defaultdict(list)
@@ -401,24 +401,24 @@ class ObjectTracker:
                     transition_data = history_track.copy()
                     transition_data["labels"] = [in_zone_label, out_zone_label]
                     self.transition_determined_object[track_id].append(transition_data)
-                    self.transition_counts[display_class][in_zone_label][out_zone_label] += 1
+                    self.transition_counts[in_zone_label][out_zone_label][display_class] += 1
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
                     transition_data = history_track.copy()
                     transition_data["labels"] = [in_zone_label, "IND"]
                     self.transition_undetermined_object[track_id].append(transition_data)
-                    self.transition_counts[display_class][in_zone_label]["IND"] += 1
+                    self.transition_counts[in_zone_label]["IND"][display_class] += 1
             elif track_id in self.track_first_out_zone:
                 out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
                 transition_data = history_track.copy()
                 transition_data["labels"] = ["IND", out_zone_label]
                 self.transition_undetermined_object[track_id].append(transition_data)
-                self.transition_counts[display_class]["IND"][out_zone_label] += 1
+                self.transition_counts["IND"][out_zone_label][display_class] += 1
             else:
                 transition_data = history_track.copy()
                 transition_data["labels"] = ["IND", "IND"]
                 self.transition_undetermined_object[track_id].append(transition_data)
-                self.transition_counts[display_class]["IND"]["IND"] += 1
+                self.transition_counts["IND"]["IND"][display_class] += 1
 
 
     def process_frame(self, frame: np.ndarray, results: list, act_frame: int) -> np.ndarray:

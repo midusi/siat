@@ -271,36 +271,36 @@
 			// Helper para evitar caché del navegador en JSON estáticos de MinIO
 			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
 
-			// Obtener rutas e indeterminados: inline o vía URLs públicas (MinIO)
-			const rutasPromise: Promise<any> = apiData.rutas
-				? Promise.resolve(apiData.rutas)
-				: apiData.rutasUrl
-					? fetch(bust(apiData.rutasUrl))
-							.then((r) => {
-								if (!r.ok) throw new Error(`Error al obtener rutas: ${r.statusText}`);
-								return r.json();
-							})
-							.then((d) => d.rutas ?? d)
-					: Promise.resolve({});
+			// // Obtener rutas e indeterminados: inline o vía URLs públicas (MinIO)
+			// const rutasPromise: Promise<any> = apiData.rutas
+			// 	? Promise.resolve(apiData.rutas)
+			// 	: apiData.rutas
+			// 		? fetch(bust(apiData.rutas))
+			// 				.then((r) => {
+			// 					if (!r.ok) throw new Error(`Error al obtener rutas: ${r.statusText}`);
+			// 					return r.json();
+			// 				})
+			// 				.then((d) => d.rutas ?? d)
+			// 		: Promise.resolve({});
 
-			const indeterminadosPromise: Promise<any> = apiData.indeterminados
-				? Promise.resolve(apiData.indeterminados)
-				: apiData.indeterminadosUrl
-					? fetch(bust(apiData.indeterminadosUrl))
-							.then((r) => {
-								if (!r.ok) throw new Error(`Error al obtener indeterminados: ${r.statusText}`);
-								return r.json();
-							})
-							.then((d) => d.indeterminados ?? d)
-					: Promise.resolve({});
+			// const indeterminadosPromise: Promise<any> = apiData.indeterminados
+			// 	? Promise.resolve(apiData.indeterminados)
+			// 	: apiData.indeterminados
+			// 		? fetch(bust(apiData.indeterminados))
+			// 				.then((r) => {
+			// 					if (!r.ok) throw new Error(`Error al obtener indeterminados: ${r.statusText}`);
+			// 					return r.json();
+			// 				})
+			// 				.then((d) => d.indeterminados ?? d)
+			// 		: Promise.resolve({});
 
-			const [rutasData, indeterminadosData] = await Promise.all([
-				rutasPromise,
-				indeterminadosPromise
-			]);
+			// const [rutasData, indeterminadosData] = await Promise.all([
+			// 	rutasPromise,
+			// 	indeterminadosPromise
+			// ]);
 
-			rutas = rutasData;
-			indeterminados = indeterminadosData;
+			rutas = apiData.rutas;
+			indeterminados = apiData.indeterminados;
 
 			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
 				const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';

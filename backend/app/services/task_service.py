@@ -101,10 +101,10 @@ class TaskService:
 
         # Si existe inferencia, agregar URLs públicas a los JSON
         if task.inference:
-            if task.inference.url_transition_counts:
-                payload["rutasUrl"] = f"{public_base}/{task.inference.url_transition_counts}"
-            if task.inference.url_transition_undetermined:
-                payload["indeterminadosUrl"] = f"{public_base}/{task.inference.url_transition_undetermined}"
+            if task.inference.transition_counts:
+                payload["rutas"] = json.loads(task.inference.transition_counts)
+            if task.inference.transition_undetermined:
+                payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
 
         return payload
         

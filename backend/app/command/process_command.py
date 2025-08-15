@@ -89,35 +89,27 @@ def run_process():
         local_undetermined_path = os.path.join(output_dir, "transition_undetermined_object.json")
         local_determined_path = os.path.join(output_dir, "transition_determined_object.json")
         
-        # Rutas en el bucket
-        bucket_counts_key = f"task/{task_to_process.id}/transition_counts.json"
-        bucket_undetermined_key = f"task/{task_to_process.id}/transition_undetermined_object.json"
-        bucket_determined_key = f"task/{task_to_process.id}/transition_determined_object.json"
-        
         # Subir archivos al bucket
         typer.echo("Subiendo archivos JSON al bucket...")
         
-        # Leer y subir transition_counts.json
+        # Leer transition_counts.json
         with open(local_counts_path, 'r', encoding='utf-8') as f:
             counts_content = f.read()
-        bucket_service.upload(counts_content, bucket_counts_key)
         
-        # Leer y subir transition_undetermined_object.json
+        # Leer transition_undetermined_object.json
         with open(local_undetermined_path, 'r', encoding='utf-8') as f:
             undetermined_content = f.read()
-        bucket_service.upload(undetermined_content, bucket_undetermined_key)
         
-        # Leer y subir transition_determined_object.json
+        # Leer transition_determined_object.json
         with open(local_determined_path, 'r', encoding='utf-8') as f:
             determined_content = f.read()
-        bucket_service.upload(determined_content, bucket_determined_key)
         
         # Paso 7: Crear el objeto de inferencia
         inference = inference_service.create_inference(
             task_id=task_to_process.id,
-            url_counts=bucket_counts_key,
-            url_undetermined=bucket_undetermined_key,
-            url_determined=bucket_determined_key
+            transition_counts=counts_content,
+            transition_undetermined=undetermined_content,
+            transition_determined=determined_content
         )
         
         # Paso 8: Cambiar estado de tarea a REVIEW
