@@ -282,23 +282,22 @@ class ObjectTracker:
                 self.track_first_out_zone[track_id] = zone_out_idx
 
                 
-    def _draw_bbox_and_track(self, box: np.ndarray, class_id: int, track_id: int, act_frame: int, confidence: float, frame: np.ndarray, annotator: Annotator):
+    def _draw_bbox_and_track(self, box: np.ndarray, class_id: int, track_id: int, act_frame: int, confidence: float, annotator: Annotator):
         """
         Dibuja el bounding box y el historial de seguimiento de un objeto en el frame.
         También almacena los datos del objeto para el análisis posterior.
 
         Args:
-            frame (np.ndarray): Frame actual.
-            annotator (Annotator): Objeto Annotator de Ultralytics para dibujar.
             box (np.ndarray): Bounding box del objeto.
             class_id (int): Mapeo del ID de la clase detectada a la clase simplificada.
             track_id (int): ID de seguimiento del objeto.
             act_frame (int): Número del frame actual.
             confidence (float): Confianza de la detección.
+            annotator (Annotator): Objeto Annotator de Ultralytics para dibujar.
         """
 
         # Dibujar el bounding box
-        annotator.box_label(box, self.class_names[class_id], color=(0, 255, 255))
+        annotator.box_label(box, label=f"ID: {track_id} - {self.class_names[class_id]}", color=(0, 0, 0), txt_color=(255, 255, 255))
 
         # Almacenar historial de datos del objeto para el cálculo de entropía
         self.data_obj_history[track_id].append({
@@ -465,7 +464,7 @@ class ObjectTracker:
                 self._register_zone_entry_exit(box, track_id)
                 
                 # Dibujar bounding box, etiqueta y historial de seguimiento, y almacenar datos
-                self._draw_bbox_and_track(box, class_id, track_id, act_frame, confidence, frame, annotator)
+                self._draw_bbox_and_track(box, class_id, track_id, act_frame, confidence, annotator)
         
         return frame
 
@@ -547,24 +546,22 @@ class ObjectTracker:
                 print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
                 break
 
-            # Procesar solo cada segundo frame, como en el código original
-            if act_frame % 2 == 0:
-                # Realizar seguimiento de objetos
-                results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
-                
-                # Procesar el frame (dibujar zonas, BBs, etc.)
-                processed_frame = self.process_frame(frame, results, act_frame)
+            # Realizar seguimiento de objetos
+            results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
+            
+            # Procesar el frame (dibujar zonas, BBs, etc.)
+            processed_frame = self.process_frame(frame, results, act_frame)
 
-                # Escribir el frame procesado en el video de salida
-                video_writer.write(processed_frame)
+            # Escribir el frame procesado en el video de salida
+            video_writer.write(processed_frame)
 
-                # Mostrar el frame procesado SOLO SI display_video es True
-                if display_video:
-                    cv2.imshow("Video", processed_frame)
-                    # Salir si se presiona 'q' (solo si la ventana de video está activa)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                       print("\nTecla 'q' presionada. Deteniendo.")
-                       break
+            # Mostrar el frame procesado SOLO SI display_video es True
+            if display_video:
+                cv2.imshow("Video", processed_frame)
+                # Salir si se presiona 'q' (solo si la ventana de video está activa)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    print("\nTecla 'q' presionada. Deteniendo.")
+                    break
         
         # Asegurarse de una nueva línea al final del progreso
         if progress_enabled:
