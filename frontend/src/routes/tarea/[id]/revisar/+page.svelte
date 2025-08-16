@@ -515,15 +515,6 @@
 
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
 	<h1 class="text-3xl font-bold mb-4 text-center">Revisar Video Analizado</h1>
-	{#if !loading && !error && videoPath}
-		<div class="flex justify-center mb-6">
-			<button
-				onclick={downloadVideo}
-				class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-semibold text-sm"
-				>Descargar Video</button
-			>
-		</div>
-	{/if}
 
 	{#if loading}
 		<p class="text-center text-xl">Cargando datos de la tarea...</p>
@@ -573,6 +564,11 @@
 								{/if}
 							</div>
 						{/each}
+					</div>
+
+					<!-- Botón de descarga debajo del video, alineado a la izquierda -->
+					<div class="mt-4">
+						<button onclick={downloadVideo} class="download-btn-gradient">Descargar Video</button>
 					</div>
 				{/if}
 			</div>
@@ -784,16 +780,6 @@
 				</div>
 			{/if}
 		</div>
-
-		{#if !loading && !error}
-			<div class="flex justify-center mb-6">
-				<button
-					onclick={downloadVideo}
-					class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-semibold text-sm"
-					>Descargar Video</button
-				>
-			</div>
-		{/if}
 	{/if}
 </div>
 
@@ -890,5 +876,32 @@
 
 		/* Un suave resplandor al texto para que se integre mejor */
 		text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
+	}
+
+	/* Botón con fondo que se difumina de izquierda (100% opaco) a derecha (100% transparente) */
+	.download-btn-gradient {
+		display: inline-block;
+		padding: 0.5rem 1rem; /* py-2 px-4 */
+		border-radius: 0.375rem; /* rounded */
+		font-weight: 600; /* font-semibold */
+		font-size: 0.875rem; /* text-sm */
+		color: #ffffff;
+		background-image: linear-gradient(
+			to right,
+			rgba(37, 99, 235, 1) 0%,
+			/* azul-600 100% opaco */ rgba(37, 99, 235, 0) 100% /* azul-600 0% opaco */
+		);
+		border: 1px solid rgba(59, 130, 246, 0.35); /* borde suave azul */
+		transition:
+			filter 0.2s ease,
+			border-color 0.2s ease;
+	}
+	.download-btn-gradient:hover {
+		filter: brightness(1.1);
+		border-color: rgba(147, 197, 253, 0.6);
+	}
+	.download-btn-gradient:focus {
+		outline: 2px solid rgba(59, 130, 246, 0.6);
+		outline-offset: 2px;
 	}
 </style>
