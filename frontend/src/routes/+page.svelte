@@ -30,7 +30,7 @@
 			actions: ['configurar', 'eliminar']
 		},
 		PROCESSING: { badgeClass: 'bg-blue-900 text-blue-200', actions: ['eliminar'] },
-		REVIEW: {
+		PROCESSED: {
 			badgeClass: 'bg-yellow-900 text-yellow-200',
 			actions: ['revisar', 'archivar', 'eliminar']
 		},
