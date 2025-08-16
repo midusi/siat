@@ -16,7 +16,6 @@ class RoadService:
         return road_crud.find_by_fields(self.db, **filters)
         
     def create(self, number: int, direction: RoadDirection, polygon, video_id: int) -> Road:
-        import json
         return Road(
             name=f"Vía {number}",
             number=number,

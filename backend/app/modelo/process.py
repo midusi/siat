@@ -47,6 +47,12 @@ SIMPLIFIED_CLASS_DISPLAY_NAMES = {
     5: "Transporte liviano" # Moto
 }
 
+CLASSES_NAMES = [
+    "Transporte liviano",
+    "Transporte mediano",
+    "Transporte pesado",
+]
+
 
 # Configuración del dispositivo para el modelo YOLO:
 # "auto": Intenta usar GPU si está disponible (CUDA), de lo contrario, usa CPU.
@@ -67,7 +73,7 @@ class ObjectTracker:
     y la interacción con zonas predefinidas en un feed de video.
     """
 
-    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None):
+    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None, names_polygons_in: list[str] = [], names_polygons_out: list[str] = []):
         """
         Inicializa el ObjectTracker.
 
@@ -94,9 +100,15 @@ class ObjectTracker:
         # Lista de todos los nombres de clases conocidos, incluyendo 'indeterminado'
         self.all_class_names = list(self.class_names.values()) + ["indeterminado"]
         
-        self.zone_in_polygons = zone_in_polygons
-        self.zone_out_polygons = zone_out_polygons
-
+        self.zone_in_polygons = [
+            {"polygon": zone_in_polygons[i], "name": names_polygons_in[i]} 
+            for i in range(len(zone_in_polygons))
+        ]
+        self.zone_out_polygons = [
+            {"polygon": zone_out_polygons[i], "name": names_polygons_out[i]} 
+            for i in range(len(zone_out_polygons))
+        ]
+        
         # --- Variables de estado para el seguimiento de objetos ---
         
         # Diccionario para almacenar la PRIMERA zona IN que un objeto visitó
@@ -122,11 +134,18 @@ class ObjectTracker:
         self.total_vehicles_by_class: Counter[str] = Counter()
         self.entry_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
         self.exit_zone_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
-        self.transition_counts: defaultdict[int, defaultdict[int, defaultdict[str, int]]] = \
+        self.transition_counts: defaultdict[str, defaultdict[str, defaultdict[str, int]]] = \
             defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        # Inicializar transition_counts con la estructura jerárquica:
+        # {nombre_poligono_entrada: {nombre_poligono_salida: {clase: 0}}}
+        for pin in self.zone_in_polygons:
+            for pout in self.zone_out_polygons:
+                self.transition_counts[pin["name"]][pout["name"]] = {cls: 0 for cls in CLASSES_NAMES}
+                
         # Matriz de transición de zonas
         self.transition_determined_object: defaultdict[int, dict] = defaultdict(list)
         self.transition_undetermined_object: defaultdict[int, dict] = defaultdict(list)
+            
             
         print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
 
@@ -181,7 +200,7 @@ class ObjectTracker:
         y_center = int((box[1] + box[3]) / 2)
         return (x_center, y_center)
 
-    def _draw_polygon(self, annotated_frame: np.ndarray, polygon: np.ndarray, number_polygon: int, zone_type: ZoneType, thickness: int) -> np.ndarray:
+    def _draw_polygon(self, annotated_frame: np.ndarray, polygon: np.ndarray, name_polygon: str, zone_type: ZoneType, thickness: int) -> np.ndarray:
         """
         Dibuja un polígono y su número en el frame.
 
@@ -198,23 +217,14 @@ class ObjectTracker:
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1
         color = ZONE_COLORS.colors[zone_type.value].as_bgr() # Utiliza el valor del Enum como índice
-        print(f"Tipo de polygon: {type(polygon)}", file=sys.stderr, flush=True)
-        print(f"Polygon: {polygon}", file=sys.stderr, flush=True)
-        print(f"Polygon dtype: {polygon.dtype if hasattr(polygon, 'dtype') else 'No dtype'}", file=sys.stderr, flush=True)
-        
-        # Asegurar que el polígono sea un numpy array con el tipo correcto para OpenCV
-        if not isinstance(polygon, np.ndarray):
-            polygon = np.array(polygon)
-        polygon = polygon.astype(np.int32)
-        
-        print(f"Después de conversión - Tipo: {type(polygon)}, dtype: {polygon.dtype}", file=sys.stderr, flush=True)
         
         cv2.polylines(
             annotated_frame, [polygon], isClosed=True, color=color, thickness=thickness
         )
+        
         zone_center = sv.get_polygon_center(polygon=polygon)
         # Asegura que las coordenadas sean enteros para cv2.putText
-        cv2.putText(annotated_frame, str(number_polygon), (int(zone_center.x), int(zone_center.y)), font, font_scale, color, thickness=thickness)
+        cv2.putText(annotated_frame, name_polygon, (int(zone_center.x), int(zone_center.y)), font, font_scale, color, thickness=thickness)
         
         return annotated_frame
 
@@ -230,8 +240,8 @@ class ObjectTracker:
             np.ndarray: Frame con todas las zonas dibujadas.
         """
         for i, (zone_in, zone_out) in enumerate(zip(self.zone_in_polygons, self.zone_out_polygons)):
-            self._draw_polygon(annotated_frame, zone_in, i, ZoneType.IN, thickness)
-            self._draw_polygon(annotated_frame, zone_out, i, ZoneType.OUT, thickness)
+            self._draw_polygon(annotated_frame, zone_in["polygon"], zone_in["name"], ZoneType.IN, thickness)
+            self._draw_polygon(annotated_frame, zone_out["polygon"], zone_in["name"], ZoneType.OUT, thickness)
         return annotated_frame
 
     def _get_zone_index(self, box: np.ndarray, polygons: list[np.ndarray]) -> int:
@@ -261,13 +271,13 @@ class ObjectTracker:
         """
         # Registrar la primera entrada en una zona IN
         if track_id not in self.track_first_in_zone:
-            zone_in_idx = self._get_zone_index(box, self.zone_in_polygons)
+            zone_in_idx = self._get_zone_index(box, [zone["polygon"] for zone in self.zone_in_polygons])
             if zone_in_idx >= 0:
                 self.track_first_in_zone[track_id] = zone_in_idx
 
         # Registrar la primera entrada en una zona OUT
         if track_id not in self.track_first_out_zone:
-            zone_out_idx = self._get_zone_index(box, self.zone_out_polygons)
+            zone_out_idx = self._get_zone_index(box, [zone["polygon"] for zone in self.zone_out_polygons])
             if zone_out_idx >= 0:
                 self.track_first_out_zone[track_id] = zone_out_idx
 
@@ -383,21 +393,21 @@ class ObjectTracker:
             # Conteo para la tabla "Entradas"
             if track_id in self.track_first_in_zone:
                 in_zone_idx = self.track_first_in_zone[track_id]
-                in_zone_label = ZONE_LABELS.get(in_zone_idx, f"Zona {in_zone_idx}")
+                in_zone_label = self.zone_in_polygons[in_zone_idx]["name"]
                 self.entry_zone_counts[display_class][in_zone_label] += 1
 
             # Conteo para la tabla "Salidas"
             if track_id in self.track_first_out_zone:
                 out_zone_idx = self.track_first_out_zone[track_id]
-                out_zone_label = ZONE_LABELS.get(out_zone_idx, f"Zona {out_zone_idx}")
+                out_zone_label = self.zone_out_polygons[out_zone_idx]["name"]
                 self.exit_zone_counts[display_class][out_zone_label] += 1          
                   
             # Cálculo de la Matriz de Transiciones para cada objeto
             if track_id in self.track_first_in_zone:
-                in_zone_label = ZONE_LABELS.get(self.track_first_in_zone[track_id], f"Zona {self.track_first_in_zone[track_id]}")
+                in_zone_label = self.zone_in_polygons[self.track_first_in_zone[track_id]]["name"]
                 
                 if track_id in self.track_first_out_zone:
-                    out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
+                    out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                     transition_data = history_track.copy()
                     transition_data["labels"] = [in_zone_label, out_zone_label]
                     self.transition_determined_object[track_id] = transition_data
@@ -409,7 +419,7 @@ class ObjectTracker:
                     self.transition_undetermined_object[track_id] = transition_data
                     # self.transition_counts[in_zone_label]["IND"][display_class] += 1
             elif track_id in self.track_first_out_zone:
-                out_zone_label = ZONE_LABELS.get(self.track_first_out_zone[track_id], f"Zona {self.track_first_out_zone[track_id]}")
+                out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                 transition_data = history_track.copy()
                 transition_data["labels"] = ["IND", out_zone_label]
                 self.transition_undetermined_object[track_id] = transition_data
@@ -591,6 +601,14 @@ if __name__ == "__main__":
         help='Polígonos de salida como lista de listas. Ejemplo: "[[816, 922], [905, 869], [1095, 908], [987, 990]]". Obligatorio.'
     )
     parser.add_argument(
+        '--names_polygons_in', '-ni', type=ast.literal_eval, required=True,
+        help='Nombres de los polígonos de entrada como lista de strings. Ejemplo: "["Zona 1", "Zona 2", "Zona 3"]". Obligatorio.'
+    )
+    parser.add_argument(
+        '--names_polygons_out', '-no', type=ast.literal_eval, required=True,
+        help='Nombres de los polígonos de salida como lista de strings. Ejemplo: "["Zona 1", "Zona 2", "Zona 3"]". Obligatorio.'
+    )
+    parser.add_argument(
         '--output_video_path', '-o', type=str, default=None,
         help='Ruta opcional para guardar el video de salida. \n'
              'Por defecto, el video se guarda en la misma ubicación del video de entrada, \n'
@@ -632,11 +650,11 @@ if __name__ == "__main__":
     show_video_window = not args.no_display
     
     # 2. Obtener las zonas de entrada y salida del video
-    ZONE_IN_POLYGONS = [np.array(p) for p in args.polygons_in]
-    ZONE_OUT_POLYGONS = [np.array(p) for p in args.polygons_out]
+    ZONE_IN_POLYGONS = [np.array(p, dtype=np.int32) for p in args.polygons_in]
+    ZONE_OUT_POLYGONS = [np.array(p, dtype=np.int32) for p in args.polygons_out]
     
     # 3. Crear una instancia del ObjectTracker
-    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE)
+    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE, names_polygons_in=args.names_polygons_in, names_polygons_out=args.names_polygons_out)
 
     # 4. Ejecutar el proceso de seguimiento
     tracker.run(

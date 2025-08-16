@@ -56,7 +56,12 @@ def run_process():
     polygons_in = [road.polygon for road in roads if road.direction == "Entrada"]
     polygons_out = [road.polygon for road in roads if road.direction == "Salida"]
     
+    names_polygons_in = [road.name for road in roads if road.direction == "Entrada"]
+    names_polygons_out = [road.name for road in roads if road.direction == "Salida"]
+    
     typer.echo("Parámetros obtenidos de la base de datos.")
+    typer.echo(f"Polígonos de entrada: {names_polygons_in}")
+    typer.echo(f"Polígonos de salida: {names_polygons_out}")
     
     # Manejar la transacción completa
     try:
@@ -72,7 +77,9 @@ def run_process():
             f"--model_path={path_modelo / 'model-v5.pt'}",
             f"--tracker_path={path_modelo / 'botsort_custom.yaml'}",
             f"--polygons_in={polygons_in}",
-            f"--polygons_out={polygons_out}"
+            f"--polygons_out={polygons_out}",
+            "--names_polygons_in", str(names_polygons_in),
+            "--names_polygons_out", str(names_polygons_out)
         ]
         
         typer.echo("Ejecutando el script `process.py`...")

@@ -129,6 +129,7 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+temp*
 videos/
 **/.venv/
 **/__pycache__/
