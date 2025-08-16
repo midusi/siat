@@ -1,4 +1,4 @@
-import cv2
+import cv2, imageio
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
@@ -491,11 +491,9 @@ class ObjectTracker:
         # Inicializar el video de salida
         try:
             # Codec avc1 (H.264) para compatibilidad con navegadores
-            fourcc = cv2.VideoWriter_fourcc(*'avc1') 
-            video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
-            if not video_writer.isOpened():
-                print(f"Advertencia: No se pudo abrir VideoWriter para {output_video_path}.")
-                exit(1)
+            # fourcc = cv2.VideoWriter_fourcc(*'avc1') 
+            # video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
+            writer = imageio.get_writer(output_video_path, fps=fps, codec="libx264", pixelformat="yuv420p")
         except Exception as e:
             print(f"Error al inicializar VideoWriter: {e}.")
             exit(1)
@@ -553,7 +551,8 @@ class ObjectTracker:
             processed_frame = self.process_frame(frame, results, act_frame)
 
             # Escribir el frame procesado en el video de salida
-            video_writer.write(processed_frame)
+            # video_writer.write(processed_frame)
+            writer.append_data(processed_frame)
 
             # Mostrar el frame procesado SOLO SI display_video es True
             if display_video:
@@ -574,7 +573,8 @@ class ObjectTracker:
 
         # Liberar recursos
         cap.release()
-        video_writer.release()
+        # video_writer.release()
+        writer.close()
         
         # Destruir ventanas SOLO si se mostraron
         if display_video:

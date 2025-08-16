@@ -13,3 +13,6 @@ boto3
 httpx
 typer[all]
 opencv-python
+ultralytics
+supervision
+imageio[ffmpeg]
