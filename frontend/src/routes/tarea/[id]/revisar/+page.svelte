@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
 	import { showSuccess, showError } from '$lib/toast';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	// --- Props y estado inicial ---
 	let { data } = $props();
@@ -38,6 +39,7 @@
 	type SortedIndeterminado = [string, Indeterminado];
 	let sortedIndeterminados = $state<SortedIndeterminado[]>([]);
 	let videoScale = $state({ x: 1, y: 1 });
+	let savingById = $state<Record<string, boolean>>({});
 
 	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
 	let activeBoundingBox = $state<BoundingBox | null>(null);
@@ -338,6 +340,7 @@
 		event.stopPropagation();
 		const item = indeterminados[trackId];
 		if (!item) return;
+		savingById[trackId] = true;
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (activeBoundingBox === item.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
@@ -367,10 +370,12 @@
 		if (ok) {
 			showSuccess(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
 		}
+		delete savingById[trackId];
 	}
 	async function handleDelete(trackId: string, event: MouseEvent) {
 		event.stopPropagation();
 		const item = indeterminados[trackId];
+		savingById[trackId] = true;
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (item && activeBoundingBox === item.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
@@ -383,6 +388,7 @@
 		if (ok) {
 			showSuccess(`Vehículo indeterminado ${trackId} eliminado.`);
 		}
+		delete savingById[trackId];
 	}
 	let vehicleTypes = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return [];
@@ -599,8 +605,16 @@
 										<p class="font-bold text-lg">ID: {trackId}</p>
 										<button
 											onclick={(e) => handleDelete(trackId, e)}
-											class="text-red-400 hover:text-red-300 text-xs">Eliminar</button
+											class="text-red-400 hover:text-red-300 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+											disabled={savingById[trackId]}
 										>
+											{#if savingById[trackId]}
+												<Spinner size={14} className="inline-block mr-1" />
+												Eliminando...
+											{:else}
+												Eliminar
+											{/if}
+										</button>
 									</div>
 									<div class="grid grid-cols-3 gap-2 items-center mb-2 text-sm">
 										<label for="class-{trackId}" class="text-gray-400">Clase:</label>
@@ -645,15 +659,20 @@
 									</div>
 									<button
 										onclick={(e) => handleConfirm(trackId, e)}
-										disabled={!canConfirm}
-										class="w-full py-2 text-sm font-semibold rounded transition-colors"
+										disabled={!canConfirm || savingById[trackId]}
+										class="w-full py-2 text-sm font-semibold rounded transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
 										class:bg-emerald-600={canConfirm}
 										class:hover:bg-emerald-500={canConfirm}
 										class:bg-gray-500={!canConfirm && trackId !== activeIndeterminateId}
 										class:bg-gray-300={trackId === activeIndeterminateId}
 										class:cursor-not-allowed={!canConfirm}
 									>
-										Confirmar Ruta
+										{#if savingById[trackId]}
+											<Spinner size={16} />
+											Guardando...
+										{:else}
+											Confirmar Ruta
+										{/if}
 									</button>
 								</div>
 							{/each}

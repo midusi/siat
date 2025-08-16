@@ -7,6 +7,7 @@
 	import { apiFetch } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { showAlert } from '$lib/dialog';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	// --- Estado de la Carga de Datos ---
 	let imageSrc: string = '';
@@ -444,11 +445,16 @@
 					<button
 						on:click={finalizarProceso}
 						disabled={poligonos.length === 0 || isSubmitting}
-						class="w-full px-4 py-3 rounded font-semibold transition-colors text-lg
+						class="w-full px-4 py-3 rounded font-semibold transition-colors text-lg flex items-center justify-center gap-2
 bg-green-600 hover:bg-green-500
 disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						{isSubmitting ? 'Enviando...' : 'Finalizar y Procesar'}
+						{#if isSubmitting}
+							<Spinner size={20} />
+							Guardando...
+						{:else}
+							Finalizar y Procesar
+						{/if}
 					</button>
 				</div>
 			</div>

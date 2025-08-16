@@ -3,14 +3,17 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { apiFetch } from '$lib/api';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	let username = $state('');
 	let password = $state('');
 	let error = $state<string | null>(null);
+	let isSubmitting = $state(false);
 
 	async function handleLogin(): Promise<void> {
 		error = null;
 		try {
+			isSubmitting = true;
 			const res = await apiFetch('/auth/login', {
 				method: 'POST',
 				body: JSON.stringify({ username, password })
@@ -25,6 +28,8 @@
 			}
 		} catch (e) {
 			error = 'No se pudo conectar con el servidor';
+		} finally {
+			isSubmitting = false;
 		}
 	}
 </script>
@@ -83,9 +88,15 @@
 			<!-- Botón de inicio de sesión -->
 			<button
 				type="submit"
-				class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-md font-medium transition-colors"
+				class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-md font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+				disabled={isSubmitting}
 			>
-				Iniciar Sesión
+				{#if isSubmitting}
+					<Spinner size={16} />
+					Iniciando sesión...
+				{:else}
+					Iniciar Sesión
+				{/if}
 			</button>
 
 			<!-- Credenciales de prueba -->

@@ -2,10 +2,12 @@
 	// src/lib/components/Header.svelte
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	let { user } = $props<{ user: App.Locals['user'] }>();
 
 	let isDropdownOpen = $state(false);
+	let isLoggingOut = $state(false);
 
 	function toggleDropdown(event: MouseEvent): void {
 		event.stopPropagation();
@@ -35,6 +37,7 @@
 	});
 
 	async function handleLogout(): Promise<void> {
+		isLoggingOut = true;
 		const res = await apiFetch('/auth/logout', {
 			method: 'POST',
 			headers: { 'X-CSRF-Token': '1' }
@@ -42,6 +45,7 @@
 		if (res.ok || res.status === 204) {
 			await goto('/login');
 		}
+		isLoggingOut = false;
 	}
 
 	function goChangePassword(): void {
@@ -121,24 +125,30 @@
 						Cambiar contraseña
 					</button>
 					<button
-						class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 rounded-md flex items-center"
+						class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 rounded-md flex items-center gap-2 disabled:opacity-60"
+						disabled={isLoggingOut}
 						onclick={handleLogout}
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-4 w-4 mr-2"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-							/>
-						</svg>
-						Cerrar sesión
+						{#if isLoggingOut}
+							<Spinner size={16} />
+							Cerrando sesión...
+						{:else}
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-4 w-4 mr-2"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+								/>
+							</svg>
+							Cerrar sesión
+						{/if}
 					</button>
 				</div>
 			</div>

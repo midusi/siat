@@ -8,6 +8,9 @@
 
 	let rows = $state<TaskRow[]>([]);
 	let loading = $state({ active: false });
+	let busy = $state<Record<number, import('$lib/components/TaskTable.svelte').ActionType | true>>(
+		{}
+	);
 
 	function formatDate(d: string | Date): string {
 		const date = typeof d === 'string' ? new Date(d) : d;
@@ -46,8 +49,10 @@
 	onMount(fetchArchived);
 
 	async function unarchiveTask(taskId: number) {
+		busy[taskId] = 'desarchivar';
 		const res = await apiFetch(`/task/${taskId}/unarchive`, { method: 'POST' });
 		if (!res.ok) return console.error('No se pudo desarchivar');
+		delete busy[taskId];
 		await fetchArchived();
 	}
 
@@ -60,8 +65,10 @@
 			cancelText: 'Cancelar'
 		});
 		if (!confirmed) return;
+		busy[taskId] = 'eliminar';
 		const res = await apiFetch(`/task/${taskId}`, { method: 'DELETE' });
 		if (!res.ok) return console.error('No se pudo eliminar la tarea');
+		delete busy[taskId];
 		await fetchArchived();
 	}
 
@@ -76,6 +83,7 @@
 	{rows}
 	loading={loading.active}
 	onAction={handleAction}
+	{busy}
 	rightButtonLabel="Volver"
 	onRightButtonClick={() => goto('/')}
 />

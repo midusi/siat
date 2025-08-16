@@ -7,6 +7,7 @@
 	import { TaskFormSchema } from '$lib/types/task';
 	import { z } from 'zod';
 	import { showAlert } from '$lib/dialog';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	// Estado agrupado en un objeto form
 	let form = $state<TaskForm>({
@@ -21,6 +22,9 @@
 	let isFormValid = $state(false);
 	let errors = $state<Record<string, string>>({});
 	let submitted = $state(false);
+	let isUploading = $state(false);
+	let uploadProgress = $state(0); // 0-100
+	let isProcessing = $state(false); // true cuando ya se subió y el backend está creando la tarea
 
 	// Datos de localidades y distritos
 	let localities = $state<{ id: number; name: string }[]>([]);
@@ -89,6 +93,7 @@
 
 	// Función para iniciar la subida
 	async function handleSubmit(): Promise<void> {
+		if (isUploading) return; // evitar envíos duplicados
 		submitted = true;
 		const result = TaskFormSchema.safeParse(form);
 		if (!result.success) {
@@ -100,6 +105,9 @@
 		}
 		errors = {};
 
+		isUploading = true;
+		isProcessing = false;
+
 		const formData = new FormData();
 		formData.append('name', form.name);
 		formData.append('locality_id', form.selectedLocality?.toString() ?? '');
@@ -109,23 +117,48 @@
 		}
 
 		try {
-			const response = await fetch(`${BACKEND_URL}/task`, {
-				method: 'POST',
-				body: formData,
-				credentials: 'include'
+			const data = await new Promise<any>((resolve, reject) => {
+				const xhr = new XMLHttpRequest();
+				xhr.open('POST', `${BACKEND_URL}/task`, true);
+				xhr.withCredentials = true;
+				xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
+					if (event.lengthComputable) {
+						uploadProgress = Math.round((event.loaded / event.total) * 100);
+					}
+				};
+				xhr.upload.onload = () => {
+					// Subida terminada, ahora el servidor procesa la creación de la tarea
+					uploadProgress = 100;
+					isProcessing = true;
+				};
+				xhr.upload.onerror = () => {
+					reject(new Error('Error durante la subida del archivo'));
+				};
+				xhr.onload = () => {
+					if (xhr.status >= 200 && xhr.status < 300) {
+						try {
+							const json = JSON.parse(xhr.responseText || '{}');
+							resolve(json);
+						} catch (e) {
+							resolve({});
+						}
+					} else {
+						reject(new Error(`Error en la subida: ${xhr.status} ${xhr.responseText}`));
+					}
+				};
+				xhr.onerror = () => reject(new Error('Error de red durante la subida'));
+				xhr.send(formData);
 			});
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Error en la subida: ${errorText}`);
-			}
-
-			const data = await response.json();
 			console.log('Tarea creada:', data);
 			goto('/');
 		} catch (error) {
 			console.error('Error al crear la tarea:', error);
 			await showAlert({ message: 'Hubo un error al crear la tarea.', variant: 'danger' });
+		} finally {
+			isUploading = false;
+			isProcessing = false;
+			uploadProgress = 0;
 		}
 	}
 
@@ -325,13 +358,38 @@
 				<button
 					type="button"
 					onclick={handleSubmit}
-					class="py-3 px-8 rounded-md font-medium transition-colors
-						{!isFormValid
-						? 'bg-gray-500 text-gray-300 cursor-not-allowed'
-						: 'bg-blue-600 hover:bg-blue-700 text-white'}"
-					disabled={!isFormValid}
+					class="relative overflow-hidden py-3 px-8 rounded-md font-medium transition-colors w-56 text-center
+						{!isFormValid && !isUploading ? 'bg-gray-500 text-gray-300' : ''}
+						{!isUploading && isFormValid ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}
+						{isUploading ? 'bg-gray-800 text-white cursor-not-allowed' : ''}"
+					aria-busy={isUploading}
+					aria-disabled={isUploading || !isFormValid}
+					role={isUploading && !isProcessing ? 'progressbar' : undefined}
+					aria-valuemin={isUploading && !isProcessing ? 0 : undefined}
+					aria-valuemax={isUploading && !isProcessing ? 100 : undefined}
+					aria-valuenow={isUploading && !isProcessing ? uploadProgress : undefined}
+					disabled={!isFormValid || isUploading}
 				>
-					Crear Tarea
+					{#if isUploading}
+						<!-- Barra de progreso como background -->
+						<div class="absolute inset-0 bg-gray-700"></div>
+						<div
+							class="absolute inset-y-0 left-0 transition-[width] duration-150"
+							style="width: {isProcessing
+								? 100
+								: uploadProgress}%; background: linear-gradient(to right, #374151, #9CA3AF);"
+						></div>
+						<span class="relative z-10 inline-flex items-center gap-2">
+							{#if !isProcessing}
+								Subiendo video {uploadProgress}%
+							{:else}
+								<Spinner size={16} />
+								Creando tarea...
+							{/if}
+						</span>
+					{:else}
+						Crear Tarea
+					{/if}
 				</button>
 			</div>
 		</form>

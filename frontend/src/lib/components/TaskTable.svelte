@@ -21,6 +21,7 @@
 </script>
 
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	type ActionType = import('./TaskTable.svelte').ActionType;
 	type TaskRow = import('./TaskTable.svelte').TaskRow;
 	let {
@@ -29,7 +30,8 @@
 		loading = false,
 		onAction,
 		rightButtonLabel,
-		onRightButtonClick
+		onRightButtonClick,
+		busy = {}
 	} = $props<{
 		title: string;
 		rows: TaskRow[];
@@ -37,6 +39,7 @@
 		onAction: (action: ActionType, id: number) => void;
 		rightButtonLabel?: string;
 		onRightButtonClick?: () => void;
+		busy?: Record<number, ActionType | true>;
 	}>();
 
 	const ACTION_STYLES: Record<ActionType, string> = {
@@ -133,11 +136,25 @@
 							<td class="p-3">
 								<div class="flex gap-2">
 									{#each task.acciones as accion}
+										{@const isBusy = !!busy[task.id]}
+										{@const activeAction = busy[task.id] as ActionType | true}
 										<button
-											onclick={() => onAction(accion as ActionType, task.id)}
-											class={`${ACTION_STYLES[accion as ActionType] ?? 'bg-blue-500 hover:bg-blue-600'} text-white text-sm py-1 px-3 rounded`}
+											onclick={() => !isBusy && onAction(accion as ActionType, task.id)}
+											class={`${ACTION_STYLES[accion as ActionType] ?? 'bg-blue-500 hover:bg-blue-600'} text-white text-sm py-1 px-3 rounded disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1`}
+											disabled={isBusy}
 										>
-											{accion.charAt(0).toUpperCase() + accion.slice(1)}
+											{#if isBusy && (activeAction === true || activeAction === (accion as ActionType))}
+												<Spinner size={14} />
+												{accion === 'archivar'
+													? 'Archivando...'
+													: accion === 'eliminar'
+														? 'Eliminando...'
+														: accion === 'desarchivar'
+															? 'Desarchivando...'
+															: 'Procesando...'}
+											{:else}
+												{accion.charAt(0).toUpperCase() + accion.slice(1)}
+											{/if}
 										</button>
 									{/each}
 								</div>
