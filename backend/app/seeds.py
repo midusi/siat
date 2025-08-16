@@ -13,7 +13,7 @@ from db import engine
 
 # Added imports
 from sqlalchemy.orm import Session as SASession
-from app.models import User
+from models import User
 from passlib.context import CryptContext
 
 
@@ -49,8 +49,9 @@ def seed_static_data():
             session.add_all([
                 TaskStatus(id="VIDEO_UPLOADED", name="Video subido"),
                 TaskStatus(id="CONFIGURED", name="Configurada"),
+                TaskStatus(id="READY_TO_PROCESS", name="Lista para procesar"),
                 TaskStatus(id="PROCESSING", name="Procesando"),
-                TaskStatus(id="REVIEW", name="Revisión"),
+                TaskStatus(id="PROCESSED", name="Procesado"),
                 TaskStatus(id="APPROVED", name="Aprobada"),
                 TaskStatus(id="ARCHIVED", name="Archivada"),
             ])
@@ -69,7 +70,7 @@ def seed_static_data():
 
 def seed_admin_user():
     # Use SQLAlchemy session directly bound to same engine URL
-    from app.db import SessionLocal
+    from db import SessionLocal
     db: SASession = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == "admin").first()

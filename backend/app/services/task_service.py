@@ -101,10 +101,10 @@ class TaskService:
 
         # Si existe inferencia, agregar URLs públicas a los JSON
         if task.inference:
-            if task.inference.url_transition_counts:
-                payload["rutasUrl"] = f"{public_base}/{task.inference.url_transition_counts}"
-            if task.inference.url_transition_undetermined:
-                payload["indeterminadosUrl"] = f"{public_base}/{task.inference.url_transition_undetermined}"
+            if task.inference.transition_counts:
+                payload["rutas"] = json.loads(task.inference.transition_counts)
+            if task.inference.transition_undetermined:
+                payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
 
         return payload
         
@@ -211,7 +211,6 @@ class TaskService:
 
         try:
             for i, road_in in enumerate(roads_in):
-                # road_in: RoadPolygon
                 road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.IN,
@@ -241,11 +240,21 @@ class TaskService:
                 from_date=datetime.datetime.now(),
                 task_id=task.id,
                 status_id=task_status_configured.id,
+                to_date=datetime.datetime.now(),
+            )
+            self.db.add(new_task_status_history)
+
+            # Create task status history READY_TO_PROCESS
+            task_status_ready_to_process = self.task_status_service.get_by_id("READY_TO_PROCESS")
+            new_task_status_history = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=task_status_ready_to_process.id,
             )
             self.db.add(new_task_status_history)
 
             self.db.commit()
-            self.process_video(task.id)
+            # self.process_video(task.id)
             return task
         except Exception as e:
             self.db.rollback()
@@ -625,3 +634,31 @@ class TaskService:
             key = task.video.url
             base_name = f"{task.video.name}.{task.video.format}"
         return key, base_name
+
+    def get_tasks_by_status(self, status_id: str) -> list[Task]:
+        return task_crud.find_by_fields(self.db, status_id=status_id)
+    
+    def get_roads_by_task(self, task: Task) -> list[Road]:
+        return self.road_service.find_by_fields(video_id=task.video_id)
+    
+    def update_task_status(self, task_id: int, status_id: str, commit: bool = False):
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        try:
+            current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
+            current_task_status_history.to_date = datetime.datetime.now()
+            self.db.flush()
+            task_status = self.task_status_service.get_by_id(status_id)
+            new_task_status_history = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=task_status.id,
+            )
+            self.db.add(new_task_status_history)
+            self.db.flush()
+            if commit:
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

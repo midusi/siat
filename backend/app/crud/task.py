@@ -1,6 +1,6 @@
 # crud/task.py
 from sqlalchemy.orm import sessionmaker, joinedload
-from sqlalchemy.sql import and_, or_
+from sqlalchemy.sql import and_, or_, asc
 from app.models import Task, TaskStatusHistory, Locality
 import datetime
 
@@ -70,17 +70,23 @@ def find_all_archived(db: sessionmaker) -> list[Task]:
     )
     return tasks
 
-def find_by_fields(db: sessionmaker, **filters) -> list[Task]:
+def find_by_fields(db: sessionmaker, status_id: str = None) -> list[Task] | None:
     now = datetime.datetime.now()
-    tasks = (
+    
+    # Construir las condiciones de filtro dinámicamente
+    filter_conditions = [
+        TaskStatusHistory.from_date <= now,
+        or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
+    ]
+    
+    if status_id:
+        filter_conditions.append(TaskStatusHistory.status_id == status_id)
+    
+    return (
         db.query(Task)
         .join(Task.status_history)
-        .filter(
-            and_(
-                TaskStatusHistory.from_date <= now,
-                or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
-            )
-        )
+        .filter(and_(*filter_conditions))
+        .order_by(asc(TaskStatusHistory.from_date))
         .options(
             joinedload(Task.locality).joinedload(Locality.district),
             joinedload(Task.video),
@@ -88,7 +94,23 @@ def find_by_fields(db: sessionmaker, **filters) -> list[Task]:
         )
         .all()
     )
-    return tasks
 
 def find_one_by_fields(db: sessionmaker, **filters) -> list[Task] | None:
     return db.query(Task).filter_by(**filters).first()
+
+
+def find_all_by_status(db: sessionmaker, status_id: str) -> list[Task]:
+    now = datetime.datetime.now()
+    tasks = (
+        db.query(Task)
+        .join(Task.status_history)
+        .filter(
+            and_(
+                TaskStatusHistory.status_id == status_id,
+                TaskStatusHistory.from_date <= now,
+                or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
+            )
+        )
+        .all()
+    )
+    return tasks

@@ -19,8 +19,7 @@ class RoadService:
         import json
         return Road(
             name=name if name is not None and len(name) > 0 else f"Vía {number}",
-            number=number,
             direction=direction,
-            polygon=json.dumps(polygon),
+            polygon=polygon,
             video_id=video_id,
         )
