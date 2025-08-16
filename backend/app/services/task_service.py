@@ -205,29 +205,29 @@ class TaskService:
         for road in currents_road:
             self.db.delete(road)
 
-        # roads_in y roads_out son listas de listas de pares [x, y] (enteros)
+        # roads_in y roads_out: listas de objetos con name y polygon (lista de pares [x, y])
         roads_in = task_config_request.roads_in
         roads_out = task_config_request.roads_out
 
         try:
-            for i, polygon in enumerate(roads_in):
-                # polygon: list[list[int]]
+            for i, road_in in enumerate(roads_in):
+                # road_in: RoadPolygon
                 road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.IN,
-                    polygon=polygon,
+                    polygon=road_in.polygon,
                     video_id=task.video.id,
+                    name=road_in.name,
                 )
                 self.db.add(road)
 
-            import json
-            for i, polygon in enumerate(roads_out):
-                road = Road(
-                    name=f"Vía {i+1}",
+            for i, road_out in enumerate(roads_out):
+                road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.OUT,
-                    polygon=json.dumps(polygon),
+                    polygon=road_out.polygon,
                     video_id=task.video.id,
+                    name=road_out.name,
                 )
                 self.db.add(road)
 

@@ -21,9 +21,14 @@ class TaskResponse(BaseModel):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
     
+class RoadPolygon(BaseModel):
+    name: str
+    # 4 puntos, cada punto [x, y]
+    polygon: list[list[int]]
+
 class TaskConfigRequest(BaseModel):
-    roads_in: list[list[list[int]]]
-    roads_out: list[list[list[int]]]
+    roads_in: list[RoadPolygon]
+    roads_out: list[RoadPolygon]
     
     model_config = ConfigDict(from_attributes=True)
 

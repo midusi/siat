@@ -9,7 +9,7 @@
 	import { showAlert } from '$lib/dialog';
 
 	// --- Estado de la Carga de Datos ---
-	let imageSrc: string = '/images/rotonda_manual.png';
+	let imageSrc: string = '';
 	let isLoading: boolean = true;
 	let errorMessage: string | null = null;
 	let taskId: string;
@@ -49,8 +49,8 @@
 	// --- Estado de la Interfaz ---
 	let isSubmitting = false; // Para deshabilitar el botón "Finalizar" durante el envío
 
-	// --- Opciones (pueden venir de una API) ---
-	let opcionesVias = ['Ruta 2', 'Ruta 8', 'Ruta 33', 'Ruta 215'];
+	// --- Opciones ---
+	// Via ahora es texto libre; mantener únicamente los sentidos predefinidos
 	let opcionesSentido = ['Entrada', 'Salida'];
 
 	// --- Ciclo de vida y Eventos ---
@@ -75,6 +75,15 @@
 				videoWidth = info.width;
 				videoHeight = info.height;
 				imageB64 = info.image_b64;
+				// Actualizar dimensiones del frame usadas para las transformaciones
+				frameWidth = videoWidth;
+				frameHeight = videoHeight;
+				// Construir el src de la imagen desde el base64 recibido
+				if (imageB64) {
+					imageSrc = `data:image/jpeg;base64,${imageB64}`;
+				} else {
+					throw new Error('Respuesta sin imagen base64');
+				}
 			} catch (error) {
 				console.error('No se pudo cargar el frame de la tarea:', error);
 				errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
@@ -173,7 +182,7 @@
 			const verticesOrdenados = ordenarVertices(currentPoints);
 			pendingPolygon = {
 				vertices: verticesOrdenados,
-				via: opcionesVias[0],
+				via: '',
 				sentido: opcionesSentido[0]
 			};
 			currentPoints = [];
@@ -195,7 +204,11 @@
 
 	function handleKeyDown(event: KeyboardEvent) {
 		if (pendingPolygon) {
-			if (event.key === 'Enter') confirmPendingPolygon();
+			if (event.key === 'Enter') {
+				if (pendingPolygon.via && pendingPolygon.via.trim().length > 0) {
+					confirmPendingPolygon();
+				}
+			}
 			if (event.key === 'Escape') cancelPendingPolygon();
 			return;
 		}
@@ -210,7 +223,7 @@
 			...poligonos,
 			{
 				id: Date.now(),
-				via: pendingPolygon.via,
+				via: pendingPolygon.via.trim(),
 				sentido: pendingPolygon.sentido,
 				vertices: pendingPolygon.vertices
 			}
@@ -235,17 +248,17 @@
 		isSubmitting = true;
 
 		// Construir el objeto de envío con las claves correctas para el backend
+		const toAbs = (v: { x: number; y: number }) => [
+			Math.round(v.x * frameWidth),
+			Math.round(v.y * frameHeight)
+		];
 		const payload = {
 			roads_in: poligonos
 				.filter((p) => p.sentido === 'Entrada')
-				.map((p) =>
-					p.vertices.map((v) => [Math.round(v.x * frameWidth), Math.round(v.y * frameHeight)])
-				),
+				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
 			roads_out: poligonos
 				.filter((p) => p.sentido === 'Salida')
-				.map((p) =>
-					p.vertices.map((v) => [Math.round(v.x * frameWidth), Math.round(v.y * frameHeight)])
-				)
+				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) }))
 		};
 
 		console.log('Enviando datos:', payload);
@@ -442,24 +455,43 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 
 			<!-- Columna Derecha: Imagen y Canvas -->
 			<div class="lg:col-span-2 mt-8 lg:mt-0">
-				<div
-					class="canvas-container rounded-lg overflow-hidden shadow-2xl border-2 border-gray-700"
-					on:click={handleCanvasClick}
-					role="button"
-					tabindex="0"
-					on:keydown={() => {}}
-					aria-label="Definir zona en la imagen"
-				>
-					<img
-						src={imageSrc}
-						alt="Imagen base"
-						bind:this={imageRef}
-						on:load={setupCanvas}
-						class="w-full h-auto opacity-70 prevent-drag"
-						draggable="false"
-					/>
-					<canvas bind:this={canvas}></canvas>
-				</div>
+				{#if isLoading}
+					<div
+						class="rounded-lg overflow-hidden shadow-2xl border-2 border-gray-700 flex items-center justify-center bg-[#23263a] text-gray-300"
+						style="aspect-ratio: {frameWidth} / {frameHeight};"
+					>
+						Cargando imagen
+					</div>
+				{:else if errorMessage}
+					<div
+						class="rounded-lg overflow-hidden shadow-2xl border-2 border-red-700 flex items-center justify-center bg-[#2d1f1f] text-red-300 p-4"
+						style="aspect-ratio: {frameWidth} / {frameHeight};"
+					>
+						{errorMessage}
+					</div>
+				{:else}
+					<div
+						class="canvas-container rounded-lg overflow-hidden shadow-2xl border-2 border-gray-700"
+						on:click={handleCanvasClick}
+						role="button"
+						tabindex="0"
+						on:keydown={() => {}}
+						aria-label="Definir zona en la imagen"
+					>
+						<img
+							src={imageSrc}
+							alt="Imagen base"
+							bind:this={imageRef}
+							on:load={() => {
+								setupCanvas();
+								isLoading = false;
+							}}
+							class="w-full h-auto opacity-70 prevent-drag"
+							draggable="false"
+						/>
+						<canvas bind:this={canvas}></canvas>
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -474,12 +506,15 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 			<h3 class="font-semibold text-center text-lg mb-3">Confirmar Zona</h3>
 			<div class="space-y-3">
 				<div>
-					<label for="via-select" class="block mb-1 text-sm text-gray-300">Vía:</label>
-					<select id="via-select" bind:value={pendingPolygon.via} class="select-input">
-						{#each opcionesVias as opcion}
-							<option value={opcion}>{opcion}</option>
-						{/each}
-					</select>
+					<label for="via-input" class="block mb-1 text-sm text-gray-300">Vía (obligatorio):</label>
+					<input
+						id="via-input"
+						type="text"
+						bind:value={pendingPolygon.via}
+						class="select-input"
+						placeholder="Nombre de la vía"
+						required
+					/>
 				</div>
 				<div>
 					<label for="sentido-select" class="block mb-1 text-sm text-gray-300">Sentido:</label>
@@ -492,7 +527,16 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 			</div>
 			<div class="flex gap-2 pt-4">
 				<button on:click={cancelPendingPolygon} class="btn-secondary">Cancelar (Esc)</button>
-				<button on:click={confirmPendingPolygon} class="btn-primary">Confirmar (Enter)</button>
+				<button
+					on:click={() => {
+						if (pendingPolygon?.via && pendingPolygon.via.trim().length > 0) {
+							confirmPendingPolygon();
+						}
+					}}
+					class="btn-primary"
+					disabled={!pendingPolygon.via || pendingPolygon.via.trim().length === 0}
+					>Confirmar (Enter)</button
+				>
 			</div>
 		</div>
 	{/if}
@@ -553,6 +597,12 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 	}
 	.btn-primary:hover {
 		background-color: #3b82f6;
+	}
+	.btn-primary:disabled {
+		background-color: #6b7280; /* gray-500 */
+		cursor: not-allowed;
+		opacity: 0.6;
+		pointer-events: none; /* evita clicks/hover */
 	}
 	.btn-secondary {
 		width: 100%;
