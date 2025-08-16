@@ -133,6 +133,9 @@ videos/
 **/.venv/
 **/__pycache__/
 **.svelte-kit
-modelo/
 minio/
 *.mp4
+.vscode
+
+# Modelos PyTorch
+*.pt
