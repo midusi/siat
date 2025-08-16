@@ -25,14 +25,17 @@
 			badgeClass: 'bg-gray-900 text-gray-200',
 			actions: ['configurar', 'eliminar']
 		},
-		CONFIGURED: { badgeClass: 'bg-indigo-900 text-indigo-200', actions: ['configurar'] },
-		PROCESSING: { badgeClass: 'bg-blue-900 text-blue-200', actions: [] },
+		CONFIGURED: {
+			badgeClass: 'bg-indigo-900 text-indigo-200',
+			actions: ['configurar', 'eliminar']
+		},
+		PROCESSING: { badgeClass: 'bg-blue-900 text-blue-200', actions: ['eliminar'] },
 		REVIEW: {
 			badgeClass: 'bg-yellow-900 text-yellow-200',
 			actions: ['revisar', 'archivar', 'eliminar']
 		},
-		APPROVED: { badgeClass: 'bg-green-900 text-green-200', actions: [] },
-		ARCHIVED: { badgeClass: 'bg-gray-800 text-gray-300', actions: [] }
+		APPROVED: { badgeClass: 'bg-green-900 text-green-200', actions: ['eliminar'] },
+		ARCHIVED: { badgeClass: 'bg-gray-800 text-gray-300', actions: ['eliminar'] }
 	};
 
 	let rows = $state<TaskRow[]>([]);
