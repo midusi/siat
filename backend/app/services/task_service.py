@@ -211,7 +211,6 @@ class TaskService:
 
         try:
             for i, polygon in enumerate(roads_in):
-                # polygon: list[list[int]]
                 road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.IN,
@@ -220,10 +219,8 @@ class TaskService:
                 )
                 self.db.add(road)
 
-            import json
             for i, polygon in enumerate(roads_out):
-                road = Road(
-                    name=f"Vía {i+1}",
+                road = self.road_service.create(
                     number=i+1,
                     direction=RoadDirection.OUT,
                     polygon=polygon,
@@ -241,6 +238,16 @@ class TaskService:
                 from_date=datetime.datetime.now(),
                 task_id=task.id,
                 status_id=task_status_configured.id,
+                to_date=datetime.datetime.now(),
+            )
+            self.db.add(new_task_status_history)
+
+            # Create task status history READY_TO_PROCESS
+            task_status_ready_to_process = self.task_status_service.get_by_id("READY_TO_PROCESS")
+            new_task_status_history = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task.id,
+                status_id=task_status_ready_to_process.id,
             )
             self.db.add(new_task_status_history)
 

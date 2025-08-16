@@ -1,6 +1,5 @@
 import subprocess
 import os
-import json
 from pathlib import Path
 
 import typer
@@ -47,7 +46,6 @@ def run_process():
     video_key = task_to_process.video.url  # Asumiendo que url contiene la key del bucket
     local_video_path = f"temp_video_{task_to_process.id}.mp4"
     bucket_service.download(local_video_path, video_key)
-    typer.echo(f"Video descargado localmente: {local_video_path}")
     input_video_path = local_video_path
     
     # Paso 4: Obtener los polígonos de entrada y salida
@@ -58,10 +56,6 @@ def run_process():
     
     names_polygons_in = [road.name for road in roads if road.direction == "Entrada"]
     names_polygons_out = [road.name for road in roads if road.direction == "Salida"]
-    
-    typer.echo("Parámetros obtenidos de la base de datos.")
-    typer.echo(f"Polígonos de entrada: {names_polygons_in}")
-    typer.echo(f"Polígonos de salida: {names_polygons_out}")
     
     # Manejar la transacción completa
     try:
@@ -86,7 +80,7 @@ def run_process():
         # Ejecuta el comando en un subproceso
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         
-        # Paso 6: Subir archivos JSON generados al bucket
+        # Paso 6: Obtener la información resultante del procesamiento
         # Obtener el directorio donde process.py generó los archivos
         video_name = os.path.splitext(os.path.basename(input_video_path))[0]
         output_dir = os.path.join(os.path.dirname(input_video_path), video_name)
@@ -95,9 +89,19 @@ def run_process():
         local_counts_path = os.path.join(output_dir, "transition_counts.json")
         local_undetermined_path = os.path.join(output_dir, "transition_undetermined_object.json")
         local_determined_path = os.path.join(output_dir, "transition_determined_object.json")
+        local_output_video_path = os.path.join(output_dir, "processed.mp4")
         
-        # Subir archivos al bucket
-        typer.echo("Subiendo archivos JSON al bucket...")
+        # Obtener el nombre del video
+        filename = os.path.basename(task_to_process.video.url)
+        # Quitar la extensión
+        hash_value, _ = os.path.splitext(filename)  
+        
+        bucket_video_path = f"task/{task_to_process.id}/{hash_value}_processed.mp4"
+        
+        # Subir video procesado al bucket
+        typer.echo("Subiendo el video procesado al bucket...")
+        with open(local_output_video_path, "rb") as f:
+            bucket_service.upload(f, object_name=bucket_video_path, content_type="video/mp4")
         
         # Leer transition_counts.json
         with open(local_counts_path, 'r', encoding='utf-8') as f:
@@ -116,7 +120,8 @@ def run_process():
             task_id=task_to_process.id,
             transition_counts=counts_content,
             transition_undetermined=undetermined_content,
-            transition_determined=determined_content
+            transition_determined=determined_content,
+            url_video_processed=bucket_video_path
         )
         
         # Paso 8: Cambiar estado de tarea a PROCESSED
@@ -142,12 +147,12 @@ def run_process():
         typer.echo(e.stderr)
         typer.echo("-------------------------------------\n")
         
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         # Hacer rollback de toda la transacción
         db.rollback()
         typer.echo("Error: Archivo no encontrado. Haciendo rollback de todos los cambios...")
         typer.echo("Error: Asegúrate de que `process.py` existe en la ruta especificada.")
-        
+        typer.echo(f"Error: {e}")
     except Exception as e:
         # Cualquier otro error
         db.rollback()
@@ -158,6 +163,11 @@ def run_process():
         if os.path.exists(local_video_path):
             os.remove(local_video_path)
             typer.echo(f"Archivo temporal eliminado: {local_video_path}")
+            
+        # Limpiar el archivo temporal del video procesado
+        if os.path.exists(local_output_video_path):
+            os.remove(local_output_video_path)
+            typer.echo(f"Archivo temporal eliminado: {local_output_video_path}")
         
         typer.Exit(code=0)
 

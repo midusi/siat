@@ -18,7 +18,6 @@ class RoadService:
     def create(self, number: int, direction: RoadDirection, polygon, video_id: int) -> Road:
         return Road(
             name=f"Vía {number}",
-            number=number,
             direction=direction,
             polygon=polygon,
             video_id=video_id,

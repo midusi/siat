@@ -109,7 +109,7 @@ class Inference(Base):
     transition_counts = Column(JSON, nullable=False)
     transition_undetermined = Column(JSON, nullable=False)
     transition_determined = Column(JSON, nullable=False)
-    url_video_processed = Column(String, nullable=True)
+    url_video_processed = Column(String, nullable=False)
     inferred_at = Column(DateTime, nullable=False)
     
     task = relationship("Task", back_populates="inference")

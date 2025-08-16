@@ -282,7 +282,7 @@ class ObjectTracker:
                 self.track_first_out_zone[track_id] = zone_out_idx
 
                 
-    def _draw_bbox_and_track(self, box: np.ndarray, class_id: int, track_id: int, act_frame: int, confidence: float, frame: np.ndarray):
+    def _draw_bbox_and_track(self, box: np.ndarray, class_id: int, track_id: int, act_frame: int, confidence: float, frame: np.ndarray, annotator: Annotator):
         """
         Dibuja el bounding box y el historial de seguimiento de un objeto en el frame.
         También almacena los datos del objeto para el análisis posterior.
@@ -296,6 +296,9 @@ class ObjectTracker:
             act_frame (int): Número del frame actual.
             confidence (float): Confianza de la detección.
         """
+
+        # Dibujar el bounding box
+        annotator.box_label(box, self.class_names[class_id], color=(0, 255, 255))
 
         # Almacenar historial de datos del objeto para el cálculo de entropía
         self.data_obj_history[track_id].append({
@@ -462,7 +465,7 @@ class ObjectTracker:
                 self._register_zone_entry_exit(box, track_id)
                 
                 # Dibujar bounding box, etiqueta y historial de seguimiento, y almacenar datos
-                self._draw_bbox_and_track(box, class_id, track_id, act_frame, confidence, frame)
+                self._draw_bbox_and_track(box, class_id, track_id, act_frame, confidence, frame, annotator)
         
         return frame
 
@@ -477,6 +480,7 @@ class ObjectTracker:
                                                Si es None, se usa la lógica de generación por defecto.
             display_video (bool): Si es True, muestra la ventana del video. Por defecto: True.
         """
+            
         cap = cv2.VideoCapture(video_path)
 
         if not cap.isOpened():
@@ -484,6 +488,18 @@ class ObjectTracker:
             return
 
         w, h, fps = (int(cap.get(x)) for x in (cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT, cv2.CAP_PROP_FPS))
+        
+        # Inicializar el video de salida
+        try:
+            # Codec avc1 (H.264) para compatibilidad con navegadores
+            fourcc = cv2.VideoWriter_fourcc(*'avc1') 
+            video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
+            if not video_writer.isOpened():
+                print(f"Advertencia: No se pudo abrir VideoWriter para {output_video_path}.")
+                exit(1)
+        except Exception as e:
+            print(f"Error al inicializar VideoWriter: {e}.")
+            exit(1)
         
         # Intentar obtener el número total de frames para el progreso
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -533,17 +549,14 @@ class ObjectTracker:
 
             # Procesar solo cada segundo frame, como en el código original
             if act_frame % 2 == 0:
-                # Si el frame se redimensiona, aplicar aquí si es necesario
-                # alto_original, ancho_original = frame.shape[:2]
-                # ancho_nuevo = 1920
-                # alto_nuevo = int(alto_original * (ancho_nuevo / ancho_original))
-                # frame = cv2.resize(frame, (ancho_nuevo, alto_nuevo))
-
                 # Realizar seguimiento de objetos
                 results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
                 
                 # Procesar el frame (dibujar zonas, BBs, etc.)
                 processed_frame = self.process_frame(frame, results, act_frame)
+
+                # Escribir el frame procesado en el video de salida
+                video_writer.write(processed_frame)
 
                 # Mostrar el frame procesado SOLO SI display_video es True
                 if display_video:
@@ -564,6 +577,7 @@ class ObjectTracker:
 
         # Liberar recursos
         cap.release()
+        video_writer.release()
         
         # Destruir ventanas SOLO si se mostraron
         if display_video:
