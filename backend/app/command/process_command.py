@@ -77,6 +77,7 @@ def run_process():
         ]
         
         typer.echo("Ejecutando el script `process.py`...")
+        typer.echo(f"Comando: {' '.join(command)}")
         # Ejecuta el comando en un subproceso
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         

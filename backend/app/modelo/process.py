@@ -552,7 +552,9 @@ class ObjectTracker:
 
             # Escribir el frame procesado en el video de salida
             # video_writer.write(processed_frame)
-            writer.append_data(processed_frame)
+            frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+            writer.append_data(frame_rgb)
+            # writer.append_data(processed_frame)
 
             # Mostrar el frame procesado SOLO SI display_video es True
             if display_video:
