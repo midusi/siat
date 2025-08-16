@@ -161,3 +161,26 @@ class BucketService:
         except Exception as e:
             print(f"Error al eliminar por prefijo: {e}")
             raise
+    
+    def stream_object(self, object_name: str, chunk_size: int = 1024 * 1024):
+        """Devuelve un generador para transmitir (stream) un objeto grande desde el bucket.
+        Retorna (generator, content_type, content_length)
+        """
+        try:
+            obj = self.s3_client.get_object(Bucket=self.BUCKET_NAME, Key=object_name)
+            body = obj['Body']
+            content_type = obj.get('ContentType') or self._infer_content_type(object_name)
+            content_length = obj.get('ContentLength')
+
+            def iter_chunks():
+                while True:
+                    chunk = body.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+
+            return iter_chunks(), content_type, content_length
+        except self.s3_client.exceptions.NoSuchKey:
+            raise FileNotFoundError(f"Objeto no encontrado: {object_name}")
+        except Exception as e:
+            raise RuntimeError(f"Error al obtener objeto '{object_name}': {e}")

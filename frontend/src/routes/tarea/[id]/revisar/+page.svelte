@@ -489,10 +489,41 @@
 		});
 		return { titulo: 'Detalle de Rutas (Entrada -> Salida)', entradasDetalle };
 	});
+	function downloadVideo() {
+		if (!data?.id) return;
+		const url = `/api/task/${data.id}/download`;
+		fetch(url, { credentials: 'include' })
+			.then(async (res) => {
+				if (!res.ok) throw new Error('No se pudo descargar el video');
+				const blob = await res.blob();
+				const contentDisp = res.headers.get('Content-Disposition');
+				let filename = 'video.mp4';
+				if (contentDisp) {
+					const match = /filename="?([^";]+)"?/i.exec(contentDisp);
+					if (match?.[1]) filename = match[1];
+				}
+				const link = document.createElement('a');
+				link.href = URL.createObjectURL(blob);
+				link.download = filename;
+				link.click();
+				URL.revokeObjectURL(link.href);
+				showSuccess('Descarga iniciada');
+			})
+			.catch((e) => showError(e.message || 'Error al iniciar la descarga'));
+	}
 </script>
 
 <div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
-	<h1 class="text-3xl font-bold mb-8 text-center">Revisar Video Analizado</h1>
+	<h1 class="text-3xl font-bold mb-4 text-center">Revisar Video Analizado</h1>
+	{#if !loading && !error && videoPath}
+		<div class="flex justify-center mb-6">
+			<button
+				onclick={downloadVideo}
+				class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-semibold text-sm"
+				>Descargar Video</button
+			>
+		</div>
+	{/if}
 
 	{#if loading}
 		<p class="text-center text-xl">Cargando datos de la tarea...</p>
@@ -753,6 +784,16 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if !loading && !error}
+			<div class="flex justify-center mb-6">
+				<button
+					onclick={downloadVideo}
+					class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-semibold text-sm"
+					>Descargar Video</button
+				>
+			</div>
+		{/if}
 	{/if}
 </div>
 

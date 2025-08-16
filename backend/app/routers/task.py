@@ -4,7 +4,7 @@ from app.services.task_service import TaskService
 from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
 from app.services.dependencies import get_task_service
 from datetime import datetime
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from app.auth.dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/task", tags=["task"], dependencies=[Depends(get_current_user)])
@@ -99,3 +99,14 @@ async def get_first_frame_info(task_id: int, service: TaskService = Depends(get_
 def delete_task(task_id: int, service: TaskService = Depends(get_task_service)):
     service.delete(task_id)
     return Response(status_code=204)
+
+@router.get("/{task_id}/download", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
+def download_video(task_id: int, service: TaskService = Depends(get_task_service)):
+    """Devuelve el video asociado a la tarea como descarga (streaming completo).
+    Si existe un video procesado se prioriza. (No implementa Range)."""
+    video_key, filename = service.get_video_download_info(task_id)
+    gen, content_type, content_length = service.video_service.get_video_stream(video_key)
+    headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
+    if content_length:
+        headers['Content-Length'] = str(content_length)
+    return StreamingResponse(gen, media_type=content_type, headers=headers)

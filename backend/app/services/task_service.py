@@ -608,3 +608,20 @@ class TaskService:
         except Exception as e:
             self.db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No se pudo eliminar la tarea: {str(e)}")
+
+    def get_video_download_info(self, task_id: int) -> tuple[str, str]:
+        """Retorna (video_key, filename_sugerido) para descarga.
+        Usa el video procesado si existe, si no el original.
+        """
+        task = task_crud.find_one_by_fields(self.db, id=task_id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+        if not task.video:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
+        if task.inference and task.inference.url_video_processed:
+            key = task.inference.url_video_processed
+            base_name = f"{task.video.name}_processed.{task.video.format}"
+        else:
+            key = task.video.url
+            base_name = f"{task.video.name}.{task.video.format}"
+        return key, base_name

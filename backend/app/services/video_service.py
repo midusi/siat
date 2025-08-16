@@ -80,3 +80,9 @@ class VideoService:
 
             # 4. Devolver la cadena Base64
             return jpg_as_text
+        
+    def get_video_stream(self, video_key: str):
+        """Obtiene un generador de bytes para transmitir el video desde el bucket.
+        Devuelve (generator, content_type, content_length)
+        """
+        return self.bucket_service.stream_object(video_key)
