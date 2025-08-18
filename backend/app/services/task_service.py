@@ -442,10 +442,8 @@ class TaskService:
 
     # NEW: Persist updated rutas and indeterminados coming from frontend
     def update_data(self, task_id: int, updated_data: TaskUpdateData) -> dict:
-        """Actualiza los archivos transition_counts.json y transition_undetermined.json
-        en el bucket para mantener consistencia con los datos editados en el frontend.
-        Si la tarea no tiene registro de Inference, se crea uno nuevo apuntando a estos archivos.
-        Devuelve las URLs públicas actualizadas.
+        """Actualiza los campos transition_counts y transition_undetermined de la inferencia.
+        Devuelve la inferencia actualizada.
         """
         # Validaciones básicas
         task = task_crud.find_one_by_fields(self.db, id=task_id)
@@ -455,57 +453,25 @@ class TaskService:
         if not video:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
 
+        inference = task.inference
+        if not inference:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no tiene inferencia")
+
         rutas = updated_data.rutas or {}
         indeterminados = updated_data.indeterminados or {}
 
-        # Estructura en archivos (envolvemos como en la inferencia original)
-        rutas_payload = {"rutas": rutas}
-        indeterminados_payload = {"indeterminados": indeterminados}
-
-        video_folder = os.path.dirname(video.url)
-        # Usamos paths existentes si hay Inference, sino los generamos por convención
-        if task.inference:
-            counts_path = task.inference.url_transition_counts or f"{video_folder}/transition_counts.json"
-            und_path = task.inference.url_transition_undetermined or f"{video_folder}/transition_undetermined.json"
-        else:
-            counts_path = f"{video_folder}/transition_counts.json"
-            und_path = f"{video_folder}/transition_undetermined.json"
-
         try:
-            # Subir archivos actualizados al bucket
-            counts_str = json.dumps(rutas_payload, ensure_ascii=False, indent=2)
-            und_str = json.dumps(indeterminados_payload, ensure_ascii=False, indent=2)
-            self.bucket_service.upload(counts_str, counts_path)
-            self.bucket_service.upload(und_str, und_path)
-
-            # Asegurar registro de Inference existente/actualizado
-            if not task.inference:
-                inference = Inference(
-                    task_id=task.id,
-                    url_transition_counts=counts_path,
-                    url_transition_undetermined=und_path,
-                    url_video_processed=video.url,  # por ahora usamos el original si no hay procesado
-                    inferred_at=datetime.datetime.now(),
-                )
-                self.db.add(inference)
-                self.db.flush()
-            else:
-                changed = False
-                if not task.inference.url_transition_counts:
-                    task.inference.url_transition_counts = counts_path
-                    changed = True
-                if not task.inference.url_transition_undetermined:
-                    task.inference.url_transition_undetermined = und_path
-                    changed = True
-                if changed:
-                    self.db.flush()
-
+            # Serializar los datos como JSON antes de asignarlos
+            # Guardar directamente los diccionarios sin envoltorio adicional
+            inference.transition_counts = json.dumps(rutas, ensure_ascii=False, indent=2)
+            inference.transition_undetermined = json.dumps(indeterminados, ensure_ascii=False, indent=2)
+            
+            self.db.flush()
             self.db.commit()
 
-            public_base = f"http://localhost:9000/{BucketService.BUCKET_NAME}"
             return {
-                "rutasUrl": f"{public_base}/{counts_path}",
-                "indeterminadosUrl": f"{public_base}/{und_path}",
+                "rutasUrl": inference.transition_counts,
+                "indeterminadosUrl": inference.transition_undetermined,
             }
         except Exception as e:
             self.db.rollback()
