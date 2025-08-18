@@ -11,17 +11,19 @@
 	let isLoginPage = $derived($page.url.pathname === '/login');
 </script>
 
-<div class="flex flex-col min-h-screen">
+<div class="flex flex-col min-h-screen app-background">
 	{#if !isLoginPage && user}
 		<Header {user} />
-		<div class="flex flex-1">
+		<div
+			class="flex flex-1 gap-[var(--layout-gap)] px-[var(--layout-gap)] pb-[var(--layout-bottom-gap)] mt-[var(--layout-gap)]"
+		>
 			<Sidebar {user} />
-			<main class="flex-1 overflow-x-auto bg-[#1a1e2a] text-gray-100">
+			<main class="flex-1 overflow-x-auto pt-[var(--layout-gap)]">
 				{@render children()}
 			</main>
 		</div>
 	{:else}
-		<main class="flex-1 overflow-x-auto bg-[#1a1e2a] text-gray-100">
+		<main class="flex-1 overflow-x-auto">
 			{@render children()}
 		</main>
 	{/if}

@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import GlassSelect from '$lib/components/GlassSelect.svelte';
 
 	// --- Estado de la Carga de Datos ---
 	let imageSrc: string = '';
@@ -365,44 +366,55 @@
 	}
 
 	$: if (pendingPolygon) requestAnimationFrame(redrawCanvas);
+	function goBack() {
+		goto('/');
+	}
 </script>
 
-<div class="min-h-screen bg-[#1a1e2a] text-white py-8 px-4">
-	<div class=" mx-auto">
+<div class="page-container">
+	<div class="mx-auto">
 		<!-- Título y descripción generales -->
-		<div class="text-center mb-6">
-			<h1 class="text-3xl font-bold">Asignar Vías</h1>
-			<p class="text-gray-400 mt-2">
-				Haz clic 4 veces en la imagen para definir una zona. Usa <kbd class="key-kbd">Backspace</kbd
-				>
-				para deshacer o
-				<kbd class="key-kbd">Esc</kbd> para cancelar.
-			</p>
+		<div class="mb-6 flex items-center justify-between">
+			<div>
+				<h1 class="heading-1">Asignar Vías</h1>
+				<p class="text-white/70 mt-1 text-sm">
+					Haz clic 4 veces en la imagen para definir una zona. Usa <kbd class="key-kbd"
+						>Backspace</kbd
+					>
+					para deshacer o
+					<kbd class="key-kbd">Esc</kbd> para cancelar.
+				</p>
+			</div>
+			<button
+				class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
+				onclick={goBack}
+				aria-label="Volver"
+			>
+				← Volver
+			</button>
 		</div>
 
-		<!-- Contenedor Principal con Layout de Grid -->
-		<div class="lg:grid lg:grid-cols-3 lg:gap-8">
+		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
+		<div class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start">
 			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
-			<div
-				class="lg:col-span-1 flex flex-col h-full bg-[#23263a] border border-gray-700 rounded-lg shadow-xl p-4 lg:mr-4 mb-8 lg:mb-0"
-			>
+			<div class="flex flex-col h-full glass-card p-4 lg:mr-4 mb-8 lg:mb-0">
 				<div>
-					<h2 class="text-xl font-semibold mb-4">Vías Definidas ({poligonos.length})</h2>
+					<h2 class="heading-2 mb-4">Vías Definidas ({poligonos.length})</h2>
 					{#if poligonos.length === 0}
-						<p class="text-gray-400 text-center py-4 bg-[#2d3748] rounded-lg">
+						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
 						</p>
 					{:else}
 						<div class="space-y-3">
 							{#each poligonos as poly (poly.id)}
 								<div
-									class="bg-[#2d3748] p-3 rounded-lg border-l-4 flex justify-between items-center transition-all"
+									class="glass-surface p-3 rounded-lg flex justify-between items-center transition-all border"
 									class:border-green-400={poly.sentido === 'Entrada'}
 									class:border-red-400={poly.sentido === 'Salida'}
 									out:fly={{ y: -10, opacity: 0, duration: 250, easing: quintOut }}
 								>
 									<div>
-										<p class="font-bold text-lg text-blue-300">{poly.via}</p>
+										<p class="font-semibold text-base">{poly.via}</p>
 										<p
 											class="text-sm"
 											class:text-green-300={poly.sentido === 'Entrada'}
@@ -412,8 +424,8 @@
 										</p>
 									</div>
 									<button
-										on:click={() => eliminarPoligono(poly.id)}
-										class="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-red-500"
+										onclick={() => eliminarPoligono(poly.id)}
+										class="glass-button btn-danger"
 										aria-label="Eliminar vía"
 									>
 										<svg
@@ -443,11 +455,9 @@
 				<!-- Botón Finalizar -->
 				<div class="mt-auto pt-8">
 					<button
-						on:click={finalizarProceso}
+						onclick={finalizarProceso}
 						disabled={poligonos.length === 0 || isSubmitting}
-						class="w-full px-4 py-3 rounded font-semibold transition-colors text-lg flex items-center justify-center gap-2
-bg-green-600 hover:bg-green-500
-disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
+						class="w-full glass-button btn-success py-3 text-base flex items-center justify-center gap-2"
 					>
 						{#if isSubmitting}
 							<Spinner size={20} />
@@ -459,40 +469,43 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 				</div>
 			</div>
 
-			<!-- Columna Derecha: Imagen y Canvas -->
-			<div class="lg:col-span-2 mt-8 lg:mt-0">
+			<!-- Columna Derecha: Imagen y Canvas (ocupa todo el ancho disponible) -->
+			<div class="mt-8 lg:mt-0 w-full">
 				{#if isLoading}
 					<div
-						class="rounded-lg overflow-hidden shadow-2xl border-2 border-gray-700 flex items-center justify-center bg-[#23263a] text-gray-300"
+						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center text-white/90"
 						style="aspect-ratio: {frameWidth} / {frameHeight};"
 					>
-						Cargando imagen
+						<div class="flex items-center gap-3">
+							<Spinner size={24} />
+							Cargando imagen...
+						</div>
 					</div>
 				{:else if errorMessage}
 					<div
-						class="rounded-lg overflow-hidden shadow-2xl border-2 border-red-700 flex items-center justify-center bg-[#2d1f1f] text-red-300 p-4"
+						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center border border-red-600/40 text-red-200 p-4"
 						style="aspect-ratio: {frameWidth} / {frameHeight};"
 					>
 						{errorMessage}
 					</div>
 				{:else}
 					<div
-						class="canvas-container rounded-lg overflow-hidden shadow-2xl border-2 border-gray-700"
-						on:click={handleCanvasClick}
+						class="canvas-container glass-card overflow-hidden shadow-2xl"
+						onclick={handleCanvasClick}
 						role="button"
 						tabindex="0"
-						on:keydown={() => {}}
+						onkeydown={() => {}}
 						aria-label="Definir zona en la imagen"
 					>
 						<img
 							src={imageSrc}
 							alt="Imagen base"
 							bind:this={imageRef}
-							on:load={() => {
+							onload={() => {
 								setupCanvas();
 								isLoading = false;
 							}}
-							class="w-full h-auto opacity-70 prevent-drag"
+							class="w-full h-auto opacity-100 prevent-drag"
 							draggable="false"
 						/>
 						<canvas bind:this={canvas}></canvas>
@@ -505,41 +518,42 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 	<!-- Popover Contextual para Confirmar Polígono -->
 	{#if pendingPolygon}
 		<div
-			class="popover bg-[#1a202c] p-4 rounded-lg shadow-2xl border border-gray-600 w-72"
+			class="popover glass-strong frost frost-polarized p-4 w-72 border shadow-2xl"
 			style="top: {popoverPosition.top}px; left: {popoverPosition.left}px; transform: {popoverPosition.transform};"
 			transition:fly={{ y: 20, duration: 250, easing: quintOut }}
 		>
 			<h3 class="font-semibold text-center text-lg mb-3">Confirmar Zona</h3>
 			<div class="space-y-3">
 				<div>
-					<label for="via-input" class="block mb-1 text-sm text-gray-300">Vía (obligatorio):</label>
+					<label for="via-input" class="block mb-1 text-sm text-white/80">Vía (obligatorio):</label>
 					<input
 						id="via-input"
 						type="text"
 						bind:value={pendingPolygon.via}
-						class="select-input"
+						class="glass-input"
 						placeholder="Nombre de la vía"
 						required
 					/>
 				</div>
 				<div>
-					<label for="sentido-select" class="block mb-1 text-sm text-gray-300">Sentido:</label>
-					<select id="sentido-select" bind:value={pendingPolygon.sentido} class="select-input">
-						{#each opcionesSentido as opcion}
-							<option value={opcion}>{opcion}</option>
-						{/each}
-					</select>
+					<label for="sentido-select" class="block mb-1 text-sm text-white/80">Sentido:</label>
+					<GlassSelect
+						id="sentido-select"
+						items={opcionesSentido.map((s) => ({ value: s, label: s }))}
+						value={pendingPolygon.sentido}
+						onChange={(v) => (pendingPolygon!.sentido = String(v))}
+					/>
 				</div>
 			</div>
 			<div class="flex gap-2 pt-4">
-				<button on:click={cancelPendingPolygon} class="btn-secondary">Cancelar (Esc)</button>
+				<button onclick={cancelPendingPolygon} class="glass-button">Cancelar (Esc)</button>
 				<button
-					on:click={() => {
+					onclick={() => {
 						if (pendingPolygon?.via && pendingPolygon.via.trim().length > 0) {
 							confirmPendingPolygon();
 						}
 					}}
-					class="btn-primary"
+					class="glass-button btn-success"
 					disabled={!pendingPolygon.via || pendingPolygon.via.trim().length === 0}
 					>Confirmar (Enter)</button
 				>
@@ -579,46 +593,5 @@ disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60"
 		background-color: #f3f4f6;
 		border: 1px solid #e5e7eb;
 		border-radius: 0.5rem;
-	}
-	.select-input {
-		width: 100%;
-		background-color: #2d3748;
-		padding: 0.5rem;
-		border-radius: 0.25rem;
-		border: 1px solid #4b5563;
-	}
-	.select-input:focus {
-		outline: none;
-		box-shadow: 0 0 0 2px #3b82f6;
-		border-color: #3b82f6;
-	}
-	.btn-primary {
-		width: 100%;
-		padding: 0.5rem 1rem;
-		background-color: #2563eb;
-		border-radius: 0.25rem;
-		font-weight: 600;
-		transition: background-color 0.2s;
-		color: white;
-	}
-	.btn-primary:hover {
-		background-color: #3b82f6;
-	}
-	.btn-primary:disabled {
-		background-color: #6b7280; /* gray-500 */
-		cursor: not-allowed;
-		opacity: 0.6;
-		pointer-events: none; /* evita clicks/hover */
-	}
-	.btn-secondary {
-		width: 100%;
-		padding: 0.5rem 1rem;
-		background-color: #4b5563;
-		border-radius: 0.25rem;
-		transition: background-color 0.2s;
-		color: white;
-	}
-	.btn-secondary:hover {
-		background-color: #6b7280;
 	}
 </style>

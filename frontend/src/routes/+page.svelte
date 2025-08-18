@@ -22,20 +22,29 @@
 	// Centralized status metadata to keep UI logic in one place
 	const STATUS_META: Record<string, { badgeClass: string; actions: ActionType[] }> = {
 		VIDEO_UPLOADED: {
-			badgeClass: 'bg-gray-900 text-gray-200',
+			badgeClass: 'border border-white/20 bg-white/10',
 			actions: ['configurar', 'eliminar']
 		},
 		CONFIGURED: {
-			badgeClass: 'bg-indigo-900 text-indigo-200',
+			badgeClass: 'border border-indigo-300/30 bg-indigo-300/10 text-indigo-100',
 			actions: ['configurar', 'eliminar']
 		},
-		PROCESSING: { badgeClass: 'bg-blue-900 text-blue-200', actions: ['eliminar'] },
+		PROCESSING: {
+			badgeClass: 'border border-blue-300/30 bg-blue-300/10 text-blue-100',
+			actions: ['eliminar']
+		},
 		PROCESSED: {
-			badgeClass: 'bg-yellow-900 text-yellow-200',
+			badgeClass: 'border border-yellow-300/30 bg-yellow-300/10 text-yellow-100',
 			actions: ['revisar', 'archivar', 'eliminar']
 		},
-		APPROVED: { badgeClass: 'bg-green-900 text-green-200', actions: ['eliminar'] },
-		ARCHIVED: { badgeClass: 'bg-gray-800 text-gray-300', actions: ['eliminar'] }
+		APPROVED: {
+			badgeClass: 'border border-green-300/30 bg-green-300/10 text-green-100',
+			actions: ['eliminar']
+		},
+		ARCHIVED: {
+			badgeClass: 'border border-white/10 bg-white/5 text-white/70',
+			actions: ['eliminar']
+		}
 	};
 
 	let rows = $state<TaskRow[]>([]);
@@ -144,12 +153,14 @@
 	let { data } = $props();
 </script>
 
-<TaskTable
-	title="Tareas"
-	{rows}
-	loading={loading.active}
-	onAction={handleAction}
-	{busy}
-	rightButtonLabel="Crear Tarea"
-	onRightButtonClick={goToCreateTask}
-/>
+<div class="page-container">
+	<TaskTable
+		title="Tareas"
+		{rows}
+		loading={loading.active}
+		onAction={handleAction}
+		{busy}
+		rightButtonLabel="Crear Tarea"
+		onRightButtonClick={goToCreateTask}
+	/>
+</div>

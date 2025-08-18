@@ -1,37 +1,54 @@
 <script lang="ts">
-	// src/lib/components/Header.svelte
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import { portal } from '$lib/actions/portal';
 
 	let { user } = $props<{ user: App.Locals['user'] }>();
 
 	let isDropdownOpen = $state(false);
 	let isLoggingOut = $state(false);
+	let btnEl: HTMLButtonElement | null = null;
+	let dropdownTop = $state(0);
+	let dropdownRight = $state(0);
 
 	function toggleDropdown(event: MouseEvent): void {
 		event.stopPropagation();
 		isDropdownOpen = !isDropdownOpen;
+		if (isDropdownOpen) positionDropdown();
 	}
 
 	function closeDropdown(event: MouseEvent): void {
 		const target = event.target as HTMLElement;
-		if (!target.closest('.user-dropdown-container')) {
+		if (!target.closest('.user-dropdown-container') && !target.closest('.user-menu')) {
 			isDropdownOpen = false;
 		}
+	}
+
+	function positionDropdown() {
+		if (!btnEl) return;
+		const rect = btnEl.getBoundingClientRect();
+		dropdownTop = Math.round(rect.bottom + 8);
+		dropdownRight = Math.round(window.innerWidth - rect.right);
 	}
 
 	$effect(() => {
 		if (typeof window !== 'undefined') {
 			if (isDropdownOpen) {
 				window.addEventListener('click', closeDropdown);
+				window.addEventListener('resize', positionDropdown);
+				window.addEventListener('scroll', positionDropdown, { passive: true });
 			} else {
 				window.removeEventListener('click', closeDropdown);
+				window.removeEventListener('resize', positionDropdown);
+				window.removeEventListener('scroll', positionDropdown);
 			}
 		}
 		return () => {
 			if (typeof window !== 'undefined') {
 				window.removeEventListener('click', closeDropdown);
+				window.removeEventListener('resize', positionDropdown);
+				window.removeEventListener('scroll', positionDropdown);
 			}
 		};
 	});
@@ -42,9 +59,7 @@
 			method: 'POST',
 			headers: { 'X-CSRF-Token': '1' }
 		});
-		if (res.ok || res.status === 204) {
-			await goto('/login');
-		}
+		if (res.ok || res.status === 204) await goto('/login');
 		isLoggingOut = false;
 	}
 
@@ -54,30 +69,32 @@
 	}
 </script>
 
-<header class="bg-[#0f1216] text-white py-3 px-4 flex justify-between items-center">
-	<div class="flex items-center gap-3">
-		<div class="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center">
-			<!-- Círculo amarillo con borde -->
-			<div class="w-7 h-7 rounded-full border-2 border-[#0f1216]"></div>
+<header
+	class="sticky top-[var(--layout-gap)] z-40 glass-strong frost px-4 py-3 flex justify-between items-center border glass-divider mx-[var(--layout-gap)] rounded-xl"
+	style="height: var(--header-height);"
+>
+	<div class="flex items-center gap-3 select-none">
+		<div class="w-9 h-9 rounded-full bg-yellow-500/90 flex items-center justify-center shadow-md">
+			<div class="w-8 h-8 rounded-full border-2 border-[#0f1216]"></div>
 		</div>
-		<div>
-			<span class="text-yellow-500 font-bold">ANÁLISIS DE</span>
+		<div class="leading-tight">
+			<span class="text-yellow-400 font-semibold tracking-wide">ANÁLISIS DE</span>
 			<br />
-			<span class="text-yellow-500 font-bold text-lg leading-none">TRÁNSITO</span>
+			<span class="text-yellow-400 font-bold text-lg">TRÁNSITO</span>
 		</div>
 	</div>
 
-	<div class="flex items-center gap-2 relative user-dropdown-container">
-		<span>{user?.first_name ?? user?.username}</span>
-		<!-- Botón del icono de usuario -->
+	<div class="flex items-center gap-3 relative user-dropdown-container">
+		<span class="opacity-90">{user?.first_name ?? user?.username}</span>
 		<button
-			class="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center focus:outline-none"
+			class="w-9 h-9 glass rounded-full flex items-center justify-center focus:outline-none hover:bg-white/10 transition-colors"
+			bind:this={btnEl}
 			onclick={toggleDropdown}
 			aria-label="Menú de usuario"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
-				class="h-5 w-5 text-white"
+				class="h-5 w-5 text-white/90"
 				fill="none"
 				viewBox="0 0 24 24"
 				stroke="currentColor"
@@ -91,21 +108,19 @@
 			</svg>
 		</button>
 
-		<!-- Menú desplegable -->
 		{#if isDropdownOpen}
 			<div
-				class="absolute right-0 top-full mt-2 w-64 bg-white rounded-md shadow-lg z-50 overflow-hidden"
+				use:portal
+				class="user-menu glass-strong frost frost-polarized z-50 overflow-hidden"
+				style={`position: fixed; top: ${dropdownTop}px; right: ${dropdownRight}px; width: 16rem;`}
 			>
-				<!-- Información del usuario -->
-				<div class="p-4 bg-gray-100 border-b">
-					<p class="font-medium text-gray-800">{user?.first_name} {user?.last_name}</p>
-					<p class="text-sm text-gray-600">{user?.email}</p>
+				<div class="p-4 border-b glass-divider">
+					<p class="font-medium">{user?.first_name} {user?.last_name}</p>
+					<p class="text-sm opacity-80">{user?.email}</p>
 				</div>
-
-				<!-- Opciones del menú -->
-				<div class="p-2">
+				<div class="p-2 flex flex-col gap-2">
 					<button
-						class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center"
+						class="w-full text-left px-4 py-2 text-sm rounded-md flex items-center glass-button"
 						onclick={goChangePassword}
 					>
 						<svg
@@ -125,7 +140,7 @@
 						Cambiar contraseña
 					</button>
 					<button
-						class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 rounded-md flex items-center gap-2 disabled:opacity-60"
+						class="w-full text-left px-4 py-2 text-sm rounded-lg flex items-center gap-2 btn-danger disabled:opacity-60"
 						disabled={isLoggingOut}
 						onclick={handleLogout}
 					>

@@ -8,6 +8,7 @@
 	import { z } from 'zod';
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import GlassSelect from '$lib/components/GlassSelect.svelte';
 
 	// Estado agrupado en un objeto form
 	let form = $state<TaskForm>({
@@ -189,17 +190,17 @@
 	}
 </script>
 
-<div class="min-h-screen bg-[#1a1e2a] text-white p-6">
+<div class="page-container">
 	<!-- Header con título y botón de volver -->
-	<div class="max-w-3xl mx-auto mb-6 flex items-center">
+	<div class="max-w-3xl mx-auto mb-6 flex items-center gap-2">
 		<button
-			class="text-white mr-2 p-2 rounded-full hover:bg-gray-700 transition-colors"
+			class="glass-button p-2 text-white/90 hover:text-white border border-white/20 bg-white/10 hover:bg-white/20"
 			onclick={goBack}
 			aria-label="Volver"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
-				class="h-6 w-6"
+				class="h-5 w-5"
 				fill="none"
 				viewBox="0 0 24 24"
 				stroke="currentColor"
@@ -212,12 +213,12 @@
 				/>
 			</svg>
 		</button>
-		<h1 class="text-2xl font-bold">Crear Tarea</h1>
+		<h1 class="heading-1">Crear Tarea</h1>
 	</div>
 
 	<!-- Formulario -->
-	<div class="max-w-3xl mx-auto bg-[#12151c] rounded-lg p-8 border border-gray-700 shadow-lg">
-		<h2 class="text-xl text-amber-400 text-center mb-8">Datos</h2>
+	<div class="max-w-3xl mx-auto glass-card p-6 sm:p-8">
+		<h2 class="heading-2 text-center mb-8">Datos</h2>
 
 		<form class="space-y-8">
 			<!-- Campo Nombre -->
@@ -226,14 +227,14 @@
 				<input
 					type="text"
 					id="nombre"
-					class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="glass-input"
 					bind:value={form.name}
 					placeholder="Ingrese el nombre de la tarea"
 				/>
 				{#if submitted && errors.name}
-					<span class="text-red-400 text-xs">{errors.name}</span>
+					<span class="text-red-300/90 text-xs">{errors.name}</span>
 				{/if}
-				<div class="border-t border-gray-700 mt-2"></div>
+				<div class="border-t glass-divider mt-2"></div>
 			</div>
 			<!-- Campo Fecha simple -->
 			<div class="flex flex-col space-y-2">
@@ -241,14 +242,14 @@
 				<input
 					type="date"
 					id="fecha"
-					class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="glass-input"
 					bind:value={form.date}
 					max={new Date().toISOString().split('T')[0]}
 				/>
 				{#if submitted && errors.date}
-					<span class="text-red-400 text-xs">{errors.date}</span>
+					<span class="text-red-300/90 text-xs">{errors.date}</span>
 				{/if}
-				<div class="border-t border-gray-700 mt-2"></div>
+				<div class="border-t glass-divider mt-2"></div>
 			</div>
 
 			<!-- Campos Localidad y Distrito (como selects independientes) -->
@@ -256,58 +257,56 @@
 				<!-- Select de Provincia -->
 				<div class="flex flex-col space-y-2">
 					<label for="provincia" class="text-lg">Provincia *</label>
-					<select
+					<GlassSelect
 						id="provincia"
-						bind:value={form.selectedProvince}
-						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
-					>
-						<option value="" disabled selected>Seleccione una provincia</option>
-						{#each provinces as province}
-							<option value={province.id}>{province.name}</option>
-						{/each}
-					</select>
+						ariaLabel="Provincia"
+						items={provinces.map((p) => ({ value: p.id, label: p.name }))}
+						value={form.selectedProvince}
+						onChange={(v) => {
+							form.selectedProvince = Number(v);
+							form.selectedDistrict = null;
+							form.selectedLocality = null;
+						}}
+					/>
 					{#if submitted && errors.selectedProvince}
-						<span class="text-red-400 text-xs">{errors.selectedProvince}</span>
+						<span class="text-red-300/90 text-xs">{errors.selectedProvince}</span>
 					{/if}
-					<div class="border-t border-gray-700 mt-2"></div>
+					<div class="border-t glass-divider mt-2"></div>
 				</div>
 				<!-- Select de Distrito -->
 				<div class="flex flex-col space-y-2">
 					<label for="distrito" class="text-lg">Distrito *</label>
-					<select
+					<GlassSelect
 						id="distrito"
-						bind:value={form.selectedDistrict}
-						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
-					>
-						<option value={null} disabled selected>Seleccione un distrito</option>
-						{#each districts as district}
-							<option value={district.id}>{district.name}</option>
-						{/each}
-					</select>
+						ariaLabel="Distrito"
+						items={districts.map((d) => ({ value: d.id, label: d.name }))}
+						value={form.selectedDistrict}
+						onChange={(v) => {
+							form.selectedDistrict = v === null ? null : Number(v);
+							form.selectedLocality = null;
+						}}
+					/>
 					{#if submitted && errors.selectedDistrict}
-						<span class="text-red-400 text-xs">{errors.selectedDistrict}</span>
+						<span class="text-red-300/90 text-xs">{errors.selectedDistrict}</span>
 					{/if}
-					<div class="border-t border-gray-700 mt-2"></div>
+					<div class="border-t glass-divider mt-2"></div>
 				</div>
 				<!-- Select de Localidad -->
 				<div class="flex flex-col space-y-2">
 					<label for="localidad" class="text-lg">Localidad *</label>
-					<select
+					<GlassSelect
 						id="localidad"
-						bind:value={form.selectedLocality}
-						class="bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
-					>
-						<option value={null} disabled selected>
-							Seleccione {form.selectedDistrict === null ? 'un distrito' : 'una localidad'}
-						</option>
-						{#each localities as locality}
-							<option value={locality.id}>{locality.name}</option>
-						{/each}
-					</select>
+						ariaLabel="Localidad"
+						items={localities.map((l) => ({ value: l.id, label: l.name }))}
+						value={form.selectedLocality}
+						onChange={(v) => {
+							form.selectedLocality = v === null ? null : Number(v);
+						}}
+					/>
 					{#if submitted && errors.selectedLocality}
-						<span class="text-red-400 text-xs">{errors.selectedLocality}</span>
+						<span class="text-red-300/90 text-xs">{errors.selectedLocality}</span>
 					{/if}
-					<div class="border-t border-gray-700 mt-2"></div>
+					<div class="border-t glass-divider mt-2"></div>
 				</div>
 			</div>
 
@@ -317,7 +316,7 @@
 				<div class="flex items-center space-x-4">
 					<label
 						for="video-upload"
-						class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded flex items-center cursor-pointer"
+						class="glass-button cursor-pointer px-4 py-2 border-sky-400/40 bg-sky-300/12 hover:bg-sky-300/20 text-sky-100 flex items-center"
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -342,15 +341,15 @@
 						class="hidden"
 						onchange={handleFileSelect}
 					/>
-					<span class="text-gray-400">
+					<span class="text-white/80">
 						{form.file ? form.file.name : 'Ningún archivo seleccionado'}
 					</span>
 					{#if submitted && errors.file}
-						<span class="text-red-400 text-xs">{errors.file}</span>
+						<span class="text-red-300/90 text-xs">{errors.file}</span>
 					{/if}
 				</div>
-				<p class="text-xs text-gray-400 mt-1">Formatos aceptados: MP4, AVI, MOV.</p>
-				<div class="border-t border-gray-700 mt-2"></div>
+				<p class="text-xs text-white/70 mt-1">Formatos aceptados: MP4, AVI, MOV.</p>
+				<div class="border-t glass-divider mt-2"></div>
 			</div>
 
 			<!-- Botón de envío -->
@@ -358,10 +357,11 @@
 				<button
 					type="button"
 					onclick={handleSubmit}
-					class="relative overflow-hidden py-3 px-8 rounded-md font-medium transition-colors w-56 text-center
-						{!isFormValid && !isUploading ? 'bg-gray-500 text-gray-300' : ''}
-						{!isUploading && isFormValid ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}
-						{isUploading ? 'bg-gray-800 text-white cursor-not-allowed' : ''}"
+					class="relative overflow-hidden glass-button px-6 py-3 w-56 justify-center text-center
+						{!isUploading && isFormValid
+						? 'border-indigo-300/30 bg-indigo-300/12 hover:bg-indigo-300/20 text-indigo-100'
+						: ''}
+						{isUploading ? 'cursor-not-allowed' : ''}"
 					aria-busy={isUploading}
 					aria-disabled={isUploading || !isFormValid}
 					role={isUploading && !isProcessing ? 'progressbar' : undefined}
@@ -372,12 +372,12 @@
 				>
 					{#if isUploading}
 						<!-- Barra de progreso como background -->
-						<div class="absolute inset-0 bg-gray-700"></div>
+						<div class="absolute inset-0 bg-white/5"></div>
 						<div
 							class="absolute inset-y-0 left-0 transition-[width] duration-150"
 							style="width: {isProcessing
 								? 100
-								: uploadProgress}%; background: linear-gradient(to right, #374151, #9CA3AF);"
+								: uploadProgress}%; background: linear-gradient(to right, rgba(129,140,248,0.25), rgba(226,232,240,0.15));"
 						></div>
 						<span class="relative z-10 inline-flex items-center gap-2">
 							{#if !isProcessing}

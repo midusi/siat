@@ -12,16 +12,14 @@
 	let errors = $state<{ current?: string; new?: string; confirm?: string; general?: string }>({});
 	let submitting = $state(false);
 	let showCurrent = $state(false);
+	const currId = `curr_${Math.random().toString(36).slice(2, 8)}`;
 
 	function inputClass(hasError: boolean) {
-		return (
-			'w-full bg-[#2d3748] text-white rounded px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-amber-500 ' +
-			(hasError ? 'border-red-500' : 'border-gray-700')
-		);
+		return `glass-input pr-10 ${hasError ? 'border-red-500/70 ring-1 ring-red-500/30' : ''}`;
 	}
 
 	function labelClass() {
-		return 'block text-sm font-medium text-gray-200 mb-1';
+		return 'block text-sm mb-1 text-white/80';
 	}
 
 	function errorTextClass() {
@@ -83,13 +81,13 @@
 	}
 </script>
 
-<div class="max-w-3xl mx-auto p-6">
-	<h1 class="text-2xl font-semibold text-gray-100 mb-2">Tu perfil</h1>
-	<p class="text-gray-400 mb-6">
+<div class="page-container max-w-3xl">
+	<h1 class="heading-1 mb-1">Tu perfil</h1>
+	<p class="text-white/70 mb-6">
 		Actualizá tu contraseña. Por seguridad, se cerrará tu sesión luego del cambio.
 	</p>
 
-	<section class="bg-[#12151c] rounded-lg p-6 border border-gray-700 shadow-lg">
+	<section class="glass-card max-w-3xl mx-auto p-6 sm:p-8 overflow-hidden">
 		<div class="flex items-center gap-2 mb-4">
 			<svg
 				class="w-5 h-5 text-amber-400"
@@ -108,7 +106,7 @@
 
 		{#if errors.general}
 			<div
-				class="rounded-md border border-red-800 bg-red-900/30 text-red-200 px-4 py-3 text-sm mb-4"
+				class="rounded-md border border-red-600/50 bg-red-600/15 text-red-100 px-4 py-3 text-sm mb-4"
 			>
 				{errors.general}
 			</div>
@@ -117,34 +115,52 @@
 		<form onsubmit={handleSubmit} class="space-y-5">
 			<!-- Current password -->
 			<div>
-				<label class={labelClass()}>Contraseña actual</label>
+				<label class={labelClass()} for={currId}>Contraseña actual</label>
 				<div class="relative">
 					<input
 						type={showCurrent ? 'text' : 'password'}
 						class={inputClass(!!errors.current)}
+						id={currId}
 						bind:value={current_password}
 						autocomplete="current-password"
 					/>
 					<button
 						type="button"
-						class="absolute inset-y-0 right-0 pr-3 text-gray-400 hover:text-gray-200"
+						class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white"
 						onclick={() => (showCurrent = !showCurrent)}
 						aria-label="Mostrar u ocultar contraseña"
+						aria-pressed={showCurrent}
 					>
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle
-								cx="12"
-								cy="12"
-								r="3"
-							/></svg
-						>
+						{#if showCurrent}
+							<!-- eye-off -->
+							<svg
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+								<circle cx="12" cy="12" r="3" />
+								<path d="M3 3l18 18" />
+							</svg>
+						{:else}
+							<!-- eye -->
+							<svg
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+								<circle cx="12" cy="12" r="3" />
+							</svg>
+						{/if}
 					</button>
 				</div>
 				{#if errors.current}
@@ -163,7 +179,7 @@
 			<div class="flex items-center gap-3 pt-2">
 				<button
 					type="submit"
-					class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-md disabled:opacity-60 disabled:cursor-not-allowed"
+					class="glass-button btn-success disabled:opacity-60 disabled:cursor-not-allowed"
 					disabled={submitting}
 				>
 					{#if submitting}
@@ -173,11 +189,7 @@
 						Guardar cambios
 					{/if}
 				</button>
-				<button
-					type="button"
-					class="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800"
-					onclick={() => goto('/')}>Cancelar</button
-				>
+				<button type="button" class="glass-button" onclick={() => goto('/')}>Cancelar</button>
 			</div>
 		</form>
 	</section>

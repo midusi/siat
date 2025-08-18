@@ -9,15 +9,15 @@
 	function colorClasses(variant: Toast['variant']): string {
 		switch (variant) {
 			case 'success':
-				return 'bg-emerald-700/90 border-emerald-500 text-emerald-50';
+				return 'border-green-500/40 bg-green-400/12 text-green-100';
 			case 'danger':
-				return 'bg-red-700/90 border-red-500 text-red-50';
+				return 'border-red-600/50 bg-red-600/15 text-red-100';
 			case 'warning':
-				return 'bg-amber-700/90 border-amber-500 text-amber-50';
+				return 'border-amber-400/40 bg-amber-300/12 text-amber-100';
 			case 'info':
-				return 'bg-blue-700/90 border-blue-500 text-blue-50';
+				return 'border-sky-400/40 bg-sky-300/12 text-sky-100';
 			default:
-				return 'bg-gray-700/90 border-gray-500 text-gray-50';
+				return 'border-white/20 bg-white/10 text-white/90';
 		}
 	}
 
@@ -44,7 +44,7 @@
 		{#each items as t (t.id)}
 			<div
 				use:autoDismiss={{ id: t.id, duration: t.duration }}
-				class="pointer-events-auto rounded border p-3 shadow-xl backdrop-blur-md {colorClasses(
+				class="pointer-events-auto glass-strong frost frost-polarized border p-3 shadow-xl {colorClasses(
 					t.variant
 				)}"
 				in:fly={{ y: 20, duration: 180, easing: cubicOut }}

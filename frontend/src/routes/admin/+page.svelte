@@ -3,6 +3,7 @@
 	import { apiFetch } from '$lib/api';
 	import { showAlert, showConfirm } from '$lib/dialog';
 	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
+	import GlassSelect from '$lib/components/GlassSelect.svelte';
 
 	// Tipos para los usuarios y roles
 	type Role = 'Admin' | 'Operador';
@@ -50,6 +51,16 @@
 			console.error('Error de red al cargar usuarios', e);
 		}
 	});
+
+	// Items para selects
+	const roleItems = [
+		{ value: 'Admin' as Role, label: 'Admin' },
+		{ value: 'Operador' as Role, label: 'Operador' }
+	];
+	const estadoItems = [
+		{ value: 'Activo' as const, label: 'Activo' },
+		{ value: 'Inactivo' as const, label: 'Inactivo' }
+	];
 
 	// Estado para el filtro de búsqueda
 	let searchQuery = $state('');
@@ -434,13 +445,13 @@
 	}
 </script>
 
-<div class="min-h-screen bg-[#1a1e2a] text-white">
-	<!-- Header -->
-	<header class="bg-[#1a1e2a] p-4 border-b border-gray-800 flex items-center justify-between">
-		<div class="flex items-center">
+<div class="page-container">
+	<!-- Título + acción -->
+	<div class="mb-6 flex items-center justify-between">
+		<div class="flex items-center gap-2">
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
-				class="h-6 w-6 text-blue-400 mr-2"
+				class="h-5 w-5 text-amber-300"
 				fill="none"
 				viewBox="0 0 24 24"
 				stroke="currentColor"
@@ -452,15 +463,12 @@
 					d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
 				/>
 			</svg>
-			<h1 class="text-xl font-semibold">Administración de Usuarios</h1>
+			<h1 class="heading-1">Administración de Usuarios</h1>
 		</div>
-		<button
-			onclick={openCreateModal}
-			class="bg-blue-600 hover:bg-blue-500 text-white py-2 px-4 rounded flex items-center"
-		>
+		<button onclick={openCreateModal} class="glass-button btn-success px-3 py-2">
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
-				class="h-5 w-5 mr-1"
+				class="h-4 w-4 mr-1"
 				fill="none"
 				viewBox="0 0 24 24"
 				stroke="currentColor"
@@ -469,40 +477,38 @@
 			</svg>
 			Nuevo Usuario
 		</button>
-	</header>
-
-	<!-- Barra de filtro -->
-	<div class="p-4">
-		<div class="relative">
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				class="h-5 w-5 absolute left-3 top-3 text-gray-400"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke="currentColor"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-				/>
-			</svg>
-			<input
-				type="text"
-				bind:value={searchQuery}
-				placeholder="Buscar usuarios por nombre o email..."
-				class="w-full bg-[#2d3748] text-white pl-10 p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-			/>
-		</div>
 	</div>
 
-	<!-- Tabla de usuarios -->
-	<div class="overflow-x-auto px-4">
+	<!-- Filtro de búsqueda -->
+	<div class="mb-4 relative">
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			class="h-5 w-5 absolute left-3 top-3 text-white/60"
+			fill="none"
+			viewBox="0 0 24 24"
+			stroke="currentColor"
+		>
+			<path
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="2"
+				d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+			/>
+		</svg>
+		<input
+			type="text"
+			bind:value={searchQuery}
+			placeholder="Buscar usuarios por nombre o email..."
+			class="glass-input pl-10"
+		/>
+	</div>
+
+	<!-- Tabla -->
+	<div class="glass-card overflow-hidden">
 		<table class="w-full border-collapse">
 			<!-- Encabezados de tabla -->
 			<thead>
-				<tr class="bg-[#2d3748] text-gray-300">
+				<tr class="glass-surface text-white/90">
 					<th class="p-3 text-left font-medium">ID</th>
 					<th class="p-3 text-left font-medium">Nombre</th>
 					<th class="p-3 text-left font-medium">Email</th>
@@ -518,7 +524,7 @@
 							.includes(searchQuery.toLowerCase()) || u.email
 							.toLowerCase()
 							.includes(searchQuery.toLowerCase())) as user}
-					<tr class="border-b border-gray-700">
+					<tr class="border-b glass-divider hover:bg-white/5 transition-colors">
 						<td class="p-3">
 							<span class="font-medium">#{user.id}</span>
 						</td>
@@ -531,11 +537,7 @@
 						<td class="p-3">
 							<div class="flex items-center">
 								<span
-									class={`px-2 py-1 rounded text-xs font-medium ${
-										user.rol === 'Admin'
-											? 'bg-purple-900 text-purple-200'
-											: 'bg-blue-900 text-blue-200'
-									}`}
+									class={`px-2 py-1 rounded text-xs font-medium border ${user.rol === 'Admin' ? 'text-purple-200 bg-purple-400/15 border-purple-300/30' : 'text-sky-200 bg-sky-400/15 border-sky-300/30'}`}
 								>
 									{user.rol}
 								</span>
@@ -546,12 +548,7 @@
 								onclick={() => toggleStatus(user)}
 								aria-busy={toggling[user.id]}
 								disabled={toggling[user.id]}
-								class={`px-2 py-1 rounded text-xs font-medium ${
-									user.estado === 'Activo'
-										? 'bg-green-900 text-green-200'
-										: 'bg-red-900 text-red-200'
-								}
-								${toggling[user.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
+								class={`glass-button px-2 py-1 text-xs ${user.estado === 'Activo' ? 'btn-success' : 'btn-danger'} ${toggling[user.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
 							>
 								{user.estado}
 							</button>
@@ -560,14 +557,14 @@
 							<div class="flex gap-2">
 								<button
 									onclick={() => openEditModal(user)}
-									class="bg-blue-600 hover:bg-blue-500 text-white text-sm py-1 px-3 rounded"
+									class="glass-button text-sm px-3 py-1"
 									title="Editar usuario"
 								>
 									Editar
 								</button>
 								<button
 									onclick={() => deleteUser(user.id)}
-									class="bg-red-600 hover:bg-red-500 text-white text-sm py-1 px-3 rounded disabled:opacity-50"
+									class="glass-button btn-danger text-sm px-3 py-1 disabled:opacity-50"
 									title="Eliminar usuario"
 									disabled={deleting[user.id]}
 								>
@@ -580,9 +577,9 @@
 
 				{#if users.length === 0}
 					<tr>
-						<td colspan="7" class="p-4 text-center text-gray-400">
-							No se encontraron usuarios que coincidan con la búsqueda.
-						</td>
+						<td colspan="7" class="p-4 text-center text-white/70"
+							>No se encontraron usuarios que coincidan con la búsqueda.</td
+						>
 					</tr>
 				{/if}
 			</tbody>
@@ -591,33 +588,21 @@
 
 	<!-- Modal para crear/editar usuario -->
 	{#if showModal}
-		<div
-			class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-			role="presentation"
-			tabindex="-1"
-			onclick={(e) => {
-				// Cerrar al clickear fuera del modal
-				if (e.target === e.currentTarget) closeModal();
-			}}
-			onkeydown={(e) => {
-				// Permitir cerrar con Escape
-				if (e.key === 'Escape') closeModal();
-			}}
-		>
+		<div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+			<button
+				type="button"
+				class="absolute inset-0 bg-black/40"
+				aria-label="Cerrar"
+				onclick={closeModal}
+			></button>
 			<div
-				class="relative bg-[#1a202c] rounded-lg shadow-lg p-6 w-full max-w-md"
+				class="relative mx-4 w-full max-w-md glass-strong frost frost-polarized border p-6 shadow-2xl"
 				role="dialog"
 				aria-modal="true"
-				tabindex="0"
-				onclick={(e) => e.stopPropagation()}
-				onkeydown={(e) => {
-					// Permitir cerrar con Escape desde el dialog
-					if (e.key === 'Escape') closeModal();
-				}}
 			>
 				<button
 					type="button"
-					class="absolute top-3 right-3 text-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-600 rounded"
+					class="absolute top-3 right-3 text-white/70 hover:text-white"
 					onclick={closeModal}
 					aria-label="Cerrar"
 				>
@@ -637,61 +622,53 @@
 					</svg>
 				</button>
 
-				<h3 class="text-xl font-semibold mb-4">
+				<h3 class="text-lg font-semibold mb-4">
 					{editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
 				</h3>
 
 				<form class="space-y-4" onsubmit={handleSubmit}>
-					<!-- Campo Nombre completo -->
 					<div>
-						<label for="nombre" class="block text-sm font-medium text-gray-400 mb-1"
-							>Nombre completo</label
-						>
+						<label for="nombre" class="block text-sm mb-1 text-white/80">Nombre completo</label>
 						<input
 							type="text"
 							id="nombre"
 							bind:value={newUser.nombre}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							class="glass-input"
 							class:border-red-500={formErrors.nombre}
 						/>
 						{#if formErrors.nombre}
-							<p class="text-red-500 text-xs mt-1">{formErrors.nombre}</p>
+							<p class="text-red-400 text-xs mt-1">{formErrors.nombre}</p>
 						{/if}
 					</div>
 
-					<!-- Campo Email -->
 					<div>
-						<label for="email" class="block text-sm font-medium text-gray-400 mb-1">Email</label>
+						<label for="email" class="block text-sm mb-1 text-white/80">Email</label>
 						<input
 							type="email"
 							id="email"
 							bind:value={newUser.email}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							class="glass-input"
 							class:border-red-500={formErrors.email}
 						/>
 						{#if formErrors.email}
-							<p class="text-red-500 text-xs mt-1">{formErrors.email}</p>
+							<p class="text-red-400 text-xs mt-1">{formErrors.email}</p>
 						{/if}
 					</div>
 
-					<!-- Campo Username -->
 					<div>
-						<label for="username" class="block text-sm font-medium text-gray-400 mb-1"
-							>Usuario</label
-						>
+						<label for="username" class="block text-sm mb-1 text-white/80">Usuario</label>
 						<input
 							type="text"
 							id="username"
 							bind:value={newUser.username}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							class="glass-input"
 							class:border-red-500={formErrors.username}
 						/>
 						{#if formErrors.username}
-							<p class="text-red-500 text-xs mt-1">{formErrors.username}</p>
+							<p class="text-red-400 text-xs mt-1">{formErrors.username}</p>
 						{/if}
 					</div>
 
-					<!-- Password + Confirm reutilizando componente con barra de fuerza -->
 					<PasswordNewConfirm
 						bind:newPassword={newUser.password}
 						bind:confirmPassword={newUser.confirm_password}
@@ -699,49 +676,41 @@
 						errorConfirm={formErrors.confirm_password}
 					/>
 
-					<!-- Campo Rol -->
 					<div>
-						<label for="rol" class="block text-sm font-medium text-gray-400 mb-1">Rol</label>
-						<select
+						<label id="label-rol" for="rol" class="block text-sm mb-1 text-white/80">Rol</label>
+						<GlassSelect
 							id="rol"
-							bind:value={newUser.rol}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						>
-							<option value="Admin">Admin</option>
-							<option value="Operador">Operador</option>
-						</select>
+							ariaLabel="Seleccionar rol"
+							ariaLabelledby="label-rol"
+							items={roleItems}
+							value={newUser.rol}
+							onChange={(v) => (newUser.rol = v as Role)}
+						/>
 					</div>
 
-					<!-- Campo Estado -->
 					<div>
-						<label for="estado" class="block text-sm font-medium text-gray-400 mb-1">Estado</label>
-						<select
-							id="estado"
-							bind:value={newUser.estado}
-							class="w-full bg-[#2d3748] text-white p-3 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						<label id="label-estado" for="estado" class="block text-sm mb-1 text-white/80"
+							>Estado</label
 						>
-							<option value="Activo">Activo</option>
-							<option value="Inactivo">Inactivo</option>
-						</select>
+						<GlassSelect
+							id="estado"
+							ariaLabel="Seleccionar estado"
+							ariaLabelledby="label-estado"
+							items={estadoItems}
+							value={newUser.estado}
+							onChange={(v) => (newUser.estado = v as 'Activo' | 'Inactivo')}
+						/>
 					</div>
 
 					{#if formErrors.general}
-						<p class="text-red-500 text-sm">{formErrors.general}</p>
+						<p class="text-red-400 text-sm">{formErrors.general}</p>
 					{/if}
 
-					<!-- Botones de acción -->
-					<div class="flex justify-end gap-3 mt-6">
-						<button
-							type="button"
-							onclick={closeModal}
-							class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"
-							aria-disabled={submitting}
-						>
-							Cancelar
-						</button>
+					<div class="flex justify-end gap-2 pt-2">
+						<button type="button" onclick={closeModal} class="glass-button">Cancelar</button>
 						<button
 							type="submit"
-							class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+							class="glass-button btn-success disabled:opacity-50"
 							disabled={submitting}
 						>
 							{editingUser ? 'Guardar Cambios' : submitting ? 'Creando…' : 'Crear Usuario'}
