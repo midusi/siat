@@ -18,11 +18,21 @@
 	type Vehiculo = string;
 	type ConteoVehiculos = { [key: Vehiculo]: number };
 	type Rutas = { [entrada: string]: { [salida: string]: ConteoVehiculos } };
+	type History = {
+		[trackId: string]: { frame: string; boundingBox: BoundingBox; class: Vehiculo };
+	};
 	type BoundingBox = [string, string, string, string];
 	type Indeterminado = {
-		frame: string;
+		first_appearance: {
+			frame: string;
+			boundingBox: BoundingBox;
+		};
+		last_appearance: {
+			frame: string;
+			boundingBox: BoundingBox;
+		};
 		class: Vehiculo;
-		boundingBox: BoundingBox;
+		// boundingBox: BoundingBox;
 		labels: [string, string];
 	};
 	type Indeterminados = { [trackId: string]: Indeterminado };
@@ -41,7 +51,7 @@
 	let sortedIndeterminados = $state<SortedIndeterminado[]>([]);
 	let videoScale = $state({ x: 1, y: 1 });
 	let savingById = $state<Record<string, boolean>>({});
-
+	let history = $state<History>({});
 	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
 	let activeBoundingBox = $state<BoundingBox | null>(null);
 	let playbackBoundingBoxes = $state<DisplayableBBox[]>([]);
@@ -58,11 +68,11 @@
 		const map = new Map<number, { trackId: string; bbox: BoundingBox }[]>();
 		if (!videoFps) return map;
 		for (const [trackId, item] of Object.entries(indeterminados)) {
-			const frame = parseInt(item.frame);
+			const frame = parseInt(item.first_appearance.frame);
 			if (!map.has(frame)) {
 				map.set(frame, []);
 			}
-			map.get(frame)!.push({ trackId, bbox: item.boundingBox });
+			map.get(frame)!.push({ trackId, bbox: item.first_appearance.boundingBox });
 		}
 		return map;
 	});
@@ -166,9 +176,9 @@
 		stopAnimationLoop();
 		videoElement.pause();
 
-		const timeInSeconds = parseInt(item.frame) / videoFps;
+		const timeInSeconds = parseInt(item.first_appearance.frame) / videoFps;
 		videoElement.currentTime = timeInSeconds;
-		activeBoundingBox = item.boundingBox;
+		activeBoundingBox = item.first_appearance.boundingBox;
 	}
 
 	// --- El resto del código permanece casi igual ---
@@ -271,15 +281,33 @@
 			videoHeight = +apiData.videoHeight;
 			videoFps = +apiData.videoFps;
 
+			// Helper para evitar caché del navegador en JSON estáticos de MinIO
+			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
+
+			// Obtener historial: inline o vía URLs públicas (MinIO)
+			const historyPromise: Promise<any> = apiData.history
+				? Promise.resolve(apiData.history)
+				: apiData.historyUrl
+					? fetch(bust(apiData.historyUrl))
+							.then((r) => {
+								if (!r.ok) throw new Error(`Error al obtener historial: ${r.statusText}`);
+								return r.json();
+							})
+							.then((d) => d.history ?? d)
+					: Promise.resolve({});
+
+			const [historyData] = await Promise.all([historyPromise]);
+
 			rutas = apiData.rutas;
 			indeterminados = apiData.indeterminados;
+			history = historyData;
 
 			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
 				const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
 				const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
 				if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
 				if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
-				return parseInt(a.frame) - parseInt(b.frame);
+				return parseInt(a.first_appearance.frame) - parseInt(b.first_appearance.frame);
 			});
 		} catch (e: any) {
 			error = e.message || 'Error desconocido al cargar los datos.';
@@ -312,7 +340,7 @@
 		if (!item) return;
 		savingById[trackId] = true;
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
-		if (activeBoundingBox === item.boundingBox) activeBoundingBox = null;
+		if (activeBoundingBox === item.first_appearance.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
 		if (activeIndeterminateId === trackId) activeIndeterminateId = null;
 
@@ -347,7 +375,7 @@
 		const item = indeterminados[trackId];
 		savingById[trackId] = true;
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
-		if (item && activeBoundingBox === item.boundingBox) activeBoundingBox = null;
+		if (item && activeBoundingBox === item.first_appearance.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
 		if (activeIndeterminateId === trackId) activeIndeterminateId = null;
 

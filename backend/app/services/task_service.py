@@ -70,8 +70,8 @@ class TaskService:
     def get_task(self, task_id: int) -> dict:
         """Devuelve la información real desde la BD y MinIO para el frontend.
         Incluye el path público del video, sus dimensiones y fps.
-        Si existe una inferencia, devuelve también las URLs públicas de
-        rutas (transition_counts) e indeterminados (transition_undetermined).
+        También el json de rutas (transition_counts) e indeterminados (transition_undetermined)
+        y la url del historial (url_data_obj_history).
         """
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
@@ -105,6 +105,8 @@ class TaskService:
                 payload["rutas"] = json.loads(task.inference.transition_counts)
             if task.inference.transition_undetermined:
                 payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
+            if task.inference.url_data_obj_history:
+                payload["historyUrl"] = f"{public_base}/{task.inference.url_data_obj_history}"
 
         return payload
         

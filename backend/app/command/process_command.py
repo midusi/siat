@@ -90,6 +90,7 @@ def run_process():
         local_counts_path = os.path.join(output_dir, "transition_counts.json")
         local_undetermined_path = os.path.join(output_dir, "transition_undetermined_object.json")
         local_determined_path = os.path.join(output_dir, "transition_determined_object.json")
+        local_data_obj_history_path = os.path.join(output_dir, "data_obj_history.json")
         local_output_video_path = os.path.join(output_dir, "processed.mp4")
         
         # Obtener el nombre del video
@@ -98,12 +99,8 @@ def run_process():
         hash_value, _ = os.path.splitext(filename)  
         
         bucket_video_path = f"task/{task_to_process.id}/{hash_value}_processed.mp4"
-        
-        # Subir video procesado al bucket
-        typer.echo("Subiendo el video procesado al bucket...")
-        with open(local_output_video_path, "rb") as f:
-            bucket_service.upload(f, object_name=bucket_video_path, content_type="video/mp4")
-        
+        bucket_data_obj_history_path = f"task/{task_to_process.id}/{hash_value}_data_obj_history.json"
+
         # Leer transition_counts.json
         with open(local_counts_path, 'r', encoding='utf-8') as f:
             counts_content = f.read()
@@ -116,12 +113,23 @@ def run_process():
         with open(local_determined_path, 'r', encoding='utf-8') as f:
             determined_content = f.read()
         
+        # Subir data_obj_history.json al bucket
+        typer.echo("Subiendo el archivo data_obj_history.json al bucket...")
+        with open(local_data_obj_history_path, 'rb') as f:
+            bucket_service.upload(f, object_name=bucket_data_obj_history_path, content_type="application/json")
+        
+        # Subir video procesado al bucket
+        typer.echo("Subiendo el video procesado al bucket...")
+        with open(local_output_video_path, "rb") as f:
+            bucket_service.upload(f, object_name=bucket_video_path, content_type="video/mp4")
+        
         # Paso 7: Crear el objeto de inferencia
         inference = inference_service.create_inference(
             task_id=task_to_process.id,
             transition_counts=counts_content,
             transition_undetermined=undetermined_content,
             transition_determined=determined_content,
+            url_data_obj_history=bucket_data_obj_history_path,
             url_video_processed=bucket_video_path
         )
         

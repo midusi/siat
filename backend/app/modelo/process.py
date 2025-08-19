@@ -1,4 +1,5 @@
-import cv2, imageio
+import cv2
+import imageio
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
@@ -31,11 +32,6 @@ ZONE_OUT_POLYGONS = []
 
 # Longitud máxima del historial de seguimiento de un objeto
 TRACK_HISTORY_LENGTH = 30 
-
-# Mapeo de índices de zona a etiquetas (A, B, C, D) para el informe
-ZONE_LABELS = {0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'IND'}
-# Orden de las etiquetas de zona para iterar consistentemente
-ORDERED_ZONE_LABELS = ['A', 'B', 'C', 'D', 'IND']
 
 # Mapeo de ID de clases a nombres de clases simplificadas
 SIMPLIFIED_CLASS_DISPLAY_NAMES = {
@@ -297,14 +293,18 @@ class ObjectTracker:
         """
 
         # Dibujar el bounding box
-        annotator.box_label(box, label=f"ID: {track_id} - {self.class_names[class_id]}", color=(0, 0, 0), txt_color=(255, 255, 255))
+        # annotator.box_label(box, label=f"ID: {track_id} - {self.class_names[class_id]}", color=(0, 0, 0), txt_color=(255, 255, 255))
 
-        # Almacenar historial de datos del objeto para el cálculo de entropía
+        # Almacenar punto central del bounding box para dibujar el trazado
+        center_x, center_y = self._get_center_bb(box)
+
+        # Almacenar historial de datos del objeto
         self.data_obj_history[track_id].append({
             "act_frame": act_frame,
             "class_id": class_id,
             "confidence": confidence,
-            "box": box.tolist()
+            "box": box.tolist(),
+            "track_history_point": (center_x, center_y)
         })
 
     def _calculate_entropy(self, track_data: List[Dict]) -> Tuple[Counter, float]:
@@ -387,10 +387,18 @@ class ObjectTracker:
             # Crear el historial del objeto con sus datos
             history_track = {}
             if track_id in self.data_obj_history:
-                obj = self.data_obj_history[track_id][0]
-                history_track["frame"] = obj.get("act_frame")
-                history_track["class"] = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(obj.get("class_id"))
-                history_track["boundingBox"] = obj.get("box")
+                first_appearance_obj = self.data_obj_history[track_id][0]
+                last_appearance_obj = self.data_obj_history[track_id][len(self.data_obj_history[track_id]) - 1]
+                
+                # Inicializar las estructuras de datos antes de acceder a ellas
+                history_track["first_appearance"] = {}
+                history_track["last_appearance"] = {}
+                
+                history_track["first_appearance"]["frame"] = first_appearance_obj.get("act_frame")
+                history_track["first_appearance"]["boundingBox"] = first_appearance_obj.get("box")
+                history_track["last_appearance"]["frame"] = last_appearance_obj.get("act_frame")
+                history_track["last_appearance"]["boundingBox"] = last_appearance_obj.get("box")
+                history_track["class"] = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(last_appearance_obj.get("class_id"))
             
             # Conteo para la tabla "Entradas"
             if track_id in self.track_first_in_zone:
@@ -417,20 +425,17 @@ class ObjectTracker:
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
                     transition_data = history_track.copy()
-                    transition_data["labels"] = [in_zone_label, "IND"]
+                    transition_data["labels"] = [in_zone_label, "???"]
                     self.transition_undetermined_object[track_id] = transition_data
-                    # self.transition_counts[in_zone_label]["IND"][display_class] += 1
             elif track_id in self.track_first_out_zone:
                 out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                 transition_data = history_track.copy()
-                transition_data["labels"] = ["IND", out_zone_label]
+                transition_data["labels"] = ["???", out_zone_label]
                 self.transition_undetermined_object[track_id] = transition_data
-                # self.transition_counts["IND"][out_zone_label][display_class] += 1
             else:
                 transition_data = history_track.copy()
-                transition_data["labels"] = ["IND", "IND"]
+                transition_data["labels"] = ["???", "???"]
                 self.transition_undetermined_object[track_id] = transition_data
-                # self.transition_counts["IND"]["IND"][display_class] += 1
 
 
     def process_frame(self, frame: np.ndarray, results: list, act_frame: int) -> np.ndarray:

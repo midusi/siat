@@ -165,14 +165,14 @@ class ObjectDisplayer:
             # Dibujar bounding box y etiqueta
             transition = self.transition_determined_object[track_id][0]
             annotator.box_label(box, label=f"ID: {track_id} - ({transition[0]} -> {transition[1]}) - {class_name}", color=(255, 255, 255), txt_color=(0, 0, 0))
-            self._draw_tick(frame, box)
+            # self._draw_tick(frame, box)
             
         else:
             # Dibujar bounding box y etiqueta
             transition = self.transition_undetermined_object[track_id][0]
             # Obtener el primer y segundo elemento de la transición
             annotator.box_label(box, label=f"ID: {track_id} - ({transition[0]} -> {transition[1]}) - {class_name}", color=(255, 255, 255), txt_color=(0, 0, 0))
-            self._draw_cross(frame, box)
+            # self._draw_cross(frame, box)
         
 
         # Almacenar punto central del bounding box para dibujar el trazado
@@ -184,39 +184,6 @@ class ObjectDisplayer:
         # if len(points) > 1:
         #     color = (255, 255, 255)  # BGR para blanco
         #     cv2.polylines(frame, [points], isClosed=False, color=color, thickness=2)
-
-    def _draw_tick(self, frame: np.ndarray, box: np.ndarray):
-        """
-        Dibuja una 'v' verde justo debajo del bounding box.
-        """
-        v_color = (0, 255, 0)  # BGR para verde
-        v_size = 5  # tamaño de la 'v' en píxeles
-        v_thickness = 2
-        # Coordenadas del centro inferior del bounding box
-        x1, y1, x2, y2 = map(int, box)
-        v_center_x = int((x1 + x2) / 2)
-        v_center_y = y2  # 5 píxeles debajo del bbox
-        # Línea izquierda de la 'v'
-        cv2.line(frame, (v_center_x - v_size, v_center_y - v_size + 4), (v_center_x, v_center_y + v_size), v_color, v_thickness)
-        # Línea derecha de la 'v'
-        cv2.line(frame, (v_center_x, v_center_y + v_size), (v_center_x + v_size, v_center_y - v_size), v_color, v_thickness)
-
-    def _draw_cross(self, frame: np.ndarray, box: np.ndarray):
-        """
-        Dibuja una cruz roja justo debajo del bounding box.
-        """
-        # Dibujar una cruz roja justo debajo del bounding box
-        cross_color = (0, 0, 255)  # BGR para rojo
-        cross_size = 5  # tamaño de la cruz en píxeles
-        cross_thickness = 2
-        # Coordenadas del centro inferior del bounding box
-        x1, y1, x2, y2 = map(int, box)
-        cross_center_x = int((x1 + x2) / 2)
-        cross_center_y = y2
-        # Línea diagonal \
-        cv2.line(frame, (cross_center_x - cross_size, cross_center_y - cross_size), (cross_center_x + cross_size, cross_center_y + cross_size), cross_color, cross_thickness)
-        # Línea diagonal /
-        cv2.line(frame, (cross_center_x - cross_size, cross_center_y + cross_size), (cross_center_x + cross_size, cross_center_y - cross_size), cross_color, cross_thickness)
 
     def process_frame(self, frame: np.ndarray, act_frame: int, objects_in_frame: dict) -> np.ndarray:
         """
