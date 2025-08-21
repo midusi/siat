@@ -78,6 +78,7 @@
 	let videoWidth = $state(0);
 	let videoHeight = $state(0);
 	let videoFps = $state(0);
+	let videoDuration = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
 	let determinados = $state<Record<string, any>>({});
@@ -87,6 +88,31 @@
 	let videoScale = $state({ x: 1, y: 1 });
 	let savingById = $state<Record<string, boolean>>({});
 	let history = $state<History>({});
+	// Rango de frames disponibles (para mapear tiempo->frame sin depender estrictamente de FPS)
+	let dataFrameFirst = $state<number | null>(null);
+	let dataFrameLast = $state<number | null>(null);
+
+	function computeCurrentFrameFromTime(timeSec: number): number {
+		const dur = videoElement?.duration ?? videoDuration ?? 0;
+		if (dur > 0 && dataFrameFirst !== null && dataFrameLast !== null) {
+			const t = Math.min(Math.max(timeSec, 0), dur);
+			const span = Math.max(0, dataFrameLast - dataFrameFirst);
+			const f = dataFrameFirst + (span > 0 ? Math.round((t / dur) * span) : 0);
+			return Math.max(dataFrameFirst, Math.min(f, dataFrameLast));
+		}
+		return Math.floor(timeSec * (videoFps || 0));
+	}
+
+	function computeTimeFromFrame(frame: number): number {
+		const dur = videoElement?.duration ?? videoDuration ?? 0;
+		if (dur > 0 && dataFrameFirst !== null && dataFrameLast !== null) {
+			const span = Math.max(0, dataFrameLast - dataFrameFirst);
+			const clamped = Math.max(dataFrameFirst, Math.min(frame, dataFrameLast));
+			const t = span > 0 ? ((clamped - dataFrameFirst) / span) * dur : 0;
+			return Math.max(0, Math.min(t, dur));
+		}
+		return videoFps > 0 ? frame / videoFps : 0;
+	}
 	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
 	let activeBoundingBox = $state<BoundingBox | null>(null);
 	let playbackBoundingBoxes = $state<DisplayableBBox[]>([]);
@@ -101,7 +127,6 @@
 	// --- ESTRUCTURA DE DATOS OPTIMIZADA POR FRAME ---
 	let indeterminadosByFrame = $derived.by(() => {
 		const map = new Map<number, { trackId: string; bbox: BoundingBox }[]>();
-		if (!videoFps) return map;
 		for (const [trackId, item] of Object.entries(indeterminados)) {
 			const frame = parseInt(item.first_appearance.frame);
 			if (!map.has(frame)) {
@@ -120,7 +145,7 @@
 		}
 
 		const currentTime = videoElement.currentTime;
-		const currentFrame = Math.floor(currentTime * videoFps);
+		const currentFrame = computeCurrentFrameFromTime(currentTime);
 
 		// Detectar loop (el tiempo se resetea de fin a inicio sin pausa)
 		if (currentTime + 0.05 < lastVideoTime) {
@@ -206,7 +231,7 @@
 					const newBoxes = bboxesInfo.map((info) => ({
 						id: info.trackId,
 						bbox: info.bbox,
-						hideAtTime: frame / videoFps + FADE_OUT_DURATION_SECONDS,
+						hideAtTime: computeTimeFromFrame(frame) + FADE_OUT_DURATION_SECONDS,
 						opacity: 1.0 // Empiezan con opacidad total
 					}));
 					playbackBoundingBoxes = [...playbackBoundingBoxes, ...newBoxes];
@@ -230,8 +255,8 @@
 			// En lugar de reiniciar siempre a -1, establecemos el último frame procesado
 			// justo antes de la posición actual de reproducción. Esto evita que el bucle
 			// "repase" la historia del video que fue omitida por una búsqueda (seek).
-			if (videoElement && videoFps > 0) {
-				lastProcessedFrame = Math.floor(videoElement.currentTime * videoFps) - 1;
+			if (videoElement) {
+				lastProcessedFrame = computeCurrentFrameFromTime(videoElement.currentTime) - 1;
 			} else {
 				lastProcessedFrame = -1;
 			}
@@ -264,14 +289,14 @@
 	let activeIndeterminateId = $state<string | null>(null);
 	function handleIndeterminateClick(trackId: string) {
 		activeIndeterminateId = trackId;
-		if (!videoElement || !videoFps) return;
+		if (!videoElement) return;
 		const item = indeterminados[trackId];
 		if (!item) return;
 
 		stopAnimationLoop();
 		videoElement.pause();
 
-		const timeInSeconds = parseInt(item.first_appearance.frame) / videoFps;
+		const timeInSeconds = computeTimeFromFrame(parseInt(item.first_appearance.frame));
 		videoElement.currentTime = timeInSeconds;
 		activeBoundingBox = item.first_appearance.boundingBox;
 	}
@@ -284,7 +309,7 @@
 				videoScale.x = videoElement.clientWidth / videoWidth;
 				videoScale.y = videoElement.clientHeight / videoHeight;
 				if (selectedTrackId && videoElement) {
-					const currentFrame = Math.floor(videoElement.currentTime * videoFps);
+					const currentFrame = computeCurrentFrameFromTime(videoElement.currentTime);
 					updateSelectedTrackRoute(currentFrame);
 				}
 			}
@@ -393,7 +418,7 @@
 	function showRouteFor(box: GeneralBBox) {
 		// Usar el historial del track (data_obj_history) para mostrar recorrido pasado/futuro y la ruta completa
 		selectedTrackId = box.id;
-		const currentFrame = videoElement ? Math.floor(videoElement.currentTime * videoFps) : 0;
+		const currentFrame = videoElement ? computeCurrentFrameFromTime(videoElement.currentTime) : 0;
 		// Calcular inmediatamente el rectángulo del bbox seleccionado (incluso si el video está en pausa)
 		if (videoElement) {
 			const [x1, y1, x2, y2] = box.box;
@@ -671,6 +696,16 @@
 				}
 				generalBBoxesByFrame = frameMap;
 				generalTrackHistory = trackMap;
+				// Calcular rango de frames para mapeo calibrado tiempo<->frame
+				const frames = Array.from(frameMap.keys());
+				if (frames.length) {
+					dataFrameFirst = Math.min(...frames);
+					dataFrameLast = Math.max(...frames);
+					console.log('Frame range:', { dataFrameFirst, dataFrameLast, count: frames.length });
+				} else {
+					dataFrameFirst = null;
+					dataFrameLast = null;
+				}
 				console.log('Tracks con historial:', generalTrackHistory.size);
 				console.log('Total bboxes procesadas:', totalBBoxes);
 				console.log('Frames con bboxes:', Array.from(frameMap.keys()));
@@ -678,6 +713,8 @@
 			} else {
 				generalBBoxesByFrame = new Map();
 				generalTrackHistory = new Map();
+				dataFrameFirst = null;
+				dataFrameLast = null;
 				generalReady = true;
 			}
 
@@ -950,16 +987,17 @@
 							loop
 							bind:this={videoElement}
 							onloadedmetadata={() => {
+								videoDuration = videoElement?.duration ?? 0;
 								updateVideoDimensions();
 								if (selectedTrackId && videoElement) {
-									updateSelectedTrackRoute(Math.floor(videoElement.currentTime * videoFps));
+									updateSelectedTrackRoute(computeCurrentFrameFromTime(videoElement.currentTime));
 								}
 							}}
 							onplay={startAnimationLoop}
 							onpause={stopAnimationLoop}
 							onseeking={() => {
 								if (videoElement) {
-									lastProcessedFrame = Math.floor(videoElement.currentTime * videoFps) - 1;
+									lastProcessedFrame = computeCurrentFrameFromTime(videoElement.currentTime) - 1;
 								}
 							}}
 						>
@@ -1418,7 +1456,6 @@
 	}
 
 	.route-anim {
-		pathlength: 1;
 		stroke-dasharray: 1;
 		stroke-dashoffset: 1;
 		animation: draw-in 220ms ease-out forwards;
