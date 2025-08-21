@@ -14,6 +14,39 @@
 	let videoElement = $state<HTMLVideoElement | null>(null);
 	let videoHeightPx = $state(0);
 
+	// --- Estado para bboxes generales ---
+	type GeneralBBox = { id: string; box: [number, number, number, number] };
+	let generalBBoxesByFrame = $state<Map<number, GeneralBBox[]>>(new Map());
+	let generalDisplayBBoxes = $state<GeneralBBox[]>([]);
+	let generalReady = $state(false); // Indica si el JSON general está listo
+
+	// Historial por track para dibujar recorridos desde data_obj_history
+	type TrackPoint = { frame: number; box: [number, number, number, number] };
+	let generalTrackHistory = $state<Map<string, TrackPoint[]>>(new Map());
+
+	// Estado de selección de vehículo y sus recorridos pasado/futuro
+	let selectedTrackId = $state<string | null>(null);
+	let routePastPoints = $state<{ x: number; y: number }[]>([]);
+	let routeFuturePoints = $state<{ x: number; y: number }[]>([]);
+	let routeAllPoints = $state<{ x: number; y: number }[]>([]);
+	let routePastSegments = $state<{ x: number; y: number }[][]>([]);
+	let routeFutureSegments = $state<{ x: number; y: number }[][]>([]);
+	// Clave para re-montar rutas y reiniciar animación al seleccionar
+	let routeAnimateKey = $state(0);
+	// Flag y timer para animación rápida y fallback si falla la animación CSS
+	let routeAnimating = $state(false);
+	let routeAnimTimer: any = null;
+	// Rect del bbox seleccionado en el frame actual (para ocultar ruta dentro del bbox)
+	let selectedBoxRect = $state<{ x: number; y: number; width: number; height: number } | null>(
+		null
+	);
+
+	// Estado para mostrar ruta al hacer click
+	let selectedRoute: { id: string; label: string } | null = $state(null);
+
+	// Control de loop para resetear overlays al reiniciar el video automáticamente
+	let lastVideoTime = 0;
+
 	// --- Definiciones de Tipos ---
 	type Vehiculo = string;
 	type ConteoVehiculos = { [key: Vehiculo]: number };
@@ -47,6 +80,8 @@
 	let videoFps = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
+	let determinados = $state<Record<string, any>>({});
+	let determinadosByTrack = $derived.by(() => new Map(Object.entries(determinados)));
 	type SortedIndeterminado = [string, Indeterminado];
 	let sortedIndeterminados = $state<SortedIndeterminado[]>([]);
 	let videoScale = $state({ x: 1, y: 1 });
@@ -77,7 +112,7 @@
 		return map;
 	});
 
-	// --- LÓGICA DEL BUCLE DE ANIMACIÓN (MODIFICADA PARA DESVANECIMIENTO) ---
+	// --- LÓGICA DEL BUCLE DE ANIMACIÓN (MODIFICADA PARA DESVANECIMIENTO Y GENERAL BBOXES) ---
 	function animationLoop() {
 		if (!videoElement || videoElement.paused) {
 			animationFrameId = null;
@@ -87,9 +122,68 @@
 		const currentTime = videoElement.currentTime;
 		const currentFrame = Math.floor(currentTime * videoFps);
 
-		// CAMBIO 3: Lógica de animación actualizada.
-		// En lugar de eliminar bruscamente las bboxes, ahora actualizamos su opacidad
-		// y solo las eliminamos del array cuando la opacidad es 0.
+		// Detectar loop (el tiempo se resetea de fin a inicio sin pausa)
+		if (currentTime + 0.05 < lastVideoTime) {
+			// Resetear estados dependientes del tiempo/frames
+			lastProcessedFrame = -1;
+			playbackBoundingBoxes = [];
+			console.log('Video looped: reset de estados de animación');
+		}
+
+		// --- Actualizar bboxes generales ---
+		generalDisplayBBoxes = generalBBoxesByFrame.get(currentFrame) ?? [];
+		// Actualizar rectángulo del bbox seleccionado (si está en el frame actual)
+		if (selectedTrackId && videoElement) {
+			const sel = generalDisplayBBoxes.find((b) => b.id === selectedTrackId);
+			if (sel) {
+				const [x1, y1, x2, y2] = sel.box;
+				let left = x1 * videoScale.x;
+				let top = y1 * videoScale.y;
+				let width = (x2 - x1) * videoScale.x;
+				let height = (y2 - y1) * videoScale.y;
+				const vw = videoElement.clientWidth,
+					vh = videoElement.clientHeight;
+				if (width < 0) {
+					left += width;
+					width = Math.abs(width);
+				}
+				if (height < 0) {
+					top += height;
+					height = Math.abs(height);
+				}
+				if (left < 0) {
+					width += left;
+					left = 0;
+				}
+				if (top < 0) {
+					height += top;
+					top = 0;
+				}
+				if (left + width > vw) {
+					width = vw - left;
+				}
+				if (top + height > vh) {
+					height = vh - top;
+				}
+				if (width > 0 && height > 0) selectedBoxRect = { x: left, y: top, width, height };
+				else selectedBoxRect = null;
+			} else {
+				selectedBoxRect = null;
+			}
+		} else {
+			selectedBoxRect = null;
+		}
+		// Ahora que tenemos el rect actualizado, calcular rutas/segmentos
+		if (selectedTrackId) updateSelectedTrackRoute(currentFrame);
+		// Si no hay ningún vehículo en pantalla, deseleccionar y limpiar rutas
+		if (generalDisplayBBoxes.length === 0 && selectedTrackId) {
+			selectedTrackId = null;
+			routePastPoints = [];
+			routeFuturePoints = [];
+			routeAllPoints = [];
+		}
+
+		// --- Indeterminados (con desvanecimiento, como antes) ---
 		if (playbackBoundingBoxes.length > 0) {
 			playbackBoundingBoxes = playbackBoundingBoxes
 				.map((box) => {
@@ -104,7 +198,7 @@
 				.filter((box) => box.opacity > 0); // Solo mantenemos las que son visibles.
 		}
 
-		// 2. AÑADIR NUEVAS BBOXES si hemos avanzado a un nuevo frame
+		// Añadir nuevas bboxes indeterminadas si hemos avanzado a un nuevo frame
 		if (currentFrame > lastProcessedFrame) {
 			for (let frame = lastProcessedFrame + 1; frame <= currentFrame; frame++) {
 				const bboxesInfo = indeterminadosByFrame.get(frame);
@@ -121,6 +215,7 @@
 		}
 
 		lastProcessedFrame = currentFrame;
+		lastVideoTime = currentTime;
 		animationFrameId = requestAnimationFrame(animationLoop);
 	}
 
@@ -188,6 +283,10 @@
 			if (videoWidth > 0 && videoHeight > 0) {
 				videoScale.x = videoElement.clientWidth / videoWidth;
 				videoScale.y = videoElement.clientHeight / videoHeight;
+				if (selectedTrackId && videoElement) {
+					const currentFrame = Math.floor(videoElement.currentTime * videoFps);
+					updateSelectedTrackRoute(currentFrame);
+				}
 			}
 		}
 	}
@@ -236,10 +335,257 @@
 		// Añadimos la opacidad al estilo dinámico.
 		return `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; opacity: ${opacity};`;
 	}
-	function getVehicleName(key: Vehiculo): string {
-		if (!key) return 'N/A';
-		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
+	// --- BBoxes generales a mostrar (sin fade, sin ID) ---
+	function calculateGeneralBoxStyle(box: GeneralBBox): string {
+		if (!videoElement) return 'display: none;';
+		const [x1, y1, x2, y2] = box.box;
+		let left = x1 * videoScale.x;
+		let top = y1 * videoScale.y;
+		let width = (x2 - x1) * videoScale.x;
+		let height = (y2 - y1) * videoScale.y;
+		const videoRenderedWidth = videoElement.clientWidth,
+			videoRenderedHeight = videoElement.clientHeight;
+		if (width < 0) {
+			left += width;
+			width = Math.abs(width);
+		}
+		if (height < 0) {
+			top += height;
+			height = Math.abs(height);
+		}
+		if (left < 0) {
+			width += left;
+			left = 0;
+		}
+		if (top < 0) {
+			height += top;
+			top = 0;
+		}
+		if (left + width > videoRenderedWidth) {
+			width = videoRenderedWidth - left;
+		}
+		if (top + height > videoRenderedHeight) {
+			height = videoRenderedHeight - top;
+		}
+		if (width <= 0 || height <= 0) return 'display: none;';
+
+		// Rectángulo completo, borde blanco; si está seleccionado, aplicar glow como los indeterminados
+		const isSelected = selectedTrackId === box.id;
+		const glow = isSelected
+			? 'box-shadow: 0 0 5px rgba(255,255,255,0.8), 0 0 10px rgba(255,255,255,0.6), 0 0 20px rgba(255,255,255,0.4);'
+			: 'box-shadow: none;';
+		return `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; border: 2px solid #ffffff; ${glow} pointer-events: auto; z-index: 12; cursor: pointer;`;
 	}
+
+	function calculateRoutePillStyle(box: GeneralBBox): string {
+		if (!videoElement) return 'display:none;';
+		const [x1, y1, x2, y2] = box.box;
+		let left = x1 * videoScale.x + 4;
+		let top = y1 * videoScale.y - 22; // encima del bbox
+		const videoRenderedWidth = videoElement.clientWidth,
+			videoRenderedHeight = videoElement.clientHeight;
+		if (top < 0) top = y1 * videoScale.y + 4; // si no hay espacio arriba, poner dentro
+		if (left < 0) left = 0;
+		if (left > videoRenderedWidth - 120) left = videoRenderedWidth - 120;
+		return `position:absolute; left:${left}px; top:${top}px; z-index:13; pointer-events:none;`;
+	}
+
+	function showRouteFor(box: GeneralBBox) {
+		// Usar el historial del track (data_obj_history) para mostrar recorrido pasado/futuro y la ruta completa
+		selectedTrackId = box.id;
+		const currentFrame = videoElement ? Math.floor(videoElement.currentTime * videoFps) : 0;
+		// Calcular inmediatamente el rectángulo del bbox seleccionado (incluso si el video está en pausa)
+		if (videoElement) {
+			const [x1, y1, x2, y2] = box.box;
+			let left = x1 * videoScale.x;
+			let top = y1 * videoScale.y;
+			let width = (x2 - x1) * videoScale.x;
+			let height = (y2 - y1) * videoScale.y;
+			const vw = videoElement.clientWidth,
+				vh = videoElement.clientHeight;
+			if (width < 0) {
+				left += width;
+				width = Math.abs(width);
+			}
+			if (height < 0) {
+				top += height;
+				height = Math.abs(height);
+			}
+			if (left < 0) {
+				width += left;
+				left = 0;
+			}
+			if (top < 0) {
+				height += top;
+				top = 0;
+			}
+			if (left + width > vw) {
+				width = vw - left;
+			}
+			if (top + height > vh) {
+				height = vh - top;
+			}
+			selectedBoxRect = width > 0 && height > 0 ? { x: left, y: top, width, height } : null;
+		}
+		const points = generalTrackHistory.get(box.id) || [];
+		// Calcular la ruta completa con todos los puntos del track
+		const toXY = (p: TrackPoint) => {
+			const [x1, y1, x2, y2] = p.box;
+			return { x: ((x1 + x2) / 2) * videoScale.x, y: ((y1 + y2) / 2) * videoScale.y };
+		};
+		routeAllPoints = points.map(toXY);
+		console.log('showRouteFor select', box.id, {
+			totalPoints: points.length,
+			currentFrame,
+			selectedBoxRect
+		});
+		updateSelectedTrackRoute(currentFrame);
+		console.log('after updateSelectedTrackRoute', {
+			pastSegs: routePastSegments.length,
+			futureSegs: routeFutureSegments.length,
+			pastPts: routePastPoints.length,
+			futurePts: routeFuturePoints.length
+		});
+		// Disparar animación rápida (activar antes del remount para que las polylines nazcan animadas)
+		if (routeAnimTimer) clearTimeout(routeAnimTimer);
+		routeAnimating = true;
+		routeAnimTimer = setTimeout(() => (routeAnimating = false), 320);
+		// Incrementar clave para re-montar SVG y disparar animación
+		routeAnimateKey++;
+	}
+
+	function updateSelectedTrackRoute(currentFrame: number) {
+		if (!selectedTrackId) return;
+		const trackPoints = generalTrackHistory.get(selectedTrackId) || [];
+		if (!videoElement || trackPoints.length === 0) {
+			routePastPoints = [];
+			routeFuturePoints = [];
+			routeAllPoints = [];
+			routePastSegments = [];
+			routeFutureSegments = [];
+			return;
+		}
+		console.log('updateSelectedTrackRoute:start', {
+			selectedTrackId,
+			currentFrame,
+			trackPoints: trackPoints.length,
+			selectedBoxRect
+		});
+		const past = trackPoints.filter((p) => p.frame <= currentFrame);
+		const future = trackPoints.filter((p) => p.frame > currentFrame);
+		const toXY = (p: TrackPoint) => {
+			const [x1, y1, x2, y2] = p.box;
+			return { x: ((x1 + x2) / 2) * videoScale.x, y: ((y1 + y2) / 2) * videoScale.y };
+		};
+		// Trayectorias en orden cronológico
+		const pastPts = past.map(toXY);
+		const futurePts = future.map(toXY);
+		// Guardar arrays base (pueden usarse para otras UI)
+		routePastPoints = [...pastPts].reverse();
+		routeFuturePoints = futurePts;
+
+		// Funciones auxiliares para recortar en el borde del bbox (cero separación)
+		const pad = 0;
+		const rect = selectedBoxRect
+			? {
+					xL: selectedBoxRect.x - pad,
+					xR: selectedBoxRect.x + selectedBoxRect.width + pad,
+					yT: selectedBoxRect.y - pad,
+					yB: selectedBoxRect.y + selectedBoxRect.height + pad
+				}
+			: null;
+		const isInside = (p: { x: number; y: number }) =>
+			rect ? p.x >= rect.xL && p.x <= rect.xR && p.y >= rect.yT && p.y <= rect.yB : false;
+		const segmentRectIntersections = (
+			p1: { x: number; y: number },
+			p2: { x: number; y: number }
+		) => {
+			if (!rect) return [] as { t: number; x: number; y: number }[];
+			const res: { t: number; x: number; y: number }[] = [];
+			const dx = p2.x - p1.x,
+				dy = p2.y - p1.y;
+			// Evitar divisiones por cero
+			const add = (t: number, x: number, y: number) => {
+				if (t >= 0 && t <= 1) res.push({ t, x, y });
+			};
+			if (dx !== 0) {
+				let t = (rect.xL - p1.x) / dx;
+				let y = p1.y + t * dy;
+				if (y >= rect.yT && y <= rect.yB) add(t, rect.xL, y);
+				t = (rect.xR - p1.x) / dx;
+				y = p1.y + t * dy;
+				if (y >= rect.yT && y <= rect.yB) add(t, rect.xR, y);
+			}
+			if (dy !== 0) {
+				let t = (rect.yT - p1.y) / dy;
+				let x = p1.x + t * dx;
+				if (x >= rect.xL && x <= rect.xR) add(t, x, rect.yT);
+				t = (rect.yB - p1.y) / dy;
+				x = p1.x + t * dx;
+				if (x >= rect.xL && x <= rect.xR) add(t, x, rect.yB);
+			}
+			// Ordenar por t
+			res.sort((a, b) => a.t - b.t);
+			return res;
+		};
+		const buildSegmentsClipped = (pts: { x: number; y: number }[]) => {
+			if (!rect) return pts.length > 1 ? [pts] : [];
+			const out: { x: number; y: number }[][] = [];
+			let seg: { x: number; y: number }[] = [];
+			for (let i = 1; i < pts.length; i++) {
+				const a = pts[i - 1];
+				const b = pts[i];
+				const inA = isInside(a);
+				const inB = isInside(b);
+				if (!inA && !inB) {
+					const ints = segmentRectIntersections(a, b);
+					if (seg.length === 0) seg.push(a);
+					if (ints.length === 2) {
+						// a..i1 (fuera)
+						seg.push({ x: ints[0].x, y: ints[0].y });
+						if (seg.length > 1) out.push(seg);
+						// i2.. (continuar fuera)
+						seg = [{ x: ints[1].x, y: ints[1].y }];
+					} else {
+						seg.push(b);
+					}
+				} else if (inA && !inB) {
+					const ints = segmentRectIntersections(a, b);
+					const first = ints.find((it) => it.t >= 0 && it.t <= 1);
+					if (first) {
+						seg = [{ x: first.x, y: first.y }, b];
+					} else {
+						seg = [b];
+					}
+				} else if (!inA && inB) {
+					const ints = segmentRectIntersections(a, b);
+					const last = ints.reverse().find((it) => it.t >= 0 && it.t <= 1);
+					if (seg.length === 0) seg.push(a);
+					if (last) seg.push({ x: last.x, y: last.y });
+					if (seg.length > 1) out.push(seg);
+					seg = [];
+				} else {
+					// ambos dentro: cerrar segmento si estaba abierto
+					if (seg.length > 1) out.push(seg);
+					seg = [];
+				}
+			}
+			if (seg.length > 1) out.push(seg);
+			return out;
+		};
+		routePastSegments = buildSegmentsClipped(pastPts);
+		routeFutureSegments = buildSegmentsClipped(futurePts);
+		// Actualizar ruta completa también
+		routeAllPoints = trackPoints.map(toXY);
+		console.log('updateSelectedTrackRoute:end', {
+			pastPts: pastPts.length,
+			futurePts: futurePts.length,
+			pastSegs: routePastSegments.map((s) => s.length),
+			futureSegs: routeFutureSegments.map((s) => s.length)
+		});
+	}
+
+	// --- FUNCIONES DE BACKEND Y CARGA DE DATOS ---
 	async function updateBackendData() {
 		try {
 			const res = await apiFetch(`/task/${data.id}/update-data`, {
@@ -270,6 +616,7 @@
 	async function fetchData(taskId: string) {
 		loading = true;
 		error = null;
+		generalReady = false;
 		try {
 			const res = await apiFetch(`/task/${taskId}`);
 			if (!res.ok) throw new Error(`Error al obtener datos: ${res.statusText}`);
@@ -280,6 +627,7 @@
 			videoWidth = +apiData.videoWidth;
 			videoHeight = +apiData.videoHeight;
 			videoFps = +apiData.videoFps;
+			console.log('Video meta:', { videoPath, videoWidth, videoHeight, videoFps });
 
 			// Helper para evitar caché del navegador en JSON estáticos de MinIO
 			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
@@ -296,11 +644,51 @@
 							.then((d) => d.history ?? d)
 					: Promise.resolve({});
 
-			const [historyData] = await Promise.all([historyPromise]);
+			// --- Procesar data_obj_history.json para bboxes y recorridos ---
+			let generalHistoryUrl =
+				apiData.dataObjHistoryUrl || apiData.data_obj_history_url || apiData.historyUrl;
+			console.log('General history URL:', generalHistoryUrl);
+			if (generalHistoryUrl) {
+				const generalRes = await fetch(bust(generalHistoryUrl));
+				if (!generalRes.ok) throw new Error('Error al obtener data_obj_history.json');
+				const generalJson = await generalRes.json();
+				console.log('General JSON keys:', Object.keys(generalJson));
+				// Procesar a Map<frame, [bboxes]> y Map<trackId, TrackPoint[]>
+				const frameMap = new Map<number, GeneralBBox[]>();
+				const trackMap = new Map<string, TrackPoint[]>();
+				let totalBBoxes = 0;
+				for (const [trackId, arr] of Object.entries(generalJson as Record<string, any[]>)) {
+					const points: TrackPoint[] = [];
+					for (const obj of arr) {
+						const frame = Number(obj.act_frame);
+						if (!frameMap.has(frame)) frameMap.set(frame, []);
+						frameMap.get(frame)!.push({ id: String(trackId), box: obj.box });
+						points.push({ frame, box: obj.box });
+						totalBBoxes++;
+					}
+					points.sort((a, b) => a.frame - b.frame);
+					trackMap.set(String(trackId), points);
+				}
+				generalBBoxesByFrame = frameMap;
+				generalTrackHistory = trackMap;
+				console.log('Tracks con historial:', generalTrackHistory.size);
+				console.log('Total bboxes procesadas:', totalBBoxes);
+				console.log('Frames con bboxes:', Array.from(frameMap.keys()));
+				generalReady = true;
+			} else {
+				generalBBoxesByFrame = new Map();
+				generalTrackHistory = new Map();
+				generalReady = true;
+			}
 
 			rutas = apiData.rutas;
 			indeterminados = apiData.indeterminados;
-			history = historyData;
+			determinados = apiData.determinados || {};
+			console.log('Datos de rutas cargados:', {
+				determinados: Object.keys(determinados || {}).length,
+				indeterminados: Object.keys(indeterminados || {}).length
+			});
+			history = await historyPromise;
 
 			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
 				const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
@@ -311,6 +699,7 @@
 			});
 		} catch (e: any) {
 			error = e.message || 'Error desconocido al cargar los datos.';
+			generalReady = false;
 		} finally {
 			loading = false;
 		}
@@ -393,7 +782,7 @@
 		const allTypes = new Set<string>();
 		for (const entrada in rutas) {
 			for (const salida in rutas[entrada]) {
-				Object.keys(rutas[entrada][salida]).forEach((vehiculo) => allTypes.add(vehiculo));
+				Object.keys(rutas[entrada][salida]).forEach((v) => allTypes.add(v));
 			}
 		}
 		Object.values(indeterminados).forEach((item) => allTypes.add(item.class));
@@ -524,6 +913,12 @@
 			})
 			.catch((e) => showError(e.message || 'Error al iniciar la descarga'));
 	}
+
+	// Helper para mostrar nombres de vehículos en UI
+	function getVehicleName(key: string): string {
+		if (!key) return 'N/A';
+		return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
+	}
 </script>
 
 <div class="min-h-screen bg-background text-foreground py-8 px-4">
@@ -543,7 +938,7 @@
 		<div class="flex flex-wrap justify-center items-start gap-8 mb-12">
 			<!-- Reproductor de video -->
 			<div class="w-full lg:w-2/3 max-w-5xl">
-				{#if videoPath !== ''}
+				{#if videoPath !== '' && generalReady}
 					<div
 						class="relative rounded overflow-hidden border bg-black aspect-video glass-card"
 						style="border-color: hsl(var(--border))"
@@ -552,14 +947,17 @@
 							class="w-full h-full"
 							controls
 							autoplay
+							loop
 							bind:this={videoElement}
-							onloadedmetadata={updateVideoDimensions}
+							onloadedmetadata={() => {
+								updateVideoDimensions();
+								if (selectedTrackId && videoElement) {
+									updateSelectedTrackRoute(Math.floor(videoElement.currentTime * videoFps));
+								}
+							}}
 							onplay={startAnimationLoop}
 							onpause={stopAnimationLoop}
-							onended={stopAnimationLoop}
 							onseeking={() => {
-								// Cuando el usuario arrastra el cursor, reseteamos el frame procesado
-								// para que el bucle sepa que tiene que re-evaluar desde la nueva posición.
 								if (videoElement) {
 									lastProcessedFrame = Math.floor(videoElement.currentTime * videoFps) - 1;
 								}
@@ -570,7 +968,95 @@
 							Tu navegador no soporta la reproducción de video.
 						</video>
 
-						<!-- El bloque de renderizado de BBoxes no cambia -->
+						<!-- Renderizado de bboxes generales (sin fade, sin ID) -->
+						{#each generalDisplayBBoxes as box (box.id)}
+							<div
+								class="general-bbox"
+								role="button"
+								tabindex="0"
+								aria-label="Mostrar ruta del vehículo"
+								style={calculateGeneralBoxStyle(box)}
+								onclick={() => showRouteFor(box)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.preventDefault();
+										showRouteFor(box);
+									}
+								}}
+							></div>
+						{/each}
+
+						<!-- Overlay de recorrido de track seleccionado (contenedor único) -->
+						{#if selectedTrackId}
+							{#key routeAnimateKey}
+								<svg
+									class="absolute inset-0 pointer-events-none"
+									style="z-index: 13;"
+									width="100%"
+									height="100%"
+								>
+									<defs>
+										<filter id="white-glow" x="-50%" y="-50%" width="200%" height="200%">
+											<feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+											<feMerge>
+												<feMergeNode in="coloredBlur" />
+												<feMergeNode in="SourceGraphic" />
+											</feMerge>
+										</filter>
+										{#if selectedBoxRect}
+											<mask id="mask-outside-bbox">
+												<!-- Blanco = visible; Negro = oculto dentro del bbox -->
+												<rect x="0" y="0" width="100%" height="100%" fill="white" />
+												<rect
+													x={selectedBoxRect.x}
+													y={selectedBoxRect.y}
+													width={selectedBoxRect.width}
+													height={selectedBoxRect.height}
+													fill="black"
+												/>
+											</mask>
+										{/if}
+									</defs>
+									{#each routePastSegments as seg, i}
+										{#if seg.length > 1}
+											<polyline
+												points={[...seg]
+													.reverse()
+													.map((p) => `${p.x},${p.y}`)
+													.join(' ')}
+												fill="none"
+												stroke="#ffffff"
+												stroke-width="2.5"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												filter="url(#white-glow)"
+												pathLength="1"
+												class={routeAnimating ? 'route-anim' : ''}
+												style={routeAnimating ? `animation-delay: ${i * 35}ms;` : undefined}
+											/>
+										{/if}
+									{/each}
+									{#each routeFutureSegments as seg, i}
+										{#if seg.length > 1}
+											<polyline
+												points={seg.map((p) => `${p.x},${p.y}`).join(' ')}
+												fill="none"
+												stroke="#ffffff"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												opacity="0.5"
+												pathLength="1"
+												class={routeAnimating ? 'route-anim' : ''}
+												style={routeAnimating ? `animation-delay: ${i * 35}ms;` : undefined}
+											/>
+										{/if}
+									{/each}
+								</svg>
+							{/key}
+						{/if}
+
+						<!-- Renderizado de bboxes indeterminados (con fade, con ID) -->
 						{#each displayBoundingBoxes as box (box.id)}
 							<div class="bbox-style" style={calculateBoxStyle(box)}>
 								{#if box.id !== 'active-manual'}
@@ -579,10 +1065,12 @@
 							</div>
 						{/each}
 					</div>
-
-					<!-- Botón de descarga debajo del video, alineado a la izquierda -->
-					<div class="mt-4">
-						<button onclick={downloadVideo} class="glass-button">Descargar Video</button>
+				{:else}
+					<div
+						class="flex items-center justify-center w-full h-full min-h-[320px]"
+						style="background: #111;"
+					>
+						<Spinner size={48} />
 					</div>
 				{/if}
 			</div>
@@ -843,6 +1331,15 @@
 		z-index: 10;
 		transition: transform 0.2s ease-in-out;
 	}
+	.general-bbox {
+		/* Rectángulo completo, borde blanco, sin glow */
+		border: 2px solid #ffffff;
+		box-shadow: none;
+		pointer-events: auto;
+		z-index: 12;
+		position: absolute;
+		cursor: pointer;
+	}
 	.ind-card {
 		/* Preserve glow behavior, but retheme base surface into glass */
 		background-color: hsl(var(--background) / 0.6);
@@ -908,5 +1405,22 @@
 
 		/* Un suave resplandor al texto para que se integre mejor */
 		text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
+	}
+
+	/* Animación de trazo para dibujar la ruta rápidamente (sutil) */
+	@keyframes draw-in {
+		from {
+			stroke-dashoffset: 1;
+		}
+		to {
+			stroke-dashoffset: 0;
+		}
+	}
+
+	.route-anim {
+		pathlength: 1;
+		stroke-dasharray: 1;
+		stroke-dashoffset: 1;
+		animation: draw-in 220ms ease-out forwards;
 	}
 </style>

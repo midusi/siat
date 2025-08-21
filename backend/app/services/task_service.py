@@ -105,6 +105,12 @@ class TaskService:
                 payload["rutas"] = json.loads(task.inference.transition_counts)
             if task.inference.transition_undetermined:
                 payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
+            # Agregar objetos con rutas determinadas por trackId
+            if task.inference.transition_determined:
+                try:
+                    payload["determinados"] = json.loads(task.inference.transition_determined)
+                except Exception:
+                    payload["determinados"] = {}
             if task.inference.url_data_obj_history:
                 payload["historyUrl"] = f"{public_base}/{task.inference.url_data_obj_history}"
 

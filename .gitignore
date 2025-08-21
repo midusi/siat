@@ -131,7 +131,7 @@ dist
 
 temp*
 videos/
-**/.venv/
+**/.venv**/
 **/__pycache__/
 **.svelte-kit
 minio/
