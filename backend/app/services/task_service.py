@@ -104,13 +104,13 @@ class TaskService:
             if task.inference.transition_counts:
                 payload["rutas"] = json.loads(task.inference.transition_counts)
             if task.inference.transition_undetermined:
-                payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
+                try:
+                    payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
+                except:
+                    payload["indeterminados"] = task.inference.transition_undetermined
             # Agregar objetos con rutas determinadas por trackId
             if task.inference.transition_determined:
-                try:
-                    payload["determinados"] = json.loads(task.inference.transition_determined)
-                except Exception:
-                    payload["determinados"] = {}
+                payload["determinados"] = json.loads(task.inference.transition_determined)
             if task.inference.url_data_obj_history:
                 payload["historyUrl"] = f"{public_base}/{task.inference.url_data_obj_history}"
 
@@ -355,7 +355,7 @@ class TaskService:
                         "500",
                         "500"
                     ],
-                    "labels": ["0", "IND"],
+                    "labels": ["0", ""],
                 },
                 "2": {
                     "frame": "40",
@@ -366,7 +366,7 @@ class TaskService:
                         "600",
                         "600"
                     ],
-                    "labels": ["1", "IND"],
+                    "labels": ["1", ""],
                 },
                 "3": {
                     "frame": "60",
@@ -377,7 +377,7 @@ class TaskService:
                         "700",
                         "700"
                     ],
-                    "labels": ["IND", "2"],
+                    "labels": ["", "2"],
                 },
                 "4": {
                     "frame": "80",
@@ -388,7 +388,7 @@ class TaskService:
                         "800",
                         "800"
                     ],
-                    "labels": ["IND", "3"],
+                    "labels": ["", "3"],
                 },
                 "5": {
                     "frame": "100",
@@ -399,7 +399,7 @@ class TaskService:
                         "900",
                         "900"
                     ],
-                    "labels": ["IND", "IND"],
+                    "labels": ["", ""],
                 }
             }
         }
@@ -450,8 +450,10 @@ class TaskService:
 
     # NEW: Persist updated rutas and indeterminados coming from frontend
     def update_data(self, task_id: int, updated_data: TaskUpdateData) -> dict:
-        """Actualiza los campos transition_counts y transition_undetermined de la inferencia.
-        Devuelve la inferencia actualizada.
+        """Actualiza rutas, indeterminados, determinados y (opcional) data_obj_history.
+        - transition_counts, transition_undetermined, transition_determined se guardan como JSON en BD.
+        - data_obj_history (si viene) se sube a MinIO y se actualiza url_data_obj_history.
+        Devuelve las URLs/keys actualizadas.
         """
         # Validaciones básicas
         task = task_crud.find_one_by_fields(self.db, id=task_id)
@@ -467,19 +469,37 @@ class TaskService:
 
         rutas = updated_data.rutas or {}
         indeterminados = updated_data.indeterminados or {}
+        determinados = updated_data.determinados or {}
+        data_obj_history = updated_data.data_obj_history or None
 
         try:
             # Serializar los datos como JSON antes de asignarlos
             # Guardar directamente los diccionarios sin envoltorio adicional
             inference.transition_counts = json.dumps(rutas, ensure_ascii=False, indent=2)
             inference.transition_undetermined = json.dumps(indeterminados, ensure_ascii=False, indent=2)
-            
+            # NEW: guardar determinados
+            inference.transition_determined = json.dumps(determinados, ensure_ascii=False, indent=2)
+
+            # Si vino data_obj_history, subirlo a MinIO y actualizar la URL
+            if data_obj_history is not None:
+                # Determinar carpeta destino usando el video.url como referencia
+                video_folder = os.path.dirname(task.video.url)
+                history_filename = "data_obj_history.json"
+                history_key = f"{video_folder}/{history_filename}"
+                history_str = json.dumps(data_obj_history, ensure_ascii=False, separators=(",", ":"))
+                # Subir (sobrescribe si existe)
+                self.bucket_service.upload(history_str, history_key, content_type="application/json")
+                # Guardar key en la BD
+                inference.url_data_obj_history = history_key
+
             self.db.flush()
             self.db.commit()
 
             return {
                 "rutasUrl": inference.transition_counts,
                 "indeterminadosUrl": inference.transition_undetermined,
+                "determinadosUrl": inference.transition_determined,
+                "historyUrl": f"http://localhost:9000/{BucketService.BUCKET_NAME}/{inference.url_data_obj_history}" if inference.url_data_obj_history else None,
             }
         except Exception as e:
             self.db.rollback()

@@ -254,6 +254,8 @@
     .glass-button:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+        pointer-events: none;
+        /* block clicks when disabled */
     }
 
     .btn-danger {
@@ -274,5 +276,18 @@
 
     .btn-success:hover {
         background-color: rgba(34, 197, 94, 0.26);
+    }
+
+    /* Neutral disabled-looking style (used alongside disabled attribute) */
+    .btn-disabled {
+        color: #e5e7eb;
+        /* tailwind gray-200 */
+        background-color: rgba(156, 163, 175, 0.18);
+        /* gray-400 at ~18% */
+        border-color: rgba(156, 163, 175, 0.28);
+    }
+
+    .btn-disabled:hover {
+        background-color: rgba(156, 163, 175, 0.22);
     }
 }

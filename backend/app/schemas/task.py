@@ -35,3 +35,5 @@ class TaskConfigRequest(BaseModel):
 class TaskUpdateData(BaseModel):
     rutas: dict
     indeterminados: dict
+    determinados: dict | None = None
+    data_obj_history: dict | None = None

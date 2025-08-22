@@ -4,6 +4,7 @@
 	import { showSuccess, showError } from '$lib/toast';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
+	import { showConfirm } from '$lib/dialog';
 
 	// --- Props y estado inicial ---
 	let { data } = $props();
@@ -36,13 +37,17 @@
 	// Flag y timer para animación rápida y fallback si falla la animación CSS
 	let routeAnimating = $state(false);
 	let routeAnimTimer: any = null;
+	// Fade out de ruta/selección cuando desaparece del frame
+	let routeFadingOut = $state(false);
+	let routeFadeTimer: any = null;
+	// Controla si la selección aplica atenuación al resto (permite restaurar opacidad mientras la ruta se desvanece)
+	let isSelectionActive = $state(false);
 	// Rect del bbox seleccionado en el frame actual (para ocultar ruta dentro del bbox)
 	let selectedBoxRect = $state<{ x: number; y: number; width: number; height: number } | null>(
 		null
 	);
 
-	// Estado para mostrar ruta al hacer click
-	let selectedRoute: { id: string; label: string } | null = $state(null);
+	// Nota: 'selectedRoute' no se usa en la UI; se elimina para evitar trabajo inútil
 
 	// Control de loop para resetear overlays al reiniciar el video automáticamente
 	let lastVideoTime = 0;
@@ -85,12 +90,29 @@
 	let determinadosByTrack = $derived.by(() => new Map(Object.entries(determinados)));
 	type SortedIndeterminado = [string, Indeterminado];
 	let sortedIndeterminados = $state<SortedIndeterminado[]>([]);
+	// --- Búsqueda de indeterminados por ID ---
+	let searchQuery = $state('');
+	let searchInputEl = $state<HTMLInputElement | null>(null);
+	let visibleIndeterminados = $derived.by(() => {
+		const q = (searchQuery || '').trim();
+		if (!q) return sortedIndeterminados;
+		return sortedIndeterminados.filter(([id]) => id.includes(q));
+	});
 	let videoScale = $state({ x: 1, y: 1 });
 	let savingById = $state<Record<string, boolean>>({});
 	let history = $state<History>({});
 	// Rango de frames disponibles (para mapear tiempo->frame sin depender estrictamente de FPS)
 	let dataFrameFirst = $state<number | null>(null);
 	let dataFrameLast = $state<number | null>(null);
+
+	// --- Estado Modo Unir ---
+	let mergeModeActive = $state(false);
+	let mergeSourceId = $state<string | null>(null);
+	let mergeInProgress = $state(false);
+
+	function isUnknownLabel(x: string | null | undefined): boolean {
+		return !x || x === 'IND';
+	}
 
 	function computeCurrentFrameFromTime(timeSec: number): number {
 		const dur = videoElement?.duration ?? videoDuration ?? 0;
@@ -113,6 +135,64 @@
 		}
 		return videoFps > 0 ? frame / videoFps : 0;
 	}
+
+	function isFrameWithinTrackRange(trackId: string, frame: number): boolean {
+		const points = generalTrackHistory.get(trackId) || [];
+		if (!points.length) return false;
+		const first = points[0].frame;
+		const last = points[points.length - 1].frame;
+		return frame >= first && frame <= last;
+	}
+
+	// --- Utilidades de geometría y estilos (para evitar duplicación) ---
+	type Rect = { x: number; y: number; width: number; height: number };
+	function toScaledClampedRect(box: [number, number, number, number]): Rect | null {
+		if (!videoElement) return null;
+		const [x1n, y1n, x2n, y2n] = box;
+		const vw = videoElement.clientWidth,
+			vh = videoElement.clientHeight;
+		let left = x1n * videoScale.x;
+		let top = y1n * videoScale.y;
+		let width = (x2n - x1n) * videoScale.x;
+		let height = (y2n - y1n) * videoScale.y;
+		if (width < 0) {
+			left += width;
+			width = Math.abs(width);
+		}
+		if (height < 0) {
+			top += height;
+			height = Math.abs(height);
+		}
+		if (left < 0) {
+			width += left;
+			left = 0;
+		}
+		if (top < 0) {
+			height += top;
+			top = 0;
+		}
+		if (left + width > vw) width = vw - left;
+		if (top + height > vh) height = vh - top;
+		if (width <= 0 || height <= 0) return null;
+		return { x: left, y: top, width, height };
+	}
+	function toScaledClampedRectFromStr(bbox: BoundingBox): Rect | null {
+		const [x1s, y1s, x2s, y2s] = bbox;
+		return toScaledClampedRect([
+			parseFloat(x1s),
+			parseFloat(y1s),
+			parseFloat(x2s),
+			parseFloat(y2s)
+		]);
+	}
+	function rectStyle(rect: Rect, extra = ''): string {
+		return `position: absolute; left: ${rect.x}px; top: ${rect.y}px; width: ${rect.width}px; height: ${rect.height}px; ${extra}`;
+	}
+	function boxCenterScaled(box: [number, number, number, number]) {
+		const [x1, y1, x2, y2] = box;
+		return { x: ((x1 + x2) / 2) * videoScale.x, y: ((y1 + y2) / 2) * videoScale.y };
+	}
+
 	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
 	let activeBoundingBox = $state<BoundingBox | null>(null);
 	let playbackBoundingBoxes = $state<DisplayableBBox[]>([]);
@@ -157,91 +237,89 @@
 
 		// --- Actualizar bboxes generales ---
 		generalDisplayBBoxes = generalBBoxesByFrame.get(currentFrame) ?? [];
-		// Actualizar rectángulo del bbox seleccionado (si está en el frame actual)
+		// Actualizar rect del bbox seleccionado (si está en el frame actual)
 		if (selectedTrackId && videoElement) {
 			const sel = generalDisplayBBoxes.find((b) => b.id === selectedTrackId);
-			if (sel) {
-				const [x1, y1, x2, y2] = sel.box;
-				let left = x1 * videoScale.x;
-				let top = y1 * videoScale.y;
-				let width = (x2 - x1) * videoScale.x;
-				let height = (y2 - y1) * videoScale.y;
-				const vw = videoElement.clientWidth,
-					vh = videoElement.clientHeight;
-				if (width < 0) {
-					left += width;
-					width = Math.abs(width);
-				}
-				if (height < 0) {
-					top += height;
-					height = Math.abs(height);
-				}
-				if (left < 0) {
-					width += left;
-					left = 0;
-				}
-				if (top < 0) {
-					height += top;
-					top = 0;
-				}
-				if (left + width > vw) {
-					width = vw - left;
-				}
-				if (top + height > vh) {
-					height = vh - top;
-				}
-				if (width > 0 && height > 0) selectedBoxRect = { x: left, y: top, width, height };
-				else selectedBoxRect = null;
-			} else {
-				selectedBoxRect = null;
-			}
+			selectedBoxRect = sel ? toScaledClampedRect(sel.box) : selectedBoxRect; // conservar para evitar parpadeos
 		} else {
 			selectedBoxRect = null;
 		}
 		// Ahora que tenemos el rect actualizado, calcular rutas/segmentos
 		if (selectedTrackId) updateSelectedTrackRoute(currentFrame);
-		// Si no hay ningún vehículo en pantalla, deseleccionar y limpiar rutas
-		if (generalDisplayBBoxes.length === 0 && selectedTrackId) {
-			selectedTrackId = null;
-			routePastPoints = [];
-			routeFuturePoints = [];
-			routeAllPoints = [];
+		// Decidir visibilidad según rango de frames del track
+		if (selectedTrackId) {
+			const inRange = isFrameWithinTrackRange(selectedTrackId, currentFrame);
+			if (!inRange) beginClearSelectionWithFade();
 		}
 
 		// --- Indeterminados (con desvanecimiento, como antes) ---
 		if (playbackBoundingBoxes.length > 0) {
-			playbackBoundingBoxes = playbackBoundingBoxes
-				.map((box) => {
-					const timeUntilHidden = box.hideAtTime - currentTime;
-					// Calculamos la nueva opacidad. Será un valor entre 0 y 1.
-					const newOpacity = Math.max(
-						0,
-						Math.min(1.0, timeUntilHidden / FADE_OUT_DURATION_SECONDS)
-					);
-					return { ...box, opacity: newOpacity };
-				})
-				.filter((box) => box.opacity > 0); // Solo mantenemos las que son visibles.
+			const out: DisplayableBBox[] = [];
+			for (const box of playbackBoundingBoxes) {
+				const timeUntilHidden = box.hideAtTime - currentTime;
+				const newOpacity = Math.max(0, Math.min(1.0, timeUntilHidden / FADE_OUT_DURATION_SECONDS));
+				if (newOpacity > 0) {
+					if (newOpacity !== box.opacity) out.push({ ...box, opacity: newOpacity });
+					else out.push(box);
+				}
+			}
+			playbackBoundingBoxes = out; // reasignación para reactividad
 		}
 
 		// Añadir nuevas bboxes indeterminadas si hemos avanzado a un nuevo frame
 		if (currentFrame > lastProcessedFrame) {
+			let updated = playbackBoundingBoxes.slice();
 			for (let frame = lastProcessedFrame + 1; frame <= currentFrame; frame++) {
 				const bboxesInfo = indeterminadosByFrame.get(frame);
 				if (bboxesInfo) {
-					const newBoxes = bboxesInfo.map((info) => ({
-						id: info.trackId,
-						bbox: info.bbox,
-						hideAtTime: computeTimeFromFrame(frame) + FADE_OUT_DURATION_SECONDS,
-						opacity: 1.0 // Empiezan con opacidad total
-					}));
-					playbackBoundingBoxes = [...playbackBoundingBoxes, ...newBoxes];
+					for (const info of bboxesInfo) {
+						updated.push({
+							id: info.trackId,
+							bbox: info.bbox,
+							hideAtTime: computeTimeFromFrame(frame) + FADE_OUT_DURATION_SECONDS,
+							opacity: 1.0
+						});
+						// Al aparecer por primera vez en reproducción, resaltar y mostrar su tarjeta en la lista
+						activeIndeterminateId = info.trackId;
+						queueMicrotask(() => {
+							const el = document.getElementById(`ind-card-${info.trackId}`);
+							if (el) {
+								el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+								(el as HTMLElement).focus({ preventScroll: true });
+							}
+						});
+					}
 				}
 			}
+			playbackBoundingBoxes = updated;
 		}
 
 		lastProcessedFrame = currentFrame;
 		lastVideoTime = currentTime;
 		animationFrameId = requestAnimationFrame(animationLoop);
+	}
+
+	// Actualiza overlays (bboxes generales y ruta seleccionada) para el frame actual cuando el video está pausado
+	function updateOverlaysForCurrentFrame() {
+		if (!videoElement) return;
+		const currentTime = videoElement.currentTime;
+		const currentFrame = computeCurrentFrameFromTime(currentTime);
+		// BBoxes generales del frame actual
+		generalDisplayBBoxes = generalBBoxesByFrame.get(currentFrame) ?? [];
+		// Rect del bbox seleccionado si existe en este frame
+		if (selectedTrackId) {
+			const sel = generalDisplayBBoxes.find((b) => b.id === selectedTrackId);
+			selectedBoxRect = sel ? toScaledClampedRect(sel.box) : selectedBoxRect; // conservar si falta el bbox puntual
+		} else {
+			selectedBoxRect = null;
+		}
+		// Recalcular rutas para el frame actual
+		if (selectedTrackId) updateSelectedTrackRoute(currentFrame);
+		// Decidir visibilidad según rango de frames del track seleccionado
+		if (selectedTrackId) {
+			const inRange = isFrameWithinTrackRange(selectedTrackId, currentFrame);
+			if (!inRange) beginClearSelectionWithFade();
+		}
 	}
 
 	// --- FUNCIONES DE CONTROL DEL VIDEO ---
@@ -272,6 +350,21 @@
 		}
 	}
 
+	// Recalcula escala y alto del contenedor en función del tamaño del video renderizado
+	function updateVideoDimensions() {
+		if (!videoElement) return;
+		const vw = videoElement.videoWidth || videoWidth || 0;
+		const vh = videoElement.videoHeight || videoHeight || 0;
+		const cw = videoElement.clientWidth || 0;
+		const ch = videoElement.clientHeight || 0;
+		if (vw > 0 && vh > 0 && cw > 0 && ch > 0) {
+			videoScale = { x: cw / vw, y: ch / vh };
+			videoHeightPx = ch;
+			// Si está pausado, actualizar overlays con la nueva escala
+			if (videoElement.paused) updateOverlaysForCurrentFrame();
+		}
+	}
+
 	// CAMBIO 4: La BBox manual también debe tener una propiedad 'opacity' para ser consistente.
 	let displayBoundingBoxes = $derived.by(() => {
 		if (activeBoundingBox) {
@@ -298,108 +391,46 @@
 
 		const timeInSeconds = computeTimeFromFrame(parseInt(item.first_appearance.frame));
 		videoElement.currentTime = timeInSeconds;
-		activeBoundingBox = item.first_appearance.boundingBox;
-	}
 
-	// --- El resto del código permanece casi igual ---
-	function updateVideoDimensions() {
-		if (videoElement) {
-			videoHeightPx = videoElement.clientHeight;
-			if (videoWidth > 0 && videoHeight > 0) {
-				videoScale.x = videoElement.clientWidth / videoWidth;
-				videoScale.y = videoElement.clientHeight / videoHeight;
-				if (selectedTrackId && videoElement) {
-					const currentFrame = computeCurrentFrameFromTime(videoElement.currentTime);
-					updateSelectedTrackRoute(currentFrame);
-				}
-			}
-		}
+		// Apply the same selection behavior as clicking a bbox on video
+		selectedTrackId = trackId;
+		isSelectionActive = true;
+		// Cancel any ongoing route fade
+		if (routeFadeTimer) clearTimeout(routeFadeTimer);
+		routeFadingOut = false;
+		// Clear any separate indeterminate overlay to avoid double borders
+		activeBoundingBox = null;
+		// Fire quick route draw-in animation (reiniciar siempre)
+		if (routeAnimTimer) clearTimeout(routeAnimTimer);
+		routeAnimating = true;
+		routeAnimTimer = setTimeout(() => (routeAnimating = false), 320);
+		routeAnimateKey++;
+
+		// Refresh overlays for the paused frame (sets selectedBoxRect and routes)
+		updateOverlaysForCurrentFrame();
 	}
 	// CAMBIO 5: La función ahora recibe el objeto `DisplayableBBox` completo.
 	function calculateBoxStyle(box: DisplayableBBox): string {
 		if (!videoElement) return 'display: none;';
-
-		const { bbox, opacity } = box;
-		const [x1_str, y1_str, x2_str, y2_str] = bbox;
-		const x1 = parseFloat(x1_str),
-			y1 = parseFloat(y1_str),
-			x2 = parseFloat(x2_str),
-			y2 = parseFloat(y2_str);
-
-		let left = x1 * videoScale.x;
-		let top = y1 * videoScale.y;
-		let width = (x2 - x1) * videoScale.x;
-		let height = (y2 - y1) * videoScale.y;
-
-		const videoRenderedWidth = videoElement.clientWidth,
-			videoRenderedHeight = videoElement.clientHeight;
-		if (width < 0) {
-			left += width;
-			width = Math.abs(width);
-		}
-		if (height < 0) {
-			top += height;
-			height = Math.abs(height);
-		}
-		if (left < 0) {
-			width += left;
-			left = 0;
-		}
-		if (top < 0) {
-			height += top;
-			top = 0;
-		}
-		if (left + width > videoRenderedWidth) {
-			width = videoRenderedWidth - left;
-		}
-		if (top + height > videoRenderedHeight) {
-			height = videoRenderedHeight - top;
-		}
-		if (width <= 0 || height <= 0) return 'display: none;';
-
-		// Añadimos la opacidad al estilo dinámico.
-		return `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; opacity: ${opacity};`;
+		const rect = toScaledClampedRectFromStr(box.bbox);
+		if (!rect) return 'display: none;';
+		return rectStyle(rect, `opacity: ${box.opacity}; transition: opacity 0.5s ease;`);
 	}
 	// --- BBoxes generales a mostrar (sin fade, sin ID) ---
 	function calculateGeneralBoxStyle(box: GeneralBBox): string {
 		if (!videoElement) return 'display: none;';
-		const [x1, y1, x2, y2] = box.box;
-		let left = x1 * videoScale.x;
-		let top = y1 * videoScale.y;
-		let width = (x2 - x1) * videoScale.x;
-		let height = (y2 - y1) * videoScale.y;
-		const videoRenderedWidth = videoElement.clientWidth,
-			videoRenderedHeight = videoElement.clientHeight;
-		if (width < 0) {
-			left += width;
-			width = Math.abs(width);
-		}
-		if (height < 0) {
-			top += height;
-			height = Math.abs(height);
-		}
-		if (left < 0) {
-			width += left;
-			left = 0;
-		}
-		if (top < 0) {
-			height += top;
-			top = 0;
-		}
-		if (left + width > videoRenderedWidth) {
-			width = videoRenderedWidth - left;
-		}
-		if (top + height > videoRenderedHeight) {
-			height = videoRenderedHeight - top;
-		}
-		if (width <= 0 || height <= 0) return 'display: none;';
-
-		// Rectángulo completo, borde blanco; si está seleccionado, aplicar glow como los indeterminados
+		const rect = toScaledClampedRect(box.box);
+		if (!rect) return 'display: none;';
 		const isSelected = selectedTrackId === box.id;
 		const glow = isSelected
 			? 'box-shadow: 0 0 5px rgba(255,255,255,0.8), 0 0 10px rgba(255,255,255,0.6), 0 0 20px rgba(255,255,255,0.4);'
 			: 'box-shadow: none;';
-		return `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; border: 2px solid #ffffff; ${glow} pointer-events: auto; z-index: 12; cursor: pointer;`;
+		const dim = isSelectionActive && selectedTrackId && !isSelected ? 'opacity: 0.5;' : '';
+		const borderColor = isSelected ? '#ffffff' : '#000000';
+		return rectStyle(
+			rect,
+			`border: 2px solid ${borderColor}; ${glow} ${dim} pointer-events: auto; z-index: 12; cursor: pointer; transition: opacity 0.5s ease, box-shadow 0.5s ease;`
+		);
 	}
 
 	function calculateRoutePillStyle(box: GeneralBBox): string {
@@ -417,66 +448,67 @@
 
 	function showRouteFor(box: GeneralBBox) {
 		// Usar el historial del track (data_obj_history) para mostrar recorrido pasado/futuro y la ruta completa
-		selectedTrackId = box.id;
-		const currentFrame = videoElement ? computeCurrentFrameFromTime(videoElement.currentTime) : 0;
-		// Calcular inmediatamente el rectángulo del bbox seleccionado (incluso si el video está en pausa)
-		if (videoElement) {
-			const [x1, y1, x2, y2] = box.box;
-			let left = x1 * videoScale.x;
-			let top = y1 * videoScale.y;
-			let width = (x2 - x1) * videoScale.x;
-			let height = (y2 - y1) * videoScale.y;
-			const vw = videoElement.clientWidth,
-				vh = videoElement.clientHeight;
-			if (width < 0) {
-				left += width;
-				width = Math.abs(width);
+		// Si ya está seleccionado y activo, hacer toggle para des-destacar con transición
+		if (selectedTrackId === box.id) {
+			if (isSelectionActive) {
+				beginClearSelectionWithFade();
 			}
-			if (height < 0) {
-				top += height;
-				height = Math.abs(height);
-			}
-			if (left < 0) {
-				width += left;
-				left = 0;
-			}
-			if (top < 0) {
-				height += top;
-				top = 0;
-			}
-			if (left + width > vw) {
-				width = vw - left;
-			}
-			if (top + height > vh) {
-				height = vh - top;
-			}
-			selectedBoxRect = width > 0 && height > 0 ? { x: left, y: top, width, height } : null;
+			return;
 		}
+		selectedTrackId = box.id;
+		isSelectionActive = true;
+		// Cancelar cualquier fade-out en curso
+		if (routeFadeTimer) clearTimeout(routeFadeTimer);
+		routeFadingOut = false;
+		const currentFrame = videoElement ? computeCurrentFrameFromTime(videoElement.currentTime) : 0;
+		// Calcular de inmediato el rectángulo del bbox seleccionado (incluso si el video está en pausa)
+		selectedBoxRect = toScaledClampedRect(box.box);
 		const points = generalTrackHistory.get(box.id) || [];
 		// Calcular la ruta completa con todos los puntos del track
-		const toXY = (p: TrackPoint) => {
-			const [x1, y1, x2, y2] = p.box;
-			return { x: ((x1 + x2) / 2) * videoScale.x, y: ((y1 + y2) / 2) * videoScale.y };
-		};
-		routeAllPoints = points.map(toXY);
-		console.log('showRouteFor select', box.id, {
-			totalPoints: points.length,
-			currentFrame,
-			selectedBoxRect
-		});
+		routeAllPoints = points.map((p) => boxCenterScaled(p.box));
 		updateSelectedTrackRoute(currentFrame);
-		console.log('after updateSelectedTrackRoute', {
-			pastSegs: routePastSegments.length,
-			futureSegs: routeFutureSegments.length,
-			pastPts: routePastPoints.length,
-			futurePts: routeFuturePoints.length
-		});
 		// Disparar animación rápida (activar antes del remount para que las polylines nazcan animadas)
 		if (routeAnimTimer) clearTimeout(routeAnimTimer);
 		routeAnimating = true;
 		routeAnimTimer = setTimeout(() => (routeAnimating = false), 320);
 		// Incrementar clave para re-montar SVG y disparar animación
 		routeAnimateKey++;
+
+		// Si este track está en la lista de indeterminados, desplazarse a su tarjeta y resaltarla
+		if (indeterminados[selectedTrackId]) {
+			activeIndeterminateId = selectedTrackId;
+			queueMicrotask(() => {
+				const el = document.getElementById(`ind-card-${selectedTrackId}`);
+				if (el) {
+					el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					(el as HTMLElement).focus({ preventScroll: true });
+				}
+			});
+		}
+	}
+
+	function beginClearSelectionWithFade() {
+		// Si ya no hay nada que mostrar, asegura estado limpio
+		if (!selectedTrackId && routePastSegments.length === 0 && routeFutureSegments.length === 0) {
+			routeFadingOut = false;
+			isSelectionActive = false;
+			return;
+		}
+		// Iniciar restauración visual inmediata del resto (quita atenuación)
+		isSelectionActive = false;
+		// Iniciar fade-out de la ruta overlay
+		if (routeFadeTimer) clearTimeout(routeFadeTimer);
+		routeFadingOut = true;
+		routeFadeTimer = setTimeout(() => {
+			routeFadingOut = false;
+			selectedTrackId = null;
+			selectedBoxRect = null;
+			routePastPoints = [];
+			routeFuturePoints = [];
+			routeAllPoints = [];
+			routePastSegments = [];
+			routeFutureSegments = [];
+		}, 500);
 	}
 
 	function updateSelectedTrackRoute(currentFrame: number) {
@@ -490,18 +522,9 @@
 			routeFutureSegments = [];
 			return;
 		}
-		console.log('updateSelectedTrackRoute:start', {
-			selectedTrackId,
-			currentFrame,
-			trackPoints: trackPoints.length,
-			selectedBoxRect
-		});
 		const past = trackPoints.filter((p) => p.frame <= currentFrame);
 		const future = trackPoints.filter((p) => p.frame > currentFrame);
-		const toXY = (p: TrackPoint) => {
-			const [x1, y1, x2, y2] = p.box;
-			return { x: ((x1 + x2) / 2) * videoScale.x, y: ((y1 + y2) / 2) * videoScale.y };
-		};
+		const toXY = (p: TrackPoint) => boxCenterScaled(p.box);
 		// Trayectorias en orden cronológico
 		const pastPts = past.map(toXY);
 		const futurePts = future.map(toXY);
@@ -602,21 +625,33 @@
 		routeFutureSegments = buildSegmentsClipped(futurePts);
 		// Actualizar ruta completa también
 		routeAllPoints = trackPoints.map(toXY);
-		console.log('updateSelectedTrackRoute:end', {
-			pastPts: pastPts.length,
-			futurePts: futurePts.length,
-			pastSegs: routePastSegments.map((s) => s.length),
-			futureSegs: routeFutureSegments.map((s) => s.length)
-		});
 	}
 
 	// --- FUNCIONES DE BACKEND Y CARGA DE DATOS ---
+	function serializeDataObjHistory(): Record<
+		string,
+		{ act_frame: number; box: [number, number, number, number] }[]
+	> {
+		const out: Record<string, { act_frame: number; box: [number, number, number, number] }[]> = {};
+		for (const [trackId, points] of generalTrackHistory.entries()) {
+			out[trackId] = points
+				.slice()
+				.sort((a, b) => a.frame - b.frame)
+				.map((p) => ({ act_frame: p.frame, box: p.box }));
+		}
+		return out;
+	}
 	async function updateBackendData() {
 		try {
 			const res = await apiFetch(`/task/${data.id}/update-data`, {
 				method: 'POST',
 				headers: { 'X-CSRF-Token': '1' },
-				body: JSON.stringify({ rutas: rutas, indeterminados: indeterminados })
+				body: JSON.stringify({
+					rutas: rutas,
+					indeterminados: indeterminados,
+					determinados,
+					data_obj_history: serializeDataObjHistory()
+				})
 			});
 			if (!res.ok) {
 				let detail = '';
@@ -652,7 +687,7 @@
 			videoWidth = +apiData.videoWidth;
 			videoHeight = +apiData.videoHeight;
 			videoFps = +apiData.videoFps;
-			console.log('Video meta:', { videoPath, videoWidth, videoHeight, videoFps });
+			// meta del video cargada
 
 			// Helper para evitar caché del navegador en JSON estáticos de MinIO
 			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
@@ -672,16 +707,13 @@
 			// --- Procesar data_obj_history.json para bboxes y recorridos ---
 			let generalHistoryUrl =
 				apiData.dataObjHistoryUrl || apiData.data_obj_history_url || apiData.historyUrl;
-			console.log('General history URL:', generalHistoryUrl);
 			if (generalHistoryUrl) {
 				const generalRes = await fetch(bust(generalHistoryUrl));
 				if (!generalRes.ok) throw new Error('Error al obtener data_obj_history.json');
 				const generalJson = await generalRes.json();
-				console.log('General JSON keys:', Object.keys(generalJson));
 				// Procesar a Map<frame, [bboxes]> y Map<trackId, TrackPoint[]>
 				const frameMap = new Map<number, GeneralBBox[]>();
 				const trackMap = new Map<string, TrackPoint[]>();
-				let totalBBoxes = 0;
 				for (const [trackId, arr] of Object.entries(generalJson as Record<string, any[]>)) {
 					const points: TrackPoint[] = [];
 					for (const obj of arr) {
@@ -689,7 +721,6 @@
 						if (!frameMap.has(frame)) frameMap.set(frame, []);
 						frameMap.get(frame)!.push({ id: String(trackId), box: obj.box });
 						points.push({ frame, box: obj.box });
-						totalBBoxes++;
 					}
 					points.sort((a, b) => a.frame - b.frame);
 					trackMap.set(String(trackId), points);
@@ -701,14 +732,10 @@
 				if (frames.length) {
 					dataFrameFirst = Math.min(...frames);
 					dataFrameLast = Math.max(...frames);
-					console.log('Frame range:', { dataFrameFirst, dataFrameLast, count: frames.length });
 				} else {
 					dataFrameFirst = null;
 					dataFrameLast = null;
 				}
-				console.log('Tracks con historial:', generalTrackHistory.size);
-				console.log('Total bboxes procesadas:', totalBBoxes);
-				console.log('Frames con bboxes:', Array.from(frameMap.keys()));
 				generalReady = true;
 			} else {
 				generalBBoxesByFrame = new Map();
@@ -721,15 +748,15 @@
 			rutas = apiData.rutas;
 			indeterminados = apiData.indeterminados;
 			determinados = apiData.determinados || {};
-			console.log('Datos de rutas cargados:', {
-				determinados: Object.keys(determinados || {}).length,
-				indeterminados: Object.keys(indeterminados || {}).length
-			});
 			history = await historyPromise;
 
 			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
-				const aIsEntradaConocida = a.labels[0] !== 'IND' && a.labels[1] === 'IND';
-				const bIsEntradaConocida = b.labels[0] !== 'IND' && b.labels[1] === 'IND';
+				const aEntradaUnknown = !a.labels[0] || a.labels[0] === 'IND';
+				const aSalidaUnknown = !a.labels[1] || a.labels[1] === 'IND';
+				const bEntradaUnknown = !b.labels[0] || b.labels[0] === 'IND';
+				const bSalidaUnknown = !b.labels[1] || b.labels[1] === 'IND';
+				const aIsEntradaConocida = !aEntradaUnknown && aSalidaUnknown;
+				const bIsEntradaConocida = !bEntradaUnknown && bSalidaUnknown;
 				if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
 				if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
 				return parseInt(a.first_appearance.frame) - parseInt(b.first_appearance.frame);
@@ -749,8 +776,18 @@
 			loading = false;
 		}
 		window.addEventListener('resize', updateVideoDimensions);
+		// Atajo global Ctrl+K para enfocar la barra de búsqueda y limpiar texto
+		const onGlobalKeyDown = (e: KeyboardEvent) => {
+			if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
+				e.preventDefault();
+				searchQuery = '';
+				queueMicrotask(() => searchInputEl?.focus());
+			}
+		};
+		window.addEventListener('keydown', onGlobalKeyDown);
 		return () => {
 			window.removeEventListener('resize', updateVideoDimensions);
+			window.removeEventListener('keydown', onGlobalKeyDown);
 			stopAnimationLoop();
 		};
 	});
@@ -765,6 +802,7 @@
 		const item = indeterminados[trackId];
 		if (!item) return;
 		savingById[trackId] = true;
+		savingById = { ...savingById };
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (activeBoundingBox === item.first_appearance.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
@@ -786,8 +824,18 @@
 			rutas[entrada][salida][vehiculo] = 1;
 		}
 
+		// Mover a determinados
+		determinados[trackId] = {
+			...item,
+			// Normalizar: asegurar que first/last estén presentes y labels reflejen la ruta final
+			first_appearance: item.first_appearance,
+			last_appearance: item.last_appearance,
+			labels: [entrada, salida]
+		};
+		// Eliminar de indeterminados
 		delete indeterminados[trackId];
 		indeterminados = { ...indeterminados };
+		determinados = { ...determinados };
 		rutas = { ...rutas };
 
 		const ok = await updateBackendData();
@@ -795,15 +843,40 @@
 			showSuccess(`Vehículo ${trackId} confirmado y añadido a la ruta ${entrada} -> ${salida}.`);
 		}
 		delete savingById[trackId];
+		savingById = { ...savingById };
 	}
 	async function handleDelete(trackId: string, event: MouseEvent) {
 		event.stopPropagation();
 		const item = indeterminados[trackId];
 		savingById[trackId] = true;
+		savingById = { ...savingById };
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (item && activeBoundingBox === item.first_appearance.boundingBox) activeBoundingBox = null;
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
 		if (activeIndeterminateId === trackId) activeIndeterminateId = null;
+
+		// Eliminar completamente de data_obj_history (no debe mostrarse más en el video ni contarse)
+		if (generalTrackHistory.has(trackId)) {
+			generalTrackHistory.delete(trackId);
+			rebuildGeneralFrameMapFromTrackMap();
+			// Si el video está pausado, refrescar overlays en el frame actual
+			if (videoElement?.paused) updateOverlaysForCurrentFrame();
+		}
+
+		// Si estaba seleccionado, limpiar selección y rutas inmediatamente
+		if (selectedTrackId === trackId) {
+			selectedTrackId = null;
+			selectedBoxRect = null;
+			routePastPoints = [];
+			routeFuturePoints = [];
+			routeAllPoints = [];
+			routePastSegments = [];
+			routeFutureSegments = [];
+			routeFadingOut = false;
+			routeAnimating = false;
+			if (routeAnimTimer) clearTimeout(routeAnimTimer);
+			if (routeFadeTimer) clearTimeout(routeFadeTimer);
+		}
 
 		delete indeterminados[trackId];
 		indeterminados = { ...indeterminados };
@@ -813,6 +886,7 @@
 			showSuccess(`Vehículo indeterminado ${trackId} eliminado.`);
 		}
 		delete savingById[trackId];
+		savingById = { ...savingById };
 	}
 	let vehicleTypes = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return [];
@@ -839,9 +913,10 @@
 	let vehicleItems = $derived.by(() =>
 		vehicleTypes.map((v) => ({ value: v, label: getVehicleName(v) }))
 	);
-	let zoneItems = $derived.by(() => [
-		{ value: 'IND', label: 'IND' },
-		...zoneIds.map((z) => ({ value: z, label: `Zona ${z}` }))
+	let zoneItems = $derived.by(() => zoneIds.map((z) => ({ value: z, label: `Zona ${z}` })));
+	let zoneItemsWithPlaceholder = $derived.by(() => [
+		{ value: '', label: 'Seleccionar…' },
+		...zoneItems
 	]);
 	let entradasData = $derived.by(() => {
 		if (Object.keys(rutas).length === 0) return null;
@@ -951,6 +1026,173 @@
 			.catch((e) => showError(e.message || 'Error al iniciar la descarga'));
 	}
 
+	// --- MERGE (Unir) de indeterminados ---
+	function startMergeFrom(trackId: string) {
+		if (mergeInProgress) return;
+		mergeModeActive = true;
+		mergeSourceId = trackId;
+	}
+
+	function cancelMergeMode() {
+		mergeModeActive = false;
+		mergeSourceId = null;
+	}
+
+	function recomputeSortedIndeterminados() {
+		sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
+			const aEntradaUnknown = isUnknownLabel(a.labels[0]);
+			const aSalidaUnknown = isUnknownLabel(a.labels[1]);
+			const bEntradaUnknown = isUnknownLabel(b.labels[0]);
+			const bSalidaUnknown = isUnknownLabel(b.labels[1]);
+			const aIsEntradaConocida = !aEntradaUnknown && aSalidaUnknown;
+			const bIsEntradaConocida = !bEntradaUnknown && bSalidaUnknown;
+			if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
+			if (!aIsEntradaConocida && bIsEntradaConocida) return 1;
+			return parseInt(a.first_appearance.frame) - parseInt(b.first_appearance.frame);
+		});
+	}
+
+	function rebuildGeneralFrameMapFromTrackMap() {
+		const frameMap = new Map<number, GeneralBBox[]>();
+		for (const [trackId, points] of generalTrackHistory.entries()) {
+			for (const p of points) {
+				if (!frameMap.has(p.frame)) frameMap.set(p.frame, []);
+				frameMap.get(p.frame)!.push({ id: String(trackId), box: p.box });
+			}
+		}
+		generalBBoxesByFrame = frameMap;
+	}
+
+	async function performMerge(keepId: string, removeId: string) {
+		if (mergeInProgress) return false;
+		mergeInProgress = true;
+		try {
+			const keep = indeterminados[keepId];
+			const rem = indeterminados[removeId];
+			if (!keep || !rem) {
+				showError('No se encontraron ambos indeterminados.');
+				return false;
+			}
+
+			// Actualizar labels priorizando el que queda, completando faltantes
+			const [ke0, ks0] = keep.labels;
+			const [re0, rs0] = rem.labels;
+			const entrada = isUnknownLabel(ke0) && !isUnknownLabel(re0) ? re0 : ke0;
+			const salida = isUnknownLabel(ks0) && !isUnknownLabel(rs0) ? rs0 : ks0;
+			// Apariciones: elegir min frame para first y max para last
+			const kFirst = parseInt(keep.first_appearance.frame);
+			const rFirst = parseInt(rem.first_appearance.frame);
+			const kLast = parseInt(keep.last_appearance.frame);
+			const rLast = parseInt(rem.last_appearance.frame);
+			const newFirst = kFirst <= rFirst ? keep.first_appearance : rem.first_appearance;
+			const newLast = kLast >= rLast ? keep.last_appearance : rem.last_appearance;
+
+			// Aplicar cambios al que queda
+			indeterminados[keepId] = {
+				...keep,
+				labels: [entrada ?? '', salida ?? ''],
+				first_appearance: newFirst,
+				last_appearance: newLast
+			};
+
+			// Eliminar el que se fusiona
+			delete indeterminados[removeId];
+			indeterminados = { ...indeterminados };
+
+			// Unir histories en data_obj_history (generalTrackHistory)
+			const keepPts = (generalTrackHistory.get(keepId) || []).slice();
+			const remPts = (generalTrackHistory.get(removeId) || []).slice();
+			const byFrame = new Map<number, TrackPoint>();
+			for (const p of keepPts) byFrame.set(p.frame, p);
+			for (const p of remPts) if (!byFrame.has(p.frame)) byFrame.set(p.frame, p);
+			const merged = Array.from(byFrame.values()).sort((a, b) => a.frame - b.frame);
+			generalTrackHistory.set(keepId, merged);
+			generalTrackHistory.delete(removeId);
+			rebuildGeneralFrameMapFromTrackMap();
+
+			// Limpiar overlays/selecciones
+			playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== removeId);
+			if (activeIndeterminateId === removeId) activeIndeterminateId = null;
+			if (selectedTrackId === removeId) {
+				selectedTrackId = keepId;
+				updateOverlaysForCurrentFrame();
+			}
+
+			// Si tras unir queda determinado, confirmar automáticamente
+			const nowDetermined = !isUnknownLabel(entrada) && !isUnknownLabel(salida);
+			if (nowDetermined) {
+				const vehiculo = indeterminados[keepId].class;
+				if (rutas[entrada]?.[salida]?.[vehiculo] !== undefined) {
+					rutas[entrada][salida][vehiculo]++;
+				} else {
+					if (!rutas[entrada]) rutas[entrada] = {} as any;
+					if (!rutas[entrada][salida]) rutas[entrada][salida] = {} as any;
+					vehicleTypes.forEach((v) => {
+						if (rutas[entrada][salida][v] === undefined) rutas[entrada][salida][v] = 0;
+					});
+					rutas[entrada][salida][vehiculo] = (rutas[entrada][salida][vehiculo] ?? 0) + 1;
+				}
+				// mover a determinados
+				determinados[keepId] = {
+					...indeterminados[keepId],
+					labels: [entrada, salida]
+				};
+				delete indeterminados[keepId];
+				indeterminados = { ...indeterminados };
+				determinados = { ...determinados };
+				rutas = { ...rutas };
+			}
+
+			recomputeSortedIndeterminados();
+
+			const ok = await updateBackendData();
+			if (ok) {
+				if (nowDetermined) {
+					showSuccess(
+						`Indeterminados ${keepId} y ${removeId} unidos y confirmado ${keepId} como ${entrada} → ${salida}.`
+					);
+				} else {
+					showSuccess(`Indeterminados ${keepId} y ${removeId} unidos (se conserva ${keepId}).`);
+				}
+			}
+			return ok;
+		} finally {
+			mergeInProgress = false;
+		}
+	}
+
+	async function onIndeterminateCardClick(trackId: string, e: MouseEvent) {
+		e.stopPropagation();
+		if (mergeModeActive) {
+			if (!mergeSourceId) return;
+			if (mergeSourceId === trackId) {
+				// cancelar si hace click sobre la misma tarjeta
+				cancelMergeMode();
+				return;
+			}
+			const a = parseInt(mergeSourceId);
+			const b = parseInt(trackId);
+			const keepId = String(Math.min(a, b));
+			const removeId = String(Math.max(a, b));
+			const proceed = await showConfirm({
+				title: 'Unir indeterminados',
+				message: `Se unirán los indeterminados ${keepId} y ${removeId}. El ID ${keepId} se mantendrá y el ${removeId} se eliminará.\n¿Desea continuar?`,
+				variant: 'warning',
+				confirmText: 'Unir',
+				cancelText: 'Cancelar'
+			});
+			if (!proceed) {
+				cancelMergeMode();
+				return;
+			}
+			await performMerge(keepId, removeId);
+			cancelMergeMode();
+			return;
+		}
+		// comportamiento normal
+		handleIndeterminateClick(trackId);
+	}
+
 	// Helper para mostrar nombres de vehículos en UI
 	function getVehicleName(key: string): string {
 		if (!key) return 'N/A';
@@ -998,7 +1240,15 @@
 							onseeking={() => {
 								if (videoElement) {
 									lastProcessedFrame = computeCurrentFrameFromTime(videoElement.currentTime) - 1;
+									// actualizar overlays mientras se busca estando en pausa
+									if (videoElement.paused) updateOverlaysForCurrentFrame();
 								}
+							}}
+							onseeked={() => {
+								if (videoElement?.paused) updateOverlaysForCurrentFrame();
+							}}
+							ontimeupdate={() => {
+								if (videoElement?.paused) updateOverlaysForCurrentFrame();
 							}}
 						>
 							<source src={videoPath} type="video/mp4" />
@@ -1029,7 +1279,7 @@
 							{#key routeAnimateKey}
 								<svg
 									class="absolute inset-0 pointer-events-none"
-									style="z-index: 13;"
+									style={`z-index: 13; opacity: ${routeFadingOut ? 0 : 1}; transition: opacity 0.5s ease;`}
 									width="100%"
 									height="100%"
 								>
@@ -1119,20 +1369,34 @@
 					class="w-full md:w-auto glass-card p-1 rounded-lg shadow-lg max-w-[450px] overflow-y-auto"
 					style:height={videoHeightPx > 0 ? `${videoHeightPx}px` : 'auto'}
 				>
-					<h3 class="text-xl font-semibold mt-3 mb-3 text-center">Vehículos Indeterminados</h3>
+					<h3 class="text-xl font-semibold mt-3 mb-2 text-center">Vehículos Indeterminados</h3>
+					<div class="px-2 mb-3">
+						<input
+							bind:this={searchInputEl}
+							type="text"
+							placeholder="Buscar por ID  (Ctrl + K)"
+							class="w-full px-3 py-2 rounded bg-transparent border outline-none focus:ring focus:ring-white/20"
+							value={searchQuery}
+							oninput={(e) => (searchQuery = (e.target as HTMLInputElement).value)}
+						/>
+					</div>
 
 					<div class="overflow-y-auto flex-1">
 						<div class="space-y-3 p-1">
-							{#each sortedIndeterminados as [trackId, item] (trackId)}
-								{@const [entrada, salida] = item.labels}
-								{@const canConfirm = entrada !== 'IND' && salida !== 'IND'}
+							{#each visibleIndeterminados as [trackId, item] (trackId)}
+								{@const labels = indeterminados[trackId]?.labels ?? ['', '']}
+								{@const entrada = labels[0]}
+								{@const salida = labels[1]}
+								{@const isUnknown = (x: string) => !x || x === 'IND'}
+								{@const canConfirm = !isUnknown(entrada) && !isUnknown(salida)}
 								<div
+									id={`ind-card-${trackId}`}
 									class="ind-card"
 									class:live={liveIndeterminateIds.has(trackId) ||
 										trackId === activeIndeterminateId}
 									role="button"
 									tabindex="0"
-									onclick={() => handleIndeterminateClick(trackId)}
+									onclick={(e) => onIndeterminateCardClick(trackId, e)}
 									onkeydown={(e) => handleKeyPress(e, trackId)}
 								>
 									<div class="flex justify-between items-center mb-2">
@@ -1140,7 +1404,7 @@
 										<button
 											onclick={(e) => handleDelete(trackId, e)}
 											class="glass-button btn-danger text-xs py-1 px-2 disabled:opacity-60 disabled:cursor-not-allowed"
-											disabled={savingById[trackId]}
+											disabled={savingById[trackId] || mergeModeActive || mergeInProgress}
 										>
 											{#if savingById[trackId]}
 												<Spinner size={14} className="inline-block mr-1" />
@@ -1150,49 +1414,93 @@
 											{/if}
 										</button>
 									</div>
-									<div class="grid grid-cols-3 gap-2 items-center mb-2 text-sm">
+									<div class="grid grid-cols-4 gap-2 items-center mb-2 text-sm">
 										<span class="text-gray-400">Clase:</span>
-										<div class="col-span-2">
+										<div class="col-span-3">
 											<GlassSelect
 												items={vehicleItems}
 												value={indeterminados[trackId].class}
 												ariaLabel={`Clase para ${trackId}`}
 												stopClickPropagation={true}
-												onChange={(val) => (indeterminados[trackId].class = String(val ?? ''))}
+												disabled={mergeModeActive || mergeInProgress}
+												onChange={(val) => {
+													indeterminados[trackId].class = String(val ?? '');
+													indeterminados = { ...indeterminados };
+												}}
 											/>
 										</div>
 									</div>
-									<div class="grid grid-cols-3 gap-2 items-center mb-3 text-sm">
+									<div class="grid grid-cols-4 gap-2 items-center mb-3 text-sm">
 										<span class="text-gray-400">Ruta:</span>
-										<div class="col-span-2 flex items-center gap-1">
+										<div class="col-span-3 flex items-center gap-1">
 											<div class="w-full">
 												<GlassSelect
-													items={zoneItems}
-													value={indeterminados[trackId].labels[0]}
+													items={zoneItemsWithPlaceholder}
+													value={indeterminados[trackId].labels[0] ?? ''}
 													ariaLabel={`Entrada para ${trackId}`}
 													stopClickPropagation={true}
-													onChange={(val) =>
-														(indeterminados[trackId].labels[0] = String(val ?? 'IND'))}
+													disabled={mergeModeActive || mergeInProgress}
+													onChange={(val) => {
+														const v = String(val ?? '');
+														indeterminados[trackId].labels[0] = v; // dejar vacío si no hay selección
+														indeterminados = { ...indeterminados };
+													}}
 												/>
 											</div>
 											<span class="text-gray-400">→</span>
 											<div class="w-full">
 												<GlassSelect
-													items={zoneItems}
-													value={indeterminados[trackId].labels[1]}
+													items={zoneItemsWithPlaceholder}
+													value={indeterminados[trackId].labels[1] ?? ''}
 													ariaLabel={`Salida para ${trackId}`}
 													stopClickPropagation={true}
-													onChange={(val) =>
-														(indeterminados[trackId].labels[1] = String(val ?? 'IND'))}
+													disabled={mergeModeActive || mergeInProgress}
+													onChange={(val) => {
+														const v = String(val ?? '');
+														indeterminados[trackId].labels[1] = v; // dejar vacío si no hay selección
+														indeterminados = { ...indeterminados };
+													}}
 												/>
 											</div>
+										</div>
+										<!-- Botón Unir: debajo de los selects y ocupando columnas 2 a 4 -->
+										<div class="col-start-2 col-span-3 mt-1">
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													// Si ya está activo el modo Unir y esta NO es la tarjeta fuente, no hacer nada
+													if (mergeModeActive && mergeSourceId !== trackId) {
+														return;
+													}
+													if (mergeModeActive && mergeSourceId === trackId) {
+														cancelMergeMode();
+													} else {
+														startMergeFrom(trackId);
+													}
+												}}
+												class="merge-button w-full py-2 text-sm font-semibold rounded-xl disabled:opacity-60 disabled:cursor-not-allowed"
+												class:merge-button--active={mergeModeActive && mergeSourceId === trackId}
+												class:merge-button--no-hover={mergeModeActive}
+												disabled={(mergeModeActive && mergeSourceId !== trackId) ||
+													savingById[trackId] ||
+													mergeInProgress}
+											>
+												{mergeModeActive && mergeSourceId === trackId ? 'Uniendo...' : '+ Unir'}
+											</button>
 										</div>
 									</div>
 									<button
 										onclick={(e) => handleConfirm(trackId, e)}
-										disabled={!canConfirm || savingById[trackId]}
+										onmousedown={(e) => e.stopPropagation()}
+										onmouseup={(e) => e.stopPropagation()}
+										disabled={!canConfirm ||
+											savingById[trackId] ||
+											mergeModeActive ||
+											mergeInProgress}
 										class="w-full py-2 text-sm font-semibold rounded flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed glass-button"
 										class:btn-success={canConfirm}
+										class:btn-disabled={!canConfirm}
 									>
 										{#if savingById[trackId]}
 											<Spinner size={16} />
@@ -1377,6 +1685,9 @@
 		z-index: 12;
 		position: absolute;
 		cursor: pointer;
+		transition:
+			opacity 0.5s ease,
+			box-shadow 0.5s ease;
 	}
 	.ind-card {
 		/* Preserve glow behavior, but retheme base surface into glass */
@@ -1459,5 +1770,44 @@
 		stroke-dasharray: 1;
 		stroke-dashoffset: 1;
 		animation: draw-in 220ms ease-out forwards;
+	}
+
+	/* Botón "+ Unir" (fondo transparente, borde y letras blancas) */
+	.merge-button {
+		background-color: transparent;
+		border: 1px solid #ffffff;
+		color: #ffffff;
+		transition:
+			background-color 180ms ease,
+			color 180ms ease,
+			box-shadow 180ms ease,
+			border-color 180ms ease;
+	}
+	.merge-button:hover {
+		background-color: rgba(255, 255, 255, 0.08);
+	}
+	/* Desactivar hover en modo uniendo para todos los botones excepto el activo */
+	.merge-button.merge-button--no-hover:not(.merge-button--active):hover {
+		background-color: inherit;
+	}
+	/* Estado activo (cuando es la tarjeta fuente en modo Unir) */
+	.merge-button--active {
+		background-color: #ffffff;
+		color: #000000;
+		border-color: #ffffff;
+		box-shadow:
+			0 0 5px rgba(255, 255, 255, 0.8),
+			0 0 10px rgba(255, 255, 255, 0.6),
+			0 0 20px rgba(255, 255, 255, 0.4);
+	}
+	/* Asegurar que el botón activo no cambie con hover */
+	.merge-button--active:hover {
+		background-color: #ffffff;
+		color: #000000;
+		border-color: #ffffff;
+		box-shadow:
+			0 0 5px rgba(255, 255, 255, 0.8),
+			0 0 10px rgba(255, 255, 255, 0.6),
+			0 0 20px rgba(255, 255, 255, 0.4);
 	}
 </style>

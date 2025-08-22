@@ -425,16 +425,19 @@ class ObjectTracker:
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
                     transition_data = history_track.copy()
-                    transition_data["labels"] = [in_zone_label, "???"]
+                    # Para salidas desconocidas, dejar el campo vacío ("")
+                    transition_data["labels"] = [in_zone_label, ""]
                     self.transition_undetermined_object[track_id] = transition_data
             elif track_id in self.track_first_out_zone:
                 out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                 transition_data = history_track.copy()
-                transition_data["labels"] = ["???", out_zone_label]
+                # Para entradas desconocidas, dejar el campo vacío ("")
+                transition_data["labels"] = ["", out_zone_label]
                 self.transition_undetermined_object[track_id] = transition_data
             else:
                 transition_data = history_track.copy()
-                transition_data["labels"] = ["???", "???"]
+                # Tanto entrada como salida desconocidas: ambos campos vacíos ("")
+                transition_data["labels"] = ["", ""]
                 self.transition_undetermined_object[track_id] = transition_data
 
 
