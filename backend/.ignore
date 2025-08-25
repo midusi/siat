@@ -67,7 +67,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                     "1105.4195556640625",
                     "994.1165771484375"
                 ],
-                "labels": ["0", "IND"],
+                "labels": {"in": "0", "out": "IND"},
             },
             "2": {
                 "frame": "20",
@@ -78,7 +78,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                     "1105.4195556640625",
                     "994.1165771484375"
                 ],
-                "labels": ["1", "IND"],
+                "labels": {"in": "1", "out": "IND"},
             },
             "3": {
                 "frame": "30",
@@ -89,7 +89,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                     "1105.4195556640625",
                     "994.1165771484375"
                 ],
-                "labels": ["IND", "2"],
+                "labels": {"in": "IND", "out": "2"},
             },
             "4": {
                 "frame": "40",
@@ -100,7 +100,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                     "1105.4195556640625",
                     "994.1165771484375"
                 ],
-                "labels": ["IND", "3"],
+                "labels": {"in": "IND", "out": "3"},
             },
             "5": {
                 "frame": "50",
@@ -111,7 +111,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
                     "1105.4195556640625",
                     "994.1165771484375"
                 ],
-                "labels": ["IND", "IND"],
+                "labels": {"in": "IND", "out": "IND"},
             }
         }
     }

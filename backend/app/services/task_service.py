@@ -105,12 +105,25 @@ class TaskService:
                 payload["rutas"] = json.loads(task.inference.transition_counts)
             if task.inference.transition_undetermined:
                 try:
-                    payload["indeterminados"] = json.loads(task.inference.transition_undetermined)
+                    undet = json.loads(task.inference.transition_undetermined)
                 except:
-                    payload["indeterminados"] = task.inference.transition_undetermined
+                    undet = task.inference.transition_undetermined
+                # Compat: if labels are arrays, convert to { in, out }
+                if isinstance(undet, dict):
+                    for k, it in list(undet.items()):
+                        if isinstance(it, dict) and isinstance(it.get("labels"), list):
+                            arr = it["labels"]
+                            undet[k]["labels"] = {"in": (arr[0] if len(arr) > 0 else ""), "out": (arr[1] if len(arr) > 1 else "")}
+                payload["indeterminados"] = undet
             # Agregar objetos con rutas determinadas por trackId
             if task.inference.transition_determined:
-                payload["determinados"] = json.loads(task.inference.transition_determined)
+                det = json.loads(task.inference.transition_determined)
+                if isinstance(det, dict):
+                    for k, it in list(det.items()):
+                        if isinstance(it, dict) and isinstance(it.get("labels"), list):
+                            arr = it["labels"]
+                            det[k]["labels"] = {"in": (arr[0] if len(arr) > 0 else ""), "out": (arr[1] if len(arr) > 1 else "")}
+                payload["determinados"] = det
             if task.inference.url_data_obj_history:
                 payload["historyUrl"] = f"{public_base}/{task.inference.url_data_obj_history}"
 
@@ -480,16 +493,23 @@ class TaskService:
             # NEW: guardar determinados
             inference.transition_determined = json.dumps(determinados, ensure_ascii=False, indent=2)
 
-            # Si vino data_obj_history, subirlo a MinIO y actualizar la URL
+            # Si vino data_obj_history, subirlo a MinIO y mantener el mismo nombre/clave que tenía antes
             if data_obj_history is not None:
-                # Determinar carpeta destino usando el video.url como referencia
-                video_folder = os.path.dirname(task.video.url)
-                history_filename = "data_obj_history.json"
-                history_key = f"{video_folder}/{history_filename}"
+                # Preferir conservar la misma key previamente usada si existe
+                if inference.url_data_obj_history:
+                    history_key = inference.url_data_obj_history
+                else:
+                    # Fallback: construir una key consistente con el esquema de proceso inicial
+                    # Derivar carpeta (task/{id}) y hash base del nombre del video original
+                    video_folder = os.path.dirname(task.video.url)
+                    base_name = os.path.basename(task.video.url)  # p.ej. <hash>.mp4
+                    hash_value, _ = os.path.splitext(base_name)
+                    history_key = f"{video_folder}/{hash_value}_data_obj_history.json"
+
                 history_str = json.dumps(data_obj_history, ensure_ascii=False, separators=(",", ":"))
                 # Subir (sobrescribe si existe)
                 self.bucket_service.upload(history_str, history_key, content_type="application/json")
-                # Guardar key en la BD
+                # Guardar/actualizar key en la BD
                 inference.url_data_obj_history = history_key
 
             self.db.flush()

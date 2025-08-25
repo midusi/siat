@@ -163,15 +163,18 @@ class ObjectDisplayer:
         obj_is_determined = True if track_id in self.transition_determined_object else False
         if obj_is_determined:
             # Dibujar bounding box y etiqueta
-            transition = self.transition_determined_object[track_id][0]
-            annotator.box_label(box, label=f"ID: {track_id} - ({transition[0]} -> {transition[1]}) - {class_name}", color=(255, 255, 255), txt_color=(0, 0, 0))
+            transition = self.transition_determined_object[track_id]
+            zin = transition.get("labels", {}).get("in", "") if isinstance(transition, dict) else transition[0]
+            zout = transition.get("labels", {}).get("out", "") if isinstance(transition, dict) else transition[1]
+            annotator.box_label(box, label=f"ID: {track_id} - ({zin} -> {zout}) - {class_name}", color=(255, 255, 255), txt_color=(0, 0, 0))
             # self._draw_tick(frame, box)
             
         else:
             # Dibujar bounding box y etiqueta
-            transition = self.transition_undetermined_object[track_id][0]
-            # Obtener el primer y segundo elemento de la transición
-            annotator.box_label(box, label=f"ID: {track_id} - ({transition[0]} -> {transition[1]}) - {class_name}", color=(255, 255, 255), txt_color=(0, 0, 0))
+            transition = self.transition_undetermined_object[track_id]
+            zin = transition.get("labels", {}).get("in", "") if isinstance(transition, dict) else transition[0]
+            zout = transition.get("labels", {}).get("out", "") if isinstance(transition, dict) else transition[1]
+            annotator.box_label(box, label=f"ID: {track_id} - ({zin} -> {zout}) - {class_name}", color=(255, 255, 255), txt_color=(0, 0, 0))
             # self._draw_cross(frame, box)
         
 

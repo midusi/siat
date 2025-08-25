@@ -71,7 +71,7 @@
 		};
 		class: Vehiculo;
 		// boundingBox: BoundingBox;
-		labels: [string, string];
+		labels: { in: string; out: string };
 	};
 	type Indeterminados = { [trackId: string]: Indeterminado };
 	type FilaTabla = { tipo: string; [key: string]: string | number };
@@ -278,15 +278,6 @@
 							bbox: info.bbox,
 							hideAtTime: computeTimeFromFrame(frame) + FADE_OUT_DURATION_SECONDS,
 							opacity: 1.0
-						});
-						// Al aparecer por primera vez en reproducción, resaltar y mostrar su tarjeta en la lista
-						activeIndeterminateId = info.trackId;
-						queueMicrotask(() => {
-							const el = document.getElementById(`ind-card-${info.trackId}`);
-							if (el) {
-								el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-								(el as HTMLElement).focus({ preventScroll: true });
-							}
 						});
 					}
 				}
@@ -746,15 +737,27 @@
 			}
 
 			rutas = apiData.rutas;
-			indeterminados = apiData.indeterminados;
-			determinados = apiData.determinados || {};
+			// Compat: transformar labels array -> objeto { in, out } si fuese necesario
+			const fixLabels = (obj: any) => {
+				if (!obj || typeof obj !== 'object') return obj;
+				for (const k of Object.keys(obj)) {
+					const it = obj[k];
+					if (it && Array.isArray(it.labels)) {
+						const [inn, out] = it.labels as [string, string];
+						it.labels = { in: inn ?? '', out: out ?? '' };
+					}
+				}
+				return obj;
+			};
+			indeterminados = fixLabels(apiData.indeterminados);
+			determinados = fixLabels(apiData.determinados) || {};
 			history = await historyPromise;
 
 			sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
-				const aEntradaUnknown = !a.labels[0] || a.labels[0] === 'IND';
-				const aSalidaUnknown = !a.labels[1] || a.labels[1] === 'IND';
-				const bEntradaUnknown = !b.labels[0] || b.labels[0] === 'IND';
-				const bSalidaUnknown = !b.labels[1] || b.labels[1] === 'IND';
+				const aEntradaUnknown = !a.labels.in || a.labels.in === 'IND';
+				const aSalidaUnknown = !a.labels.out || a.labels.out === 'IND';
+				const bEntradaUnknown = !b.labels.in || b.labels.in === 'IND';
+				const bSalidaUnknown = !b.labels.out || b.labels.out === 'IND';
 				const aIsEntradaConocida = !aEntradaUnknown && aSalidaUnknown;
 				const bIsEntradaConocida = !bEntradaUnknown && bSalidaUnknown;
 				if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
@@ -808,7 +811,8 @@
 		playbackBoundingBoxes = playbackBoundingBoxes.filter((b) => b.id !== trackId);
 		if (activeIndeterminateId === trackId) activeIndeterminateId = null;
 
-		const [entrada, salida] = item.labels;
+		const entrada = item.labels.in;
+		const salida = item.labels.out;
 		const vehiculo = item.class;
 
 		if (rutas[entrada]?.[salida]?.[vehiculo] !== undefined) {
@@ -830,7 +834,7 @@
 			// Normalizar: asegurar que first/last estén presentes y labels reflejen la ruta final
 			first_appearance: item.first_appearance,
 			last_appearance: item.last_appearance,
-			labels: [entrada, salida]
+			labels: { in: entrada, out: salida }
 		};
 		// Eliminar de indeterminados
 		delete indeterminados[trackId];
@@ -1040,10 +1044,10 @@
 
 	function recomputeSortedIndeterminados() {
 		sortedIndeterminados = Object.entries(indeterminados).sort(([, a], [, b]) => {
-			const aEntradaUnknown = isUnknownLabel(a.labels[0]);
-			const aSalidaUnknown = isUnknownLabel(a.labels[1]);
-			const bEntradaUnknown = isUnknownLabel(b.labels[0]);
-			const bSalidaUnknown = isUnknownLabel(b.labels[1]);
+			const aEntradaUnknown = isUnknownLabel(a.labels.in);
+			const aSalidaUnknown = isUnknownLabel(a.labels.out);
+			const bEntradaUnknown = isUnknownLabel(b.labels.in);
+			const bSalidaUnknown = isUnknownLabel(b.labels.out);
 			const aIsEntradaConocida = !aEntradaUnknown && aSalidaUnknown;
 			const bIsEntradaConocida = !bEntradaUnknown && bSalidaUnknown;
 			if (aIsEntradaConocida && !bIsEntradaConocida) return -1;
@@ -1075,8 +1079,10 @@
 			}
 
 			// Actualizar labels priorizando el que queda, completando faltantes
-			const [ke0, ks0] = keep.labels;
-			const [re0, rs0] = rem.labels;
+			const ke0 = keep.labels.in;
+			const ks0 = keep.labels.out;
+			const re0 = rem.labels.in;
+			const rs0 = rem.labels.out;
 			const entrada = isUnknownLabel(ke0) && !isUnknownLabel(re0) ? re0 : ke0;
 			const salida = isUnknownLabel(ks0) && !isUnknownLabel(rs0) ? rs0 : ks0;
 			// Apariciones: elegir min frame para first y max para last
@@ -1090,7 +1096,7 @@
 			// Aplicar cambios al que queda
 			indeterminados[keepId] = {
 				...keep,
-				labels: [entrada ?? '', salida ?? ''],
+				labels: { in: entrada ?? '', out: salida ?? '' },
 				first_appearance: newFirst,
 				last_appearance: newLast
 			};
@@ -1135,7 +1141,7 @@
 				// mover a determinados
 				determinados[keepId] = {
 					...indeterminados[keepId],
-					labels: [entrada, salida]
+					labels: { in: entrada, out: salida }
 				};
 				delete indeterminados[keepId];
 				indeterminados = { ...indeterminados };
@@ -1384,9 +1390,9 @@
 					<div class="overflow-y-auto flex-1">
 						<div class="space-y-3 p-1">
 							{#each visibleIndeterminados as [trackId, item] (trackId)}
-								{@const labels = indeterminados[trackId]?.labels ?? ['', '']}
-								{@const entrada = labels[0]}
-								{@const salida = labels[1]}
+								{@const labels = indeterminados[trackId]?.labels ?? { in: '', out: '' }}
+								{@const entrada = labels.in}
+								{@const salida = labels.out}
 								{@const isUnknown = (x: string) => !x || x === 'IND'}
 								{@const canConfirm = !isUnknown(entrada) && !isUnknown(salida)}
 								<div
@@ -1436,13 +1442,13 @@
 											<div class="w-full">
 												<GlassSelect
 													items={zoneItemsWithPlaceholder}
-													value={indeterminados[trackId].labels[0] ?? ''}
+													value={indeterminados[trackId].labels.in ?? ''}
 													ariaLabel={`Entrada para ${trackId}`}
 													stopClickPropagation={true}
 													disabled={mergeModeActive || mergeInProgress}
 													onChange={(val) => {
 														const v = String(val ?? '');
-														indeterminados[trackId].labels[0] = v; // dejar vacío si no hay selección
+														indeterminados[trackId].labels.in = v; // dejar vacío si no hay selección
 														indeterminados = { ...indeterminados };
 													}}
 												/>
@@ -1451,13 +1457,13 @@
 											<div class="w-full">
 												<GlassSelect
 													items={zoneItemsWithPlaceholder}
-													value={indeterminados[trackId].labels[1] ?? ''}
+													value={indeterminados[trackId].labels.out ?? ''}
 													ariaLabel={`Salida para ${trackId}`}
 													stopClickPropagation={true}
 													disabled={mergeModeActive || mergeInProgress}
 													onChange={(val) => {
 														const v = String(val ?? '');
-														indeterminados[trackId].labels[1] = v; // dejar vacío si no hay selección
+														indeterminados[trackId].labels.out = v; // dejar vacío si no hay selección
 														indeterminados = { ...indeterminados };
 													}}
 												/>

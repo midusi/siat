@@ -137,12 +137,11 @@ class ObjectTracker:
         for pin in self.zone_in_polygons:
             for pout in self.zone_out_polygons:
                 self.transition_counts[pin["name"]][pout["name"]] = {cls: 0 for cls in CLASSES_NAMES}
-                
+
         # Matriz de transición de zonas
-        self.transition_determined_object: defaultdict[int, dict] = defaultdict(list)
-        self.transition_undetermined_object: defaultdict[int, dict] = defaultdict(list)
-            
-            
+        self.transition_determined_object = defaultdict(dict)
+        self.transition_undetermined_object = defaultdict(dict)
+
         print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
 
     def _get_torch_device(self, preferred_device: Optional[str]) -> torch.device: # type: ignore
@@ -419,25 +418,26 @@ class ObjectTracker:
                 if track_id in self.track_first_out_zone:
                     out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                     transition_data = history_track.copy()
-                    transition_data["labels"] = [in_zone_label, out_zone_label]
+                    # Guardar como diccionario { in, out }
+                    transition_data["labels"] = {"in": in_zone_label, "out": out_zone_label}
                     self.transition_determined_object[track_id] = transition_data
                     self.transition_counts[in_zone_label][out_zone_label][display_class] += 1
                 else:
                     # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
                     transition_data = history_track.copy()
                     # Para salidas desconocidas, dejar el campo vacío ("")
-                    transition_data["labels"] = [in_zone_label, ""]
+                    transition_data["labels"] = {"in": in_zone_label, "out": ""}
                     self.transition_undetermined_object[track_id] = transition_data
             elif track_id in self.track_first_out_zone:
                 out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                 transition_data = history_track.copy()
                 # Para entradas desconocidas, dejar el campo vacío ("")
-                transition_data["labels"] = ["", out_zone_label]
+                transition_data["labels"] = {"in": "", "out": out_zone_label}
                 self.transition_undetermined_object[track_id] = transition_data
             else:
                 transition_data = history_track.copy()
                 # Tanto entrada como salida desconocidas: ambos campos vacíos ("")
-                transition_data["labels"] = ["", ""]
+                transition_data["labels"] = {"in": "", "out": ""}
                 self.transition_undetermined_object[track_id] = transition_data
 
 
