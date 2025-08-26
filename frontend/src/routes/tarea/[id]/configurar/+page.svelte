@@ -110,9 +110,11 @@
 	function setupCanvas() {
 		if (imageRef && imageRef.complete && imageRef.naturalWidth > 0 && canvas) {
 			ctx = canvas.getContext('2d')!;
-			// Usamos clientWidth/clientHeight para que el canvas tenga el tamaño visual de la imagen
-			canvas.width = imageRef.clientWidth;
-			canvas.height = imageRef.clientHeight;
+			// Usar el tamaño del contenedor (canvas-container) que mantiene el aspect-ratio
+			const container = canvas.parentElement as HTMLElement;
+			const rect = container.getBoundingClientRect();
+			canvas.width = Math.round(rect.width);
+			canvas.height = Math.round(rect.height);
 			requestAnimationFrame(redrawCanvas); // Redibujar todo con las dimensiones correctas
 		}
 	}
@@ -372,9 +374,9 @@
 </script>
 
 <div class="page-container">
-	<div class="mx-auto">
+	<div class="mx-auto page-vertical">
 		<!-- Título y descripción generales -->
-		<div class="mb-6 flex items-center justify-between">
+		<div class="header-row mb-6 flex items-center justify-between lg:px-6">
 			<div>
 				<h1 class="heading-1">Asignar Vías</h1>
 				<p class="text-white/70 mt-1 text-sm">
@@ -395,9 +397,9 @@
 		</div>
 
 		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
-		<div class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start">
+		<div class="content-grid lg:grid lg:grid-cols-[1fr_auto] lg:gap-6 items-stretch lg:px-6 min-h-0">
 			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
-			<div class="flex flex-col h-full glass-card p-4 lg:mr-4 mb-8 lg:mb-0">
+			<div class="flex flex-col h-full glass-card p-4 mb-8 lg:mb-0 overflow-auto min-h-0 min-w-0">
 				<div>
 					<h2 class="heading-2 mb-4">Vías Definidas ({poligonos.length})</h2>
 					{#if poligonos.length === 0}
@@ -470,11 +472,10 @@
 			</div>
 
 			<!-- Columna Derecha: Imagen y Canvas (ocupa todo el ancho disponible) -->
-			<div class="mt-8 lg:mt-0 w-full">
+			<div class="mt-8 lg:mt-0 w-auto h-full min-h-0 min-w-0 flex items-center justify-center">
 				{#if isLoading}
 					<div
-						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center text-white/90"
-						style="aspect-ratio: {frameWidth} / {frameHeight};"
+						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center text-white/90 h-full w-full"
 					>
 						<div class="flex items-center gap-3">
 							<Spinner size={24} />
@@ -483,14 +484,14 @@
 					</div>
 				{:else if errorMessage}
 					<div
-						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center border border-red-600/40 text-red-200 p-4"
-						style="aspect-ratio: {frameWidth} / {frameHeight};"
+						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center border border-red-600/40 text-red-200 p-4 h-full w-full"
 					>
 						{errorMessage}
 					</div>
 				{:else}
 					<div
-						class="canvas-container glass-card overflow-hidden shadow-2xl"
+						class="canvas-container relative glass-card overflow-hidden shadow-2xl p-0"
+						style="aspect-ratio: {frameWidth} / {frameHeight}; max-height: 100%; height: 100%; max-width: 100%; width: auto;"
 						onclick={handleCanvasClick}
 						role="button"
 						tabindex="0"
@@ -505,7 +506,7 @@
 								setupCanvas();
 								isLoading = false;
 							}}
-							class="w-full h-auto opacity-100 prevent-drag"
+							class="w-full h-full object-contain opacity-100 prevent-drag block"
 							draggable="false"
 						/>
 						<canvas bind:this={canvas}></canvas>
@@ -563,17 +564,60 @@
 </div>
 
 <style>
+	/* En esta página, queremos que el contenido se expanda a todo el ancho disponible */
+	.page-container {
+		max-width: 100% !important;
+		padding-left: 0 !important;
+		padding-right: 0 !important;
+	}
+	.page-container > .mx-auto {
+		margin-left: 0 !important;
+		margin-right: 0 !important;
+		max-width: none !important;
+		width: 100% !important;
+	}
+	.page-vertical {
+		display: flex;
+		flex-direction: column;
+		/* Altura disponible: viewport menos header + gaps superiores/inferiores del layout */
+		height: calc(
+			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
+				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
+		);
+		min-height: calc(
+			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
+				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
+		);
+	}
+	.header-row {
+		flex: none;
+	}
+
+	/* Grid principal: fila de header auto + fila de contenido que ocupa el resto */
+	.content-grid {
+		display: grid;
+		/* En lg ya definimos columnas; acá solo hacemos que ocupe todo el alto disponible */
+		flex: 1 1 auto;
+		min-height: 0; /* permite que los hijos manejen su propio overflow */
+	}
+
 	.canvas-container {
 		position: relative;
 		width: 100%;
 		cursor: crosshair;
 		line-height: 0;
+		/* Asegura que no haya padding lateral que reduzca el área utilizable */
+		padding-left: 0 !important;
+		padding-right: 0 !important;
+		/* La altura la determina el aspect-ratio + max-height del inline style */
 	}
 	canvas {
 		position: absolute;
 		top: 0;
 		left: 0;
 		pointer-events: none;
+		width: 100%;
+		height: 100%;
 	}
 	.popover {
 		position: fixed;
