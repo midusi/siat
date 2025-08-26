@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { tick } from 'svelte';
 	import { quintOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import { page } from '$app/stores';
@@ -47,6 +48,7 @@
 		vertices: Array<{ x: number; y: number }>;
 	} | null = null;
 	let popoverPosition = { top: 0, left: 0, transform: 'translate(-50%, 15px)' };
+	let popoverEl: HTMLDivElement | null = null;
 
 	// --- Estado de la Interfaz ---
 	let isSubmitting = false; // Para deshabilitar el botón "Finalizar" durante el envío
@@ -54,6 +56,8 @@
 	// --- Opciones ---
 	// Via ahora es texto libre; mantener únicamente los sentidos predefinidos
 	let opcionesSentido = ['Entrada', 'Salida'];
+	// Recordar el último "Sentido" elegido para preseleccionarlo en el siguiente polígono
+	let lastSentido: string = opcionesSentido[0];
 
 	// --- Ciclo de vida y Eventos ---
 	onMount(() => {
@@ -98,23 +102,25 @@
 
 		// Los listeners se mantienen, pero la inicialización del canvas ahora es más robusta.
 		window.addEventListener('keydown', handleKeyDown);
-		window.addEventListener('resize', setupCanvas);
+		const onResize = () => {
+			setupCanvas();
+			updatePopoverPositionForCurrentPending();
+		};
+		window.addEventListener('resize', onResize);
 
 		onDestroy(() => {
 			unsubscribePage(); // Limpiar la suscripción
 			window.removeEventListener('keydown', handleKeyDown);
-			window.removeEventListener('resize', setupCanvas);
+			window.removeEventListener('resize', onResize);
 		});
 	});
 
 	function setupCanvas() {
 		if (imageRef && imageRef.complete && imageRef.naturalWidth > 0 && canvas) {
 			ctx = canvas.getContext('2d')!;
-			// Usar el tamaño del contenedor (canvas-container) que mantiene el aspect-ratio
-			const container = canvas.parentElement as HTMLElement;
-			const rect = container.getBoundingClientRect();
-			canvas.width = Math.round(rect.width);
-			canvas.height = Math.round(rect.height);
+			// Usamos clientWidth/clientHeight para que el canvas tenga el tamaño visual de la imagen
+			canvas.width = imageRef.clientWidth;
+			canvas.height = imageRef.clientHeight;
 			requestAnimationFrame(redrawCanvas); // Redibujar todo con las dimensiones correctas
 		}
 	}
@@ -138,39 +144,46 @@
 	}
 
 	function calculatePopoverPosition(
-		polyVertices: Array<{ x: number; y: number }>,
-		canvasRect: DOMRect
+		polyVerticesCanvasPx: Array<{ x: number; y: number }>,
+		canvasRect: DOMRect,
+		measuredWidth?: number,
+		measuredHeight?: number
 	) {
-		const centro = polyVertices.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
+		const centro = polyVerticesCanvasPx.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
 			x: 0,
 			y: 0
 		});
 		centro.x /= 4;
 		centro.y /= 4;
-		const popoverHeight = 230;
-		const popoverOffsetY = 15;
-		let top = centro.y + canvasRect.top + popoverOffsetY;
+
+		const margin = 16;
+		const offsetY = 15;
+		const width = measuredWidth ?? popoverEl?.offsetWidth ?? 288; // fallback to w-72
+		const height = measuredHeight ?? popoverEl?.offsetHeight ?? 230; // sensible default
+
+		// Default: show below
+		let top = centro.y + canvasRect.top + offsetY;
 		let transform = 'translate(-50%, 0)';
-		if (top + popoverHeight > window.innerHeight) {
-			top = centro.y + canvasRect.top - popoverOffsetY;
-			transform = 'translate(-50%, -100%)';
+
+		// If it would overflow bottom, flip above using measured height
+		if (top + height > window.innerHeight - margin) {
+			top = centro.y + canvasRect.top - offsetY - height;
+			transform = 'translate(-50%, 0)';
 		}
-		const popoverWidth = 288; // w-72 = 18rem = 288px
+
+		// Horizontal clamping
 		let left = centro.x + canvasRect.left;
-		if (left + popoverWidth / 2 > window.innerWidth) {
-			left = window.innerWidth - popoverWidth / 2 - 16; // 16px margin from edge
+		if (left + width / 2 > window.innerWidth - margin) {
+			left = window.innerWidth - width / 2 - margin;
 		}
-		if (left - popoverWidth / 2 < 0) {
-			left = popoverWidth / 2 + 16; // 16px margin from edge
+		if (left - width / 2 < margin) {
+			left = width / 2 + margin;
 		}
-		return {
-			top,
-			left,
-			transform
-		};
+
+		return { top, left, transform };
 	}
 
-	function handleCanvasClick(event: MouseEvent) {
+	async function handleCanvasClick(event: MouseEvent) {
 		if (pendingPolygon) return;
 		const rect = canvas.getBoundingClientRect();
 		// Convertir a coordenadas relativas al frame original
@@ -187,7 +200,7 @@
 			pendingPolygon = {
 				vertices: verticesOrdenados,
 				via: '',
-				sentido: opcionesSentido[0]
+				sentido: lastSentido
 			};
 			currentPoints = [];
 			// Para el popover, convertir a absolutas para posicionar
@@ -202,6 +215,17 @@
 			}));
 			const { top, left, transform } = calculatePopoverPosition(absVerticesCanvas, rect);
 			popoverPosition = { top, left, transform };
+
+			// Recalcular usando el tamaño real del popover una vez renderizado
+			await tick();
+			const rect2 = canvas.getBoundingClientRect();
+			const measured = calculatePopoverPosition(
+				absVerticesCanvas,
+				rect2,
+				popoverEl?.offsetWidth ?? undefined,
+				popoverEl?.offsetHeight ?? undefined
+			);
+			popoverPosition = measured;
 		}
 		requestAnimationFrame(redrawCanvas);
 	}
@@ -223,6 +247,8 @@
 
 	function confirmPendingPolygon() {
 		if (!pendingPolygon) return;
+		// Guardar el último sentido elegido para usarlo por defecto en el próximo polígono
+		lastSentido = pendingPolygon.sentido;
 		poligonos = [
 			...poligonos,
 			{
@@ -325,6 +351,24 @@
 		}
 	}
 
+	// Reposiciona el popover según el tamaño actual del canvas y del popover
+	function updatePopoverPositionForCurrentPending() {
+		if (!pendingPolygon || !canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		// Convertir vértices relativos a px del canvas
+		const absVerticesCanvas = pendingPolygon.vertices.map((v) => ({
+			x: v.x * canvas.width,
+			y: v.y * canvas.height
+		}));
+		const measured = calculatePopoverPosition(
+			absVerticesCanvas,
+			rect,
+			popoverEl?.offsetWidth ?? undefined,
+			popoverEl?.offsetHeight ?? undefined
+		);
+		popoverPosition = measured;
+	}
+
 	// Dibuja polígonos usando coordenadas relativas
 	function drawPolygonRel(
 		poly: { via: string; sentido: string; vertices: Array<{ x: number; y: number }> },
@@ -373,10 +417,10 @@
 	}
 </script>
 
-<div class="page-container">
-	<div class="mx-auto page-vertical">
+<div class="page-container page-vertical">
+	<div class="mx-auto">
 		<!-- Título y descripción generales -->
-		<div class="header-row mb-6 flex items-center justify-between lg:px-6">
+		<div class="mb-6 flex items-center justify-between">
 			<div>
 				<h1 class="heading-1">Asignar Vías</h1>
 				<p class="text-white/70 mt-1 text-sm">
@@ -397,9 +441,9 @@
 		</div>
 
 		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
-		<div class="content-grid lg:grid lg:grid-cols-[1fr_auto] lg:gap-6 items-stretch lg:px-6 min-h-0">
+		<div class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start">
 			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
-			<div class="flex flex-col h-full glass-card p-4 mb-8 lg:mb-0 overflow-auto min-h-0 min-w-0">
+			<div class="flex flex-col h-full glass-card p-4 lg:mr-4 mb-8 lg:mb-0">
 				<div>
 					<h2 class="heading-2 mb-4">Vías Definidas ({poligonos.length})</h2>
 					{#if poligonos.length === 0}
@@ -472,10 +516,11 @@
 			</div>
 
 			<!-- Columna Derecha: Imagen y Canvas (ocupa todo el ancho disponible) -->
-			<div class="mt-8 lg:mt-0 w-auto h-full min-h-0 min-w-0 flex items-center justify-center">
+			<div class="mt-8 lg:mt-0 w-full">
 				{#if isLoading}
 					<div
-						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center text-white/90 h-full w-full"
+						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center text-white/90"
+						style="aspect-ratio: {frameWidth} / {frameHeight};"
 					>
 						<div class="flex items-center gap-3">
 							<Spinner size={24} />
@@ -484,14 +529,14 @@
 					</div>
 				{:else if errorMessage}
 					<div
-						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center border border-red-600/40 text-red-200 p-4 h-full w-full"
+						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center border border-red-600/40 text-red-200 p-4"
+						style="aspect-ratio: {frameWidth} / {frameHeight};"
 					>
 						{errorMessage}
 					</div>
 				{:else}
 					<div
-						class="canvas-container relative glass-card overflow-hidden shadow-2xl p-0"
-						style="aspect-ratio: {frameWidth} / {frameHeight}; max-height: 100%; height: 100%; max-width: 100%; width: auto;"
+						class="canvas-container glass-card overflow-hidden shadow-2xl"
 						onclick={handleCanvasClick}
 						role="button"
 						tabindex="0"
@@ -506,7 +551,7 @@
 								setupCanvas();
 								isLoading = false;
 							}}
-							class="w-full h-full object-contain opacity-100 prevent-drag block"
+							class="w-full h-auto opacity-100 prevent-drag"
 							draggable="false"
 						/>
 						<canvas bind:this={canvas}></canvas>
@@ -521,6 +566,7 @@
 		<div
 			class="popover glass-strong frost frost-polarized p-4 w-72 border shadow-2xl"
 			style="top: {popoverPosition.top}px; left: {popoverPosition.left}px; transform: {popoverPosition.transform};"
+			bind:this={popoverEl}
 			transition:fly={{ y: 20, duration: 250, easing: quintOut }}
 		>
 			<h3 class="font-semibold text-center text-lg mb-3">Confirmar Zona</h3>
@@ -564,9 +610,8 @@
 </div>
 
 <style>
-	/* En esta página, queremos que el contenido se expanda a todo el ancho disponible */
 	.page-container {
-		max-width: 100% !important;
+		max-width: 95% !important;
 		padding-left: 0 !important;
 		padding-right: 0 !important;
 	}
@@ -574,7 +619,7 @@
 		margin-left: 0 !important;
 		margin-right: 0 !important;
 		max-width: none !important;
-		width: 100% !important;
+		width: 95% !important;
 	}
 	.page-vertical {
 		display: flex;
@@ -589,35 +634,17 @@
 				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
 		);
 	}
-	.header-row {
-		flex: none;
-	}
-
-	/* Grid principal: fila de header auto + fila de contenido que ocupa el resto */
-	.content-grid {
-		display: grid;
-		/* En lg ya definimos columnas; acá solo hacemos que ocupe todo el alto disponible */
-		flex: 1 1 auto;
-		min-height: 0; /* permite que los hijos manejen su propio overflow */
-	}
-
 	.canvas-container {
 		position: relative;
 		width: 100%;
 		cursor: crosshair;
 		line-height: 0;
-		/* Asegura que no haya padding lateral que reduzca el área utilizable */
-		padding-left: 0 !important;
-		padding-right: 0 !important;
-		/* La altura la determina el aspect-ratio + max-height del inline style */
 	}
 	canvas {
 		position: absolute;
 		top: 0;
 		left: 0;
 		pointer-events: none;
-		width: 100%;
-		height: 100%;
 	}
 	.popover {
 		position: fixed;
