@@ -84,6 +84,10 @@
 	let videoHeight = $state(0);
 	let videoFps = $state(0);
 	let videoDuration = $state(0);
+	// Zonas configuradas (vías): listas de polígonos Entrada/Salida
+	type RoadPoly = { id: number; name: string; direction: string; polygon: [number, number][] };
+	let roadsIn = $state<RoadPoly[]>([]);
+	let roadsOut = $state<RoadPoly[]>([]);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
 	let determinados = $state<Record<string, any>>({});
@@ -354,6 +358,11 @@
 			// Si está pausado, actualizar overlays con la nueva escala
 			if (videoElement.paused) updateOverlaysForCurrentFrame();
 		}
+	}
+
+	// Utilidad para escalar puntos de polígonos a la vista actual del video
+	function scaledPolygonPoints(poly: [number, number][]): string {
+		return poly.map(([x, y]) => `${x * videoScale.x},${y * videoScale.y}`).join(' ');
 	}
 
 	// CAMBIO 4: La BBox manual también debe tener una propiedad 'opacity' para ser consistente.
@@ -679,6 +688,10 @@
 			videoHeight = +apiData.videoHeight;
 			videoFps = +apiData.videoFps;
 			// meta del video cargada
+
+			// Polígonos de vías (Entrada/Salida) para overlay
+			roadsIn = Array.isArray(apiData.roadsIn) ? apiData.roadsIn : [];
+			roadsOut = Array.isArray(apiData.roadsOut) ? apiData.roadsOut : [];
 
 			// Helper para evitar caché del navegador en JSON estáticos de MinIO
 			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
@@ -1261,6 +1274,35 @@
 							<track kind="captions" />
 							Tu navegador no soporta la reproducción de video.
 						</video>
+
+						<!-- Overlay de polígonos de Entrada (verde) y Salida (rojo) -->
+						<svg
+							class="absolute inset-0 pointer-events-none"
+							style="z-index: 11;"
+							width="100%"
+							height="100%"
+						>
+							{#each roadsIn as r (r.id)}
+								<polygon
+									points={scaledPolygonPoints(r.polygon)}
+									fill="rgba(16,185,129,0.20)"
+									stroke="#10b981"
+									stroke-width="2"
+								>
+									<title>{r.name || 'Entrada'}</title>
+								</polygon>
+							{/each}
+							{#each roadsOut as r (r.id)}
+								<polygon
+									points={scaledPolygonPoints(r.polygon)}
+									fill="rgba(239,68,68,0.20)"
+									stroke="#ef4444"
+									stroke-width="2"
+								>
+									<title>{r.name || 'Salida'}</title>
+								</polygon>
+							{/each}
+						</svg>
 
 						<!-- Renderizado de bboxes generales (sin fade, sin ID) -->
 						{#each generalDisplayBBoxes as box (box.id)}

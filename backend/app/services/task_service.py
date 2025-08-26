@@ -82,12 +82,8 @@ class TaskService:
         # Base pública para acceder a MinIO directamente
         public_base = f"http://localhost:9000/{BucketService.BUCKET_NAME}"
 
-        # Elegir el video a reproducir: si hay uno procesado úsese, si no el original
-        video_key = None
-        if task.inference and task.inference.url_video_processed:
-            video_key = task.inference.url_video_processed
-        else:
-            video_key = task.video.url
+        # Elegir siempre el video original para reproducir
+        video_key = task.video.url
 
         payload: dict = {
             "id": task.id,
@@ -99,6 +95,32 @@ class TaskService:
             "videoFps": task.video.fps,
         }
 
+        # Incluir polígonos de vías configuradas (Entrada/Salida) para overlay en el front
+        try:
+            roads = self.get_roads_by_task(task) or []
+            roads_in = []
+            roads_out = []
+            for r in roads:
+                item = {
+                    "id": r.id,
+                    "name": r.name,
+                    "direction": r.direction,
+                    "polygon": r.polygon,  # lista de pares [x, y] en coords del video original
+                }
+                # Road.direction almacena texto de RoadDirection ("Entrada"/"Salida")
+                if str(r.direction) == str(RoadDirection.IN.value) or r.direction == RoadDirection.IN:
+                    roads_in.append(item)
+                elif str(r.direction) == str(RoadDirection.OUT.value) or r.direction == RoadDirection.OUT:
+                    roads_out.append(item)
+                else:
+                    # Si viniera otro valor inesperado, ignorar silenciosamente
+                    pass
+            payload["roadsIn"] = roads_in
+            payload["roadsOut"] = roads_out
+        except Exception:
+            # No bloquear si falla por compat; simplemente no incluir
+            pass
+
         # Si existe inferencia, agregar URLs públicas a los JSON
         if task.inference:
             if task.inference.transition_counts:
@@ -106,7 +128,7 @@ class TaskService:
             if task.inference.transition_undetermined:
                 try:
                     undet = json.loads(task.inference.transition_undetermined)
-                except:
+                except Exception:
                     undet = task.inference.transition_undetermined
                 # Compat: if labels are arrays, convert to { in, out }
                 if isinstance(undet, dict):
