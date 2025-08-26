@@ -54,7 +54,7 @@ CLASSES_NAMES = [
 # "auto": Intenta usar GPU si está disponible (CUDA), de lo contrario, usa CPU.
 # "cpu": Fuerza el uso de la CPU.
 # "0", "1", ...: Usa la GPU con el índice especificado.
-DEVICE_TO_USE = "auto" # Puedes cambiar esto a "cpu", "0", etc.
+DEVICE_TO_USE = "cpu" # Puedes cambiar esto a "cpu", "0", etc.
 
 class ZoneType(Enum):
     """Enumeración para definir los tipos de zonas."""
@@ -142,7 +142,12 @@ class ObjectTracker:
         self.transition_determined_object = defaultdict(dict)
         self.transition_undetermined_object = defaultdict(dict)
 
+        # Log de dispositivo y variables auxiliares
         print(f"Modelo YOLO cargado. Utilizando dispositivo: {self.device}")
+        # Último frame procesado del video (se setea en run)
+        self.last_frame_index = None
+        # IDs de tracks excluidos de indeterminados por estar en límites (frame 1 o último)
+        self.excluded_undetermined_ids = set()
 
     def _get_torch_device(self, preferred_device: Optional[str]) -> torch.device: # type: ignore
         """
@@ -375,70 +380,91 @@ class ObjectTracker:
         """
         for track_id, data in self.track_results.items():
             classification = data.get("classification", "indeterminado")
-            
-            if classification == "indeterminado":
-                continue
+            is_indeterminate_class = classification == "indeterminado"
+            # La clasificación ya es el nombre "Transporte ..."
+            display_class = classification
 
-            display_class = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(classification, classification)
-            
-            self.total_vehicles_by_class[display_class] += 1
-            
+            # Solo sumar conteos globales por clase cuando no sea indeterminada
+            if not is_indeterminate_class:
+                self.total_vehicles_by_class[display_class] += 1
+
             # Crear el historial del objeto con sus datos
-            history_track = {}
-            if track_id in self.data_obj_history:
+            history_track: Dict[str, Dict] = {}
+            if track_id in self.data_obj_history and len(self.data_obj_history[track_id]) > 0:
                 first_appearance_obj = self.data_obj_history[track_id][0]
-                last_appearance_obj = self.data_obj_history[track_id][len(self.data_obj_history[track_id]) - 1]
-                
-                # Inicializar las estructuras de datos antes de acceder a ellas
-                history_track["first_appearance"] = {}
-                history_track["last_appearance"] = {}
-                
-                history_track["first_appearance"]["frame"] = first_appearance_obj.get("act_frame")
-                history_track["first_appearance"]["boundingBox"] = first_appearance_obj.get("box")
-                history_track["last_appearance"]["frame"] = last_appearance_obj.get("act_frame")
-                history_track["last_appearance"]["boundingBox"] = last_appearance_obj.get("box")
-                history_track["class"] = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(last_appearance_obj.get("class_id"))
-            
-            # Conteo para la tabla "Entradas"
+                last_appearance_obj = self.data_obj_history[track_id][-1]
+
+                history_track["first_appearance"] = {
+                    "frame": first_appearance_obj.get("act_frame"),
+                    "boundingBox": first_appearance_obj.get("box"),
+                }
+                history_track["last_appearance"] = {
+                    "frame": last_appearance_obj.get("act_frame"),
+                    "boundingBox": last_appearance_obj.get("box"),
+                }
+                # Guardar clase mostrable
+                history_track["class"] = SIMPLIFIED_CLASS_DISPLAY_NAMES.get(
+                    last_appearance_obj.get("class_id"), classification
+                )
+
+            # Conteos por zona de entrada y salida
             if track_id in self.track_first_in_zone:
                 in_zone_idx = self.track_first_in_zone[track_id]
                 in_zone_label = self.zone_in_polygons[in_zone_idx]["name"]
                 self.entry_zone_counts[display_class][in_zone_label] += 1
 
-            # Conteo para la tabla "Salidas"
             if track_id in self.track_first_out_zone:
                 out_zone_idx = self.track_first_out_zone[track_id]
                 out_zone_label = self.zone_out_polygons[out_zone_idx]["name"]
-                self.exit_zone_counts[display_class][out_zone_label] += 1          
-                  
-            # Cálculo de la Matriz de Transiciones para cada objeto
+                self.exit_zone_counts[display_class][out_zone_label] += 1
+
+            # Matriz de transiciones y reglas de exclusión en bordes
             if track_id in self.track_first_in_zone:
                 in_zone_label = self.zone_in_polygons[self.track_first_in_zone[track_id]]["name"]
-                
                 if track_id in self.track_first_out_zone:
                     out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                     transition_data = history_track.copy()
-                    # Guardar como diccionario { in, out }
                     transition_data["labels"] = {"in": in_zone_label, "out": out_zone_label}
                     self.transition_determined_object[track_id] = transition_data
-                    self.transition_counts[in_zone_label][out_zone_label][display_class] += 1
+                    # Sumar a la matriz de conteo solo si la clase no es indeterminada
+                    if not is_indeterminate_class:
+                        self.transition_counts[in_zone_label][out_zone_label][display_class] += 1
                 else:
-                    # Objeto entró a una zona IN pero no salió por ninguna zona OUT definida
+                    # Entrada conocida, salida indeterminada
                     transition_data = history_track.copy()
-                    # Para salidas desconocidas, dejar el campo vacío ("")
                     transition_data["labels"] = {"in": in_zone_label, "out": ""}
-                    self.transition_undetermined_object[track_id] = transition_data
+                    last_fr = (history_track.get("last_appearance") or {}).get("frame")
+                    if self.last_frame_index is not None and last_fr == self.last_frame_index:
+                        # Excluir objetos que "se van" en el último frame
+                        self.excluded_undetermined_ids.add(track_id)
+                    else:
+                        self.transition_undetermined_object[track_id] = transition_data
             elif track_id in self.track_first_out_zone:
+                # Salida conocida, entrada indeterminada
                 out_zone_label = self.zone_out_polygons[self.track_first_out_zone[track_id]]["name"]
                 transition_data = history_track.copy()
-                # Para entradas desconocidas, dejar el campo vacío ("")
                 transition_data["labels"] = {"in": "", "out": out_zone_label}
-                self.transition_undetermined_object[track_id] = transition_data
+                first_fr = (history_track.get("first_appearance") or {}).get("frame")
+                if first_fr == 1:
+                    # Excluir objetos que "aparecen" en el primer frame
+                    self.excluded_undetermined_ids.add(track_id)
+                else:
+                    self.transition_undetermined_object[track_id] = transition_data
             else:
+                # Entrada y salida indeterminadas
                 transition_data = history_track.copy()
-                # Tanto entrada como salida desconocidas: ambos campos vacíos ("")
                 transition_data["labels"] = {"in": "", "out": ""}
-                self.transition_undetermined_object[track_id] = transition_data
+                first_fr = (history_track.get("first_appearance") or {}).get("frame")
+                last_fr = (history_track.get("last_appearance") or {}).get("frame")
+                exclude = False
+                if first_fr == 1:
+                    exclude = True
+                if self.last_frame_index is not None and last_fr == self.last_frame_index:
+                    exclude = True
+                if exclude:
+                    self.excluded_undetermined_ids.add(track_id)
+                else:
+                    self.transition_undetermined_object[track_id] = transition_data
 
 
     def process_frame(self, frame: np.ndarray, results: list, act_frame: int) -> np.ndarray:
@@ -495,17 +521,17 @@ class ObjectTracker:
             return
 
         w, h, fps = (int(cap.get(x)) for x in (cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT, cv2.CAP_PROP_FPS))
-        
+
         # Inicializar el video de salida
         try:
             # Codec avc1 (H.264) para compatibilidad con navegadores
-            # fourcc = cv2.VideoWriter_fourcc(*'avc1') 
+            # fourcc = cv2.VideoWriter_fourcc(*'avc1')
             # video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
             writer = imageio.get_writer(output_video_path, fps=fps, codec="libx264", pixelformat="yuv420p")
         except Exception as e:
             print(f"Error al inicializar VideoWriter: {e}.")
             exit(1)
-        
+
         # Intentar obtener el número total de frames para el progreso
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         frames_to_process = total_frames
@@ -514,15 +540,18 @@ class ObjectTracker:
 
         # Si el número de frames es incierto o 0, deshabilitar el progreso en porcentaje
         progress_enabled = frames_to_process > 0 and frames_to_process != float('inf')
-        
-        act_frame = 0 # Contador de frames leídos (no de frames procesados por YOLO)
+
+        act_frame = 0  # Contador de frames leídos (no de frames procesados por YOLO)
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
         if output_video_path:
             print(f"Guardando video procesado en: {output_video_path}")
         else:
-            print(f"No se guardará el video procesado (output_video_path no especificado y no se pudo determinar un valor por defecto).")
+            print(
+                "No se guardará el video procesado (output_video_path no especificado y no se pudo determinar un valor por defecto)."
+            )
 
         last_reported_percentage = -1
+        success = True
         while cap.isOpened():
             success, frame = cap.read()
 
@@ -571,7 +600,6 @@ class ObjectTracker:
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     print("\nTecla 'q' presionada. Deteniendo.")
                     break
-        
         # Asegurarse de una nueva línea al final del progreso
         if progress_enabled:
             # El -1 en act_frame es porque act_frame se incrementa antes de la verificación de fin de video
@@ -579,17 +607,20 @@ class ObjectTracker:
             sys.stdout.write(f"\rProgreso: 100% completado ({act_frame-1 if not success else act_frame}/{frames_to_process} frames)\n")
             sys.stdout.flush()
         else:
-            print("\n") # Nueva línea después de los puntos de progreso si no se usó el progreso porcentual
+            print("\n")  # Nueva línea después de los puntos de progreso si no se usó el progreso porcentual
+
+        # Guardar último frame procesado
+        self.last_frame_index = act_frame
 
         # Liberar recursos
         cap.release()
         # video_writer.release()
         writer.close()
-        
+
         # Destruir ventanas SOLO si se mostraron
         if display_video:
             cv2.destroyAllWindows()
-        
+
         # Una vez terminado el procesamiento de frames, calcular los resultados finales de las clasificaciones y las transiciones
         self._get_final_track_classifications()
         self._get_final_track_transitions()
@@ -687,7 +718,8 @@ if __name__ == "__main__":
 
     # 5. Guardar resultados en archivos JSON
     with open(f"{output_dir}/data_obj_history.json", "w", encoding="utf-8") as f:
-        serializable_dict = {str(k): v for k, v in tracker.data_obj_history.items()}
+        # Excluir IDs marcados como indeterminados en límites (frame 1 o último)
+        serializable_dict = {str(k): v for k, v in tracker.data_obj_history.items() if int(k) not in tracker.excluded_undetermined_ids}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
         
     with open(f"{output_dir}/transition_determined_object.json", "w", encoding="utf-8") as f:
