@@ -49,6 +49,7 @@
 	} | null = null;
 	let popoverPosition = { top: 0, left: 0, transform: 'translate(-50%, 15px)' };
 	let popoverEl: HTMLDivElement | null = null;
+	let viaInputEl: HTMLInputElement | null = null;
 
 	// --- Estado de la Interfaz ---
 	let isSubmitting = false; // Para deshabilitar el botón "Finalizar" durante el envío
@@ -226,6 +227,10 @@
 				popoverEl?.offsetHeight ?? undefined
 			);
 			popoverPosition = measured;
+
+			// Enfocar el campo de texto al mostrar el popover
+			viaInputEl?.focus();
+			viaInputEl?.select();
 		}
 		requestAnimationFrame(redrawCanvas);
 	}
@@ -577,6 +582,7 @@
 						id="via-input"
 						type="text"
 						bind:value={pendingPolygon.via}
+						bind:this={viaInputEl}
 						class="glass-input"
 						placeholder="Nombre de la vía"
 						required
