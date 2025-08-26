@@ -12,8 +12,10 @@
 	let error = $state<string | null>(null);
 
 	// --- Referencias a elementos del DOM ---
+	let videoContainerEl = $state<HTMLDivElement | null>(null);
 	let videoElement = $state<HTMLVideoElement | null>(null);
 	let videoHeightPx = $state(0);
+	let isFullscreen = $state(false);
 
 	// --- Estado para bboxes generales ---
 	type GeneralBBox = { id: string; box: [number, number, number, number] };
@@ -357,6 +359,26 @@
 			videoHeightPx = ch;
 			// Si está pausado, actualizar overlays con la nueva escala
 			if (videoElement.paused) updateOverlaysForCurrentFrame();
+		}
+	}
+
+	function updateFullscreenState() {
+		isFullscreen = !!document.fullscreenElement && document.fullscreenElement === videoContainerEl;
+	}
+
+	async function toggleFullscreen() {
+		if (!videoContainerEl) return;
+		try {
+			if (!document.fullscreenElement) {
+				await videoContainerEl.requestFullscreen();
+			} else if (document.fullscreenElement === videoContainerEl) {
+				await document.exitFullscreen();
+			} else {
+				await document.exitFullscreen();
+				await videoContainerEl.requestFullscreen();
+			}
+		} catch (e) {
+			console.warn('No se pudo cambiar a pantalla completa:', e);
 		}
 	}
 
@@ -792,6 +814,61 @@
 			loading = false;
 		}
 		window.addEventListener('resize', updateVideoDimensions);
+		const onFs = () => {
+			updateFullscreenState();
+			updateVideoDimensions();
+			if (videoElement?.paused) updateOverlaysForCurrentFrame();
+		};
+		// Interceptar doble click en captura antes de que el <video> lo maneje para fullscreen nativo
+		let singleClickTimer: any = null;
+		const onDblClickCapture = (ev: MouseEvent) => {
+			if (!videoContainerEl) return;
+			// Asegurar que el dblclick venga de dentro del contenedor
+			if (!(ev.target instanceof Node) || !videoContainerEl.contains(ev.target)) return;
+			ev.preventDefault();
+			ev.stopPropagation();
+			// @ts-ignore
+			if (typeof (ev as any).stopImmediatePropagation === 'function')
+				(ev as any).stopImmediatePropagation();
+			// Si hay un click simple pendiente, cancelarlo para que el doble click no pause/reproduzca
+			if (singleClickTimer) {
+				clearTimeout(singleClickTimer);
+				singleClickTimer = null;
+			}
+			toggleFullscreen();
+		};
+		// Capturar click para implementar toggle play/pause en single click
+		const onClickCapture = (ev: MouseEvent) => {
+			if (!videoContainerEl || !videoElement) return;
+			// Solo manejar clicks que ocurren dentro del contenedor y sobre el contenido del <video>
+			if (!(ev.target instanceof Node) || !videoContainerEl.contains(ev.target)) return;
+			if (ev.target !== videoElement) return; // no interferir con overlays/bboxes/botones
+			// Evitar interferir con los controles nativos (zona inferior ~48px)
+			const rect = videoElement.getBoundingClientRect();
+			const y = ev.clientY - rect.top;
+			if (y >= rect.height - 48) return;
+			// Prevenir manejo nativo y programar toggle; si llega un dblclick, se cancela arriba
+			ev.preventDefault();
+			ev.stopPropagation();
+			// @ts-ignore
+			if (typeof (ev as any).stopImmediatePropagation === 'function')
+				(ev as any).stopImmediatePropagation();
+			if (singleClickTimer) {
+				clearTimeout(singleClickTimer);
+				singleClickTimer = null;
+			}
+			singleClickTimer = setTimeout(() => {
+				if (!videoElement) return;
+				if (videoElement.paused) videoElement.play();
+				else videoElement.pause();
+				singleClickTimer = null;
+			}, 200);
+		};
+		document.addEventListener('dblclick', onDblClickCapture, { capture: true });
+		document.addEventListener('click', onClickCapture, { capture: true });
+		document.addEventListener('fullscreenchange', onFs);
+		// WebKit prefijo (por compatibilidad)
+		document.addEventListener('webkitfullscreenchange' as any, onFs as any);
 		// Atajo global Ctrl+K para enfocar la barra de búsqueda y limpiar texto
 		const onGlobalKeyDown = (e: KeyboardEvent) => {
 			if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
@@ -803,6 +880,10 @@
 		window.addEventListener('keydown', onGlobalKeyDown);
 		return () => {
 			window.removeEventListener('resize', updateVideoDimensions);
+			document.removeEventListener('fullscreenchange', onFs);
+			document.removeEventListener('webkitfullscreenchange' as any, onFs as any);
+			document.removeEventListener('dblclick', onDblClickCapture, { capture: true } as any);
+			document.removeEventListener('click', onClickCapture, { capture: true } as any);
 			window.removeEventListener('keydown', onGlobalKeyDown);
 			stopAnimationLoop();
 		};
@@ -1238,12 +1319,18 @@
 			<div class="w-full lg:w-2/3 max-w-5xl">
 				{#if videoPath !== '' && generalReady}
 					<div
+						bind:this={videoContainerEl}
 						class="relative rounded overflow-hidden border bg-black aspect-video glass-card"
 						style="border-color: hsl(var(--border))"
+						role="button"
+						tabindex="0"
 					>
 						<video
 							class="w-full h-full"
 							controls
+							controlsList="nodownload nofullscreen"
+							disablepictureinpicture
+							playsinline
 							autoplay
 							loop
 							bind:this={videoElement}
@@ -1274,6 +1361,16 @@
 							<track kind="captions" />
 							Tu navegador no soporta la reproducción de video.
 						</video>
+
+						<!-- Botón flotante de pantalla completa para el contenedor -->
+						<button
+							type="button"
+							onclick={toggleFullscreen}
+							title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+							class="absolute z-[15] bottom-2 right-2 bg-black/50 hover:bg-black/70 text-white px-3 py-1.5 rounded-md text-sm"
+						>
+							{isFullscreen ? 'Salir' : 'Full'}
+						</button>
 
 						<!-- Overlay de polígonos de Entrada (verde) y Salida (rojo) -->
 						<svg
@@ -1414,7 +1511,7 @@
 			<!-- Lista de indeterminados -->
 			{#if sortedIndeterminados.length > 0}
 				<div
-					class="w-full md:w-auto glass-card p-1 rounded-lg shadow-lg max-w-[450px] overflow-y-auto"
+					class="w-full md:w-[380px] lg:w-[420px] xl:w-[460px] shrink-0 glass-card p-1 rounded-lg shadow-lg overflow-y-auto"
 					style:height={videoHeightPx > 0 ? `${videoHeightPx}px` : 'auto'}
 				>
 					<h3 class="text-xl font-semibold mt-3 mb-2 text-center">Vehículos Indeterminados</h3>
@@ -1695,6 +1792,24 @@
 </div>
 
 <style>
+	/* Ocultar botón de fullscreen nativo del video en navegadores conocidos */
+	video::-webkit-media-controls-fullscreen-button {
+		display: none !important;
+	}
+	video::-webkit-media-controls-enclosure {
+		/* Asegura que no agregue espacio por el botón oculto en algunos webkit */
+		overflow: hidden;
+	}
+	/* Firefox */
+	video::-moz-fullscreen-ancestor,
+	video::-moz-media-controls-fullscreen-button {
+		display: none !important;
+	}
+	/* Edge/Chromium fallback */
+	video::-ms-media-controls-fullscreen-button {
+		display: none !important;
+	}
+
 	.overflow-y-auto::-webkit-scrollbar {
 		width: 8px;
 	}
