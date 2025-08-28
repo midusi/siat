@@ -5,6 +5,7 @@
 	import Spinner from '$lib/components/Spinner.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { showConfirm } from '$lib/dialog';
+	import { getCategoryColor, getCategoryColorMap, RESERVED_COLORS } from '$lib/colors';
 
 	// --- Props y estado inicial ---
 	let { data } = $props();
@@ -76,7 +77,7 @@
 		labels: { in: string; out: string };
 	};
 	type Indeterminados = { [trackId: string]: Indeterminado };
-	type FilaTabla = { tipo: string; [key: string]: string | number };
+	type FilaTabla = { tipo: string; __key?: string; [key: string]: string | number | undefined };
 	// CAMBIO 1: Añadimos 'opacity' al tipo de la BBox que se va a renderizar.
 	type DisplayableBBox = { id: string; bbox: BoundingBox; hideAtTime: number; opacity: number };
 
@@ -462,7 +463,11 @@
 		if (!videoElement) return 'display: none;';
 		const rect = toScaledClampedRectFromStr(box.bbox);
 		if (!rect) return 'display: none;';
-		return rectStyle(rect, `opacity: ${box.opacity}; transition: opacity 0.5s ease;`);
+		// BBoxes de indeterminados: siempre en negro
+		return rectStyle(
+			rect,
+			`opacity: ${box.opacity}; transition: opacity 0.5s ease; border: 2px solid #000;`
+		);
 	}
 	// --- BBoxes generales a mostrar (sin fade, sin ID) ---
 	function calculateGeneralBoxStyle(box: GeneralBBox): string {
@@ -474,10 +479,26 @@
 			? 'box-shadow: 0 0 5px rgba(255,255,255,0.8), 0 0 10px rgba(255,255,255,0.6), 0 0 20px rgba(255,255,255,0.4);'
 			: 'box-shadow: none;';
 		const dim = isSelectionActive && selectedTrackId && !isSelected ? 'opacity: 0.5;' : '';
-		const borderColor = isSelected ? '#ffffff' : '#000000';
+		// Si el track es indeterminado, siempre usar borde negro (independientemente de su clase)
+		if (indeterminados[box.id]) {
+			const borderColor = '#000000';
+			return rectStyle(
+				rect,
+				`border: 2px solid ${borderColor}; ${glow} ${dim} pointer-events: auto; z-index: 12; cursor: pointer; transition: opacity 0.5s ease, box-shadow 0.5s ease;`
+			);
+		}
+		const cls = getTrackClass(box.id);
+		const color = cls ? classColor(cls) : '#ffffff';
+		let borderColor = isSelected ? '#ffffff' : color;
+		let extraShadow = glow;
+		if (!isSelected && color.toLowerCase() === '#000000') {
+			// Mantener visible sobre fondo negro para determinados con clase negra
+			borderColor = '#ffffff';
+			extraShadow = `${glow} inset 0 0 0 2px #000000`;
+		}
 		return rectStyle(
 			rect,
-			`border: 2px solid ${borderColor}; ${glow} ${dim} pointer-events: auto; z-index: 12; cursor: pointer; transition: opacity 0.5s ease, box-shadow 0.5s ease;`
+			`border: 2px solid ${borderColor}; ${extraShadow} ${dim} pointer-events: auto; z-index: 12; cursor: pointer; transition: opacity 0.5s ease, box-shadow 0.5s ease;`
 		);
 	}
 
@@ -533,6 +554,13 @@
 				}
 			});
 		}
+	}
+
+	function getTrackClass(trackId: string): string | null {
+		if (determinados[trackId]?.class) return String(determinados[trackId].class);
+		if (indeterminados[trackId]?.class) return String(indeterminados[trackId].class);
+		if ((history as any)?.[trackId]?.class) return String((history as any)[trackId].class);
+		return null;
 	}
 
 	function beginClearSelectionWithFade() {
@@ -1039,6 +1067,10 @@
 		return Array.from(allZones).sort();
 	});
 
+	// --- Colores por clase ---
+	const classColor = (cls: string): string => getCategoryColor(cls, vehicleTypes);
+	let classColorMap = $derived.by(() => getCategoryColorMap(vehicleTypes));
+
 	// Opciones para los selects personalizados (GlassSelect)
 	let vehicleItems = $derived.by(() =>
 		vehicleTypes.map((v) => ({ value: v, label: getVehicleName(v) }))
@@ -1057,7 +1089,7 @@
 			...Object.fromEntries(columnasPrincipales.map((c) => [c, 0]))
 		};
 		const datos = vehicleTypes.map((vehiculo) => {
-			const fila: FilaTabla = { tipo: getVehicleName(vehiculo) };
+			const fila: FilaTabla = { tipo: getVehicleName(vehiculo), __key: vehiculo };
 			entradasIds.forEach((entradaId) => {
 				const nombreColumna = `Entrada ${entradaId}`;
 				const totalVehiculoPorEntrada = Object.values(rutas[entradaId] || {}).reduce(
@@ -1085,7 +1117,7 @@
 			...Object.fromEntries(columnasPrincipales.map((c) => [c, 0]))
 		};
 		const datos = vehicleTypes.map((vehiculo) => {
-			const fila: FilaTabla = { tipo: getVehicleName(vehiculo) };
+			const fila: FilaTabla = { tipo: getVehicleName(vehiculo), __key: vehiculo };
 			salidasIds.forEach((salidaId) => {
 				const nombreColumna = `Salida ${salidaId}`;
 				let totalVehiculoPorSalida = 0;
@@ -1115,7 +1147,7 @@
 				...Object.fromEntries(columnasSalida.map((c) => [c, 0]))
 			};
 			const datos = vehicleTypes.map((vehiculo) => {
-				const fila: FilaTabla = { tipo: getVehicleName(vehiculo) };
+				const fila: FilaTabla = { tipo: getVehicleName(vehiculo), __key: vehiculo };
 				salidasDeEntradaIds.forEach((salidaId) => {
 					const nombreColumna = `Salida ${salidaId}`;
 					const conteo = rutas[entradaId][salidaId][vehiculo] ?? 0;
@@ -1545,7 +1577,15 @@
 						{#each visibleDisplayBoundingBoxes as box (box.id)}
 							<div class="bbox-style" style={calculateBoxStyle(box)}>
 								{#if box.id !== 'active-manual'}
-									<div class="bbox-id-label">ID: {box.id}</div>
+									<div class="bbox-id-label">
+										<span
+											class="color-dot"
+											style={`background:${(() => {
+												const _c = getTrackClass(box.id);
+												return _c ? classColor(_c) : '#ffffff';
+											})()}`}
+										></span>ID: {box.id}
+									</div>
 								{/if}
 							</div>
 						{/each}
@@ -1626,7 +1666,11 @@
 									</div>
 									<div class="grid grid-cols-4 gap-2 items-center mb-2 text-sm">
 										<span class="text-gray-400">Clase:</span>
-										<div class="col-span-3">
+										<div class="col-span-3 flex items-center gap-2">
+											<span
+												class="color-dot"
+												style={`background:${classColor(indeterminados[trackId].class)}`}
+											></span>
 											<GlassSelect
 												items={vehicleItems}
 												value={indeterminados[trackId].class}
@@ -1751,7 +1795,15 @@
 											class="border-b hover:glass-surface"
 											style="border-color: hsl(var(--border))"
 										>
-											<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
+											<td class="px-4 py-2 font-medium whitespace-nowrap">
+												{#if item.__key}
+													<span
+														class="color-dot"
+														style={`background:${classColor(String(item.__key))}`}
+													></span>
+												{/if}
+												{item.tipo}
+											</td>
 											{#each entradasData.columnasPrincipales as col}
 												<td class="px-4 py-2 text-center">{item[col]}</td>
 											{/each}
@@ -1789,7 +1841,15 @@
 											class="border-b hover:glass-surface"
 											style="border-color: hsl(var(--border))"
 										>
-											<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
+											<td class="px-4 py-2 font-medium whitespace-nowrap">
+												{#if item.__key}
+													<span
+														class="color-dot"
+														style={`background:${classColor(String(item.__key))}`}
+													></span>
+												{/if}
+												{item.tipo}
+											</td>
 											{#each salidasData.columnasPrincipales as col}
 												<td class="px-4 py-2 text-center">{item[col]}</td>
 											{/each}
@@ -1832,7 +1892,15 @@
 													class="border-b hover:glass-surface"
 													style="border-color: hsl(var(--border))"
 												>
-													<td class="px-4 py-2 font-medium whitespace-nowrap">{item.tipo}</td>
+													<td class="px-4 py-2 font-medium whitespace-nowrap">
+														{#if item.__key}
+															<span
+																class="color-dot"
+																style={`background:${classColor(String(item.__key))}`}
+															></span>
+														{/if}
+														{item.tipo}
+													</td>
 													{#each entrada.columnasSalida as colName}
 														<td class="px-4 py-2 text-center">{item[colName]}</td>
 													{/each}
@@ -1982,6 +2050,16 @@
 
 		/* Un suave resplandor al texto para que se integre mejor */
 		text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
+	}
+
+	.color-dot {
+		display: inline-block;
+		width: 10px;
+		height: 10px;
+		border-radius: 9999px;
+		margin-right: 6px;
+		vertical-align: middle;
+		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
 	}
 
 	/* Animación de trazo para dibujar la ruta rápidamente (sutil) */
