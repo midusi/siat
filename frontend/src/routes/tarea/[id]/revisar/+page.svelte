@@ -1399,8 +1399,6 @@
 							controlsList="nodownload nofullscreen"
 							disablepictureinpicture
 							playsinline
-							autoplay
-							loop
 							bind:this={videoElement}
 							onloadedmetadata={() => {
 								videoDuration = videoElement?.duration ?? 0;
