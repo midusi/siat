@@ -79,7 +79,14 @@
 	type Indeterminados = { [trackId: string]: Indeterminado };
 	type FilaTabla = { tipo: string; __key?: string; [key: string]: string | number | undefined };
 	// CAMBIO 1: Añadimos 'opacity' al tipo de la BBox que se va a renderizar.
-	type DisplayableBBox = { id: string; bbox: BoundingBox; hideAtTime: number; opacity: number };
+	type DisplayableBBox = {
+		id: string;
+		bbox: BoundingBox;
+		hideAtTime: number; // segundos en timeline de video
+		opacity: number; // 0..1
+		rtHideAtMs?: number; // tiempo absoluto (ms) usado para fade durante pausa
+		fadeRemoveAtMs?: number; // tiempo absoluto (ms) para eliminar tras llegar a opacidad 0 con transición
+	};
 
 	// --- Estado reactivo ---
 	let videoPath = $state('');
@@ -217,6 +224,109 @@
 	let lastProcessedFrame = -1;
 	// CAMBIO 2: Renombramos la constante para que sea más claro que es la duración del desvanecimiento.
 	const FADE_OUT_DURATION_SECONDS = 1.0;
+	const OPACITY_TRANSITION_MS = 500; // debe coincidir con CSS 'transition: opacity 0.5s'
+
+	// Bucle de fade independiente del video (para que los popups sigan desvaneciéndose en pausa)
+	let pausedFadeFrameId: number | null = null;
+	let pausedAtVideoTime = 0; // tiempo del video en el momento de pausar
+
+	function startPausedFadeLoop() {
+		if (!videoElement) return;
+		pausedAtVideoTime = videoElement.currentTime;
+		// Inicializar expiraciones en tiempo real según el tiempo restante de cada popup
+		const now = performance.now();
+		playbackBoundingBoxes = playbackBoundingBoxes.map((b) => {
+			const remainingSec = Math.max(0, b.hideAtTime - pausedAtVideoTime);
+			return { ...(b as any), rtHideAtMs: now + remainingSec * 1000 } as any;
+		});
+		// Evitar múltiples bucles concurrentes
+		if (pausedFadeFrameId !== null) return;
+		const loop = () => {
+			// Si el video se reanuda, ajustar hideAtTime de los que sigan vivos y salir
+			if (!videoElement?.paused) {
+				const nowMs = performance.now();
+				const curTime = videoElement?.currentTime ?? pausedAtVideoTime;
+				const updated: any[] = [];
+				for (const b of playbackBoundingBoxes) {
+					const rt = (b as any).rtHideAtMs as number | undefined;
+					if (rt) {
+						const remSec = Math.max(0, (rt - nowMs) / 1000);
+						const newOpacity = Math.max(0, Math.min(1, remSec / FADE_OUT_DURATION_SECONDS));
+						if (newOpacity > 0) {
+							updated.push({
+								...(b as any),
+								opacity: newOpacity,
+								hideAtTime: curTime + remSec,
+								rtHideAtMs: undefined,
+								fadeRemoveAtMs: undefined
+							});
+						} else {
+							const removeAt = (b as any).fadeRemoveAtMs ?? nowMs + OPACITY_TRANSITION_MS;
+							updated.push({
+								...(b as any),
+								opacity: 0,
+								hideAtTime: curTime,
+								rtHideAtMs: undefined,
+								fadeRemoveAtMs: removeAt
+							});
+						}
+					} else {
+						updated.push(b);
+					}
+				}
+				playbackBoundingBoxes = updated as any;
+				pausedFadeFrameId = null;
+				return;
+			}
+
+			const nowMs = performance.now();
+			const out: any[] = [];
+			for (const b of playbackBoundingBoxes) {
+				const rt = (b as any).rtHideAtMs as number | undefined;
+				if (!rt) {
+					// Si aparece alguno nuevo en pausa (raro), calcular su rtHideAtMs desde el tiempo de pausa
+					const remainingSec = Math.max(0, b.hideAtTime - pausedAtVideoTime);
+					const rtHide = nowMs + remainingSec * 1000;
+					const newOpacity = Math.max(
+						0,
+						Math.min(1, (rtHide - nowMs) / (FADE_OUT_DURATION_SECONDS * 1000))
+					);
+					if (newOpacity > 0) {
+						out.push({ ...(b as any), opacity: newOpacity, rtHideAtMs: rtHide });
+					} else {
+						const removeAt = nowMs + OPACITY_TRANSITION_MS;
+						out.push({ ...(b as any), opacity: 0, rtHideAtMs: rtHide, fadeRemoveAtMs: removeAt });
+					}
+					continue;
+				}
+				const remainingMs = rt - nowMs;
+				const newOpacity = Math.max(
+					0,
+					Math.min(1, remainingMs / (FADE_OUT_DURATION_SECONDS * 1000))
+				);
+				if (newOpacity > 0) {
+					out.push({ ...(b as any), opacity: newOpacity });
+				} else {
+					const removeAt = (b as any).fadeRemoveAtMs ?? nowMs + OPACITY_TRANSITION_MS;
+					if (nowMs < removeAt) out.push({ ...(b as any), opacity: 0, fadeRemoveAtMs: removeAt });
+				}
+			}
+			playbackBoundingBoxes = out as any;
+			if (out.length > 0) {
+				pausedFadeFrameId = requestAnimationFrame(loop);
+			} else {
+				pausedFadeFrameId = null;
+			}
+		};
+		pausedFadeFrameId = requestAnimationFrame(loop);
+	}
+
+	function stopPausedFadeLoop() {
+		if (pausedFadeFrameId !== null) {
+			cancelAnimationFrame(pausedFadeFrameId);
+			pausedFadeFrameId = null;
+		}
+	}
 
 	// --- ESTRUCTURA DE DATOS OPTIMIZADA POR FRAME ---
 	let indeterminadosByFrame = $derived.by(() => {
@@ -269,12 +379,25 @@
 		// --- Indeterminados (con desvanecimiento, como antes) ---
 		if (playbackBoundingBoxes.length > 0) {
 			const out: DisplayableBBox[] = [];
+			const nowMs = performance.now();
 			for (const box of playbackBoundingBoxes) {
 				const timeUntilHidden = box.hideAtTime - currentTime;
 				const newOpacity = Math.max(0, Math.min(1.0, timeUntilHidden / FADE_OUT_DURATION_SECONDS));
-				if (newOpacity > 0) {
-					if (newOpacity !== box.opacity) out.push({ ...box, opacity: newOpacity });
-					else out.push(box);
+				if (newOpacity <= 0) {
+					// programar eliminación tras terminar transición de opacidad a 0
+					if (!box.fadeRemoveAtMs) {
+						out.push({ ...box, opacity: 0, fadeRemoveAtMs: nowMs + OPACITY_TRANSITION_MS });
+					} else if (nowMs < box.fadeRemoveAtMs) {
+						out.push({ ...box, opacity: 0 });
+					}
+					// si ya pasó el umbral, no reinsertar -> se elimina suavemente
+				} else {
+					if (newOpacity !== box.opacity || box.fadeRemoveAtMs) {
+						const { fadeRemoveAtMs, ...rest } = box as any;
+						out.push({ ...rest, opacity: newOpacity } as DisplayableBBox);
+					} else {
+						out.push(box);
+					}
 				}
 			}
 			playbackBoundingBoxes = out; // reasignación para reactividad
@@ -335,6 +458,9 @@
 			activeBoundingBox = null;
 			activeIndeterminateId = null;
 			playbackBoundingBoxes = [];
+
+			// Asegurar que no quede corriendo el bucle de fade de pausa
+			stopPausedFadeLoop();
 
 			// CAMBIO CLAVE:
 			// En lugar de reiniciar siempre a -1, establecemos el último frame procesado
@@ -946,6 +1072,7 @@
 			document.removeEventListener('click', onClickCapture, { capture: true } as any);
 			window.removeEventListener('keydown', onGlobalKeyDown);
 			stopAnimationLoop();
+			stopPausedFadeLoop();
 		};
 	});
 	function handleKeyPress(event: KeyboardEvent, trackId: string) {
@@ -1407,17 +1534,35 @@
 									updateSelectedTrackRoute(computeCurrentFrameFromTime(videoElement.currentTime));
 								}
 							}}
-							onplay={startAnimationLoop}
-							onpause={stopAnimationLoop}
+							onplay={() => {
+								// detener fade de pausa y reanudar loop ligado al video
+								stopPausedFadeLoop();
+								startAnimationLoop();
+							}}
+							onpause={() => {
+								stopAnimationLoop();
+								// mantener animación de fade en tiempo real
+								startPausedFadeLoop();
+							}}
 							onseeking={() => {
 								if (videoElement) {
 									lastProcessedFrame = computeCurrentFrameFromTime(videoElement.currentTime) - 1;
 									// actualizar overlays mientras se busca estando en pausa
-									if (videoElement.paused) updateOverlaysForCurrentFrame();
+									if (videoElement.paused) {
+										updateOverlaysForCurrentFrame();
+										// reiniciar referencias de fade en pausa según nuevo tiempo
+										stopPausedFadeLoop();
+										startPausedFadeLoop();
+									}
 								}
 							}}
 							onseeked={() => {
-								if (videoElement?.paused) updateOverlaysForCurrentFrame();
+								if (videoElement?.paused) {
+									updateOverlaysForCurrentFrame();
+									// ensure paused fade loop continues after seek
+									stopPausedFadeLoop();
+									startPausedFadeLoop();
+								}
 							}}
 							ontimeupdate={() => {
 								if (videoElement?.paused) updateOverlaysForCurrentFrame();
