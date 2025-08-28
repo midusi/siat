@@ -100,6 +100,8 @@
 	// Zonas excluidas para overlay en revisión
 	let excludedZones = $state<[number, number][][]>([]);
 	let showExcluded = $state(false);
+	// Flag derivado para saber si hay zonas excluídas
+	let hasExcludedZones = $derived.by(() => (excludedZones?.length ?? 0) > 0);
 	// --- Búsqueda de indeterminados por ID ---
 	let searchQuery = $state('');
 	let searchInputEl = $state<HTMLInputElement | null>(null);
@@ -1595,12 +1597,21 @@
 					<div class="mt-3">
 						<button
 							type="button"
-							onclick={() => (showExcluded = !showExcluded)}
+							onclick={() => hasExcludedZones && (showExcluded = !showExcluded)}
 							class="rounded-md px-3 py-2 font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed bg-black text-white border border-white"
+							disabled={!hasExcludedZones}
 							class:btn-excluir-active={showExcluded}
-							title={showExcluded ? 'Ocultar zonas excluídas' : 'Mostrar zonas excluídas'}
+							title={hasExcludedZones
+								? showExcluded
+									? 'Ocultar zonas excluídas'
+									: 'Mostrar zonas excluídas'
+								: 'No hay zonas excluídas'}
 						>
-							{showExcluded ? 'Ocultar zonas excluídas' : 'Mostrar zonas excluídas'}
+							{hasExcludedZones
+								? showExcluded
+									? 'Ocultar zonas excluídas'
+									: 'Mostrar zonas excluídas'
+								: 'No hay zonas excluídas'}
 						</button>
 					</div>
 				{:else}
