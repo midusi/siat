@@ -591,10 +591,10 @@
 		if (!videoElement) return 'display: none;';
 		const rect = toScaledClampedRectFromStr(box.bbox);
 		if (!rect) return 'display: none;';
-		// BBoxes de indeterminados: siempre en negro
+		// BBoxes de indeterminados: siempre en negro y SIN glow (el glow pertenece al resaltado superior)
 		return rectStyle(
 			rect,
-			`opacity: ${box.opacity}; transition: opacity 0.5s ease; border: 2px solid #000;`
+			`opacity: ${box.opacity}; transition: opacity 0.5s ease; border: 2px solid #000; box-shadow: none;`
 		);
 	}
 	// --- BBoxes generales a mostrar (sin fade, sin ID) ---
@@ -609,7 +609,8 @@
 		const dim = isSelectionActive && selectedTrackId && !isSelected ? 'opacity: 0.5;' : '';
 		// Si el track es indeterminado, siempre usar borde negro (independientemente de su clase)
 		if (indeterminados[box.id]) {
-			const borderColor = '#000000';
+			// Cuando está seleccionado, el resaltado debe verse encima del bbox negro: usar borde blanco en la capa superior
+			const borderColor = isSelected ? '#ffffff' : '#000000';
 			return rectStyle(
 				rect,
 				`border: 2px solid ${borderColor}; ${glow} ${dim} pointer-events: auto; z-index: 12; cursor: pointer; transition: opacity 0.5s ease, box-shadow 0.5s ease;`
