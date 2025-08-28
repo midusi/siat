@@ -205,6 +205,8 @@
 	// --- ESTADOS DE BBOX Y ANIMACIÓN ---
 	let activeBoundingBox = $state<BoundingBox | null>(null);
 	let playbackBoundingBoxes = $state<DisplayableBBox[]>([]);
+	// Cuando se revisa un indeterminado desde la lista, ocultar las demás bboxes del reproductor
+	let hideOtherBBoxes = $state(false);
 
 	// ID del bucle de animación para poder cancelarlo
 	let animationFrameId: number | null = null;
@@ -325,6 +327,8 @@
 	// --- FUNCIONES DE CONTROL DEL VIDEO ---
 	function startAnimationLoop() {
 		if (animationFrameId === null) {
+			// Al iniciar la reproducción volver a mostrar todas las bboxes
+			hideOtherBBoxes = false;
 			activeBoundingBox = null;
 			activeIndeterminateId = null;
 			playbackBoundingBoxes = [];
@@ -404,6 +408,22 @@
 		// Usamos un Set para búsquedas ultra-rápidas (O(1)) en el template
 		return new Set(playbackBoundingBoxes.map((box) => box.id));
 	});
+
+	// Capas visibles según el modo de enfoque (dejar solo la bbox seleccionada)
+	let visibleGeneralBBoxes = $derived.by(() => {
+		if (hideOtherBBoxes && selectedTrackId) {
+			return (generalDisplayBBoxes || []).filter((b) => b.id === selectedTrackId);
+		}
+		return generalDisplayBBoxes;
+	});
+
+	let visibleDisplayBoundingBoxes = $derived.by(() => {
+		// Mantener bbox manual activa si existe
+		if (activeBoundingBox) return displayBoundingBoxes;
+		if (!hideOtherBBoxes) return displayBoundingBoxes;
+		if (!selectedTrackId) return [];
+		return displayBoundingBoxes.filter((b) => b.id === selectedTrackId);
+	});
 	let activeIndeterminateId = $state<string | null>(null);
 	function handleIndeterminateClick(trackId: string) {
 		activeIndeterminateId = trackId;
@@ -430,6 +450,9 @@
 		routeAnimating = true;
 		routeAnimTimer = setTimeout(() => (routeAnimating = false), 320);
 		routeAnimateKey++;
+
+		// Ocultar todas las otras bboxes del reproductor
+		hideOtherBBoxes = true;
 
 		// Refresh overlays for the paused frame (sets selectedBoxRect and routes)
 		updateOverlaysForCurrentFrame();
@@ -533,6 +556,8 @@
 			routeAllPoints = [];
 			routePastSegments = [];
 			routeFutureSegments = [];
+			// Restaurar visualización de bboxes
+			hideOtherBBoxes = false;
 		}, 500);
 	}
 
@@ -979,6 +1004,8 @@
 			routeAnimating = false;
 			if (routeAnimTimer) clearTimeout(routeAnimTimer);
 			if (routeFadeTimer) clearTimeout(routeFadeTimer);
+			// Volver a mostrar todas las bboxes
+			hideOtherBBoxes = false;
 		}
 
 		delete indeterminados[trackId];
@@ -1427,7 +1454,7 @@
 						{/if}
 
 						<!-- Renderizado de bboxes generales (sin fade, sin ID) -->
-						{#each generalDisplayBBoxes as box (box.id)}
+						{#each visibleGeneralBBoxes as box (box.id)}
 							<div
 								class="general-bbox"
 								role="button"
@@ -1515,7 +1542,7 @@
 						{/if}
 
 						<!-- Renderizado de bboxes indeterminados (con fade, con ID) -->
-						{#each displayBoundingBoxes as box (box.id)}
+						{#each visibleDisplayBoundingBoxes as box (box.id)}
 							<div class="bbox-style" style={calculateBoxStyle(box)}>
 								{#if box.id !== 'active-manual'}
 									<div class="bbox-id-label">ID: {box.id}</div>
