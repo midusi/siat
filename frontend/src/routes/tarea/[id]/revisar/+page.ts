@@ -7,10 +7,10 @@ import type { PageLoad } from './$types';
  * Aquí, extraemos el 'id' de la tarea desde los parámetros de la URL.
  */
 export const load: PageLoad = ({ params }) => {
-    // El valor de 'params.id' corresponde a la parte [id] de la ruta.
-    // Retornamos un objeto que estará disponible en el componente +page.svelte
-    // a través de la prop `data`.
-    return {
-        id: params.id,
-    };
+	// El valor de 'params.id' corresponde a la parte [id] de la ruta.
+	// Retornamos un objeto que estará disponible en el componente +page.svelte
+	// a través de la prop `data`.
+	return {
+		id: params.id
+	};
 };

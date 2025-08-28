@@ -1,293 +1,308 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Design tokens and glassmorphism utilities (centralized) */
 @layer base {
-    :root {
-        /* Neutral black & white theme by default */
-        --background: 0 0% 6%;
-        /* near black */
-        --foreground: 0 0% 96%;
-        /* near white */
+	:root {
+		/* Neutral black & white theme by default */
+		--background: 0 0% 6%;
+		/* near black */
+		--foreground: 0 0% 96%;
+		/* near white */
 
-        --muted: 0 0% 14%;
-        --muted-foreground: 0 0% 70%;
+		--muted: 0 0% 14%;
+		--muted-foreground: 0 0% 70%;
 
-        --border: 0 0% 100% / 0.18;
-        --input: 0 0% 100% / 0.18;
-        --ring: 0 0% 100% / 0.24;
+		--border: 0 0% 100% / 0.18;
+		--input: 0 0% 100% / 0.18;
+		--ring: 0 0% 100% / 0.24;
 
-        --primary: 0 0% 96%;
-        --primary-foreground: 0 0% 6%;
+		--primary: 0 0% 96%;
+		--primary-foreground: 0 0% 6%;
 
-        --secondary: 0 0% 100% / 0.08;
-        --secondary-foreground: 0 0% 96%;
+		--secondary: 0 0% 100% / 0.08;
+		--secondary-foreground: 0 0% 96%;
 
-        --destructive: 0 84% 60%;
-        --destructive-foreground: 0 0% 98%;
+		--destructive: 0 84% 60%;
+		--destructive-foreground: 0 0% 98%;
 
-        --accent: 0 0% 100% / 0.08;
-        --accent-foreground: 0 0% 96%;
+		--accent: 0 0% 100% / 0.08;
+		--accent-foreground: 0 0% 96%;
 
-        --popover: 0 0% 10%;
-        --popover-foreground: 0 0% 96%;
+		--popover: 0 0% 10%;
+		--popover-foreground: 0 0% 96%;
 
-        --card: 0 0% 100% / 0.06;
-        /* use via bg-white/10 etc. */
-        --card-foreground: 0 0% 96%;
+		--card: 0 0% 100% / 0.06;
+		/* use via bg-white/10 etc. */
+		--card-foreground: 0 0% 96%;
 
-        --radius: 14px;
+		--radius: 14px;
 
-        /* Accents for subtle color life */
-        --accent1: 223 84% 56%;
-        /* sky blue */
-        --accent2: 268 72% 60%;
-        /* violet */
+		/* Accents for subtle color life */
+		--accent1: 223 84% 56%;
+		/* sky blue */
+		--accent2: 268 72% 60%;
+		/* violet */
 
-        /* Layout constants */
-        --header-height: 64px;
-        /* must match header h-16 */
-        --layout-gap: 12px;
-        /* spacing between header and content/sidebar */
-        --layout-bottom-gap: 12px;
-        /* bottom breathing room */
-    }
+		/* Layout constants */
+		--header-height: 64px;
+		/* must match header h-16 */
+		--layout-gap: 12px;
+		/* spacing between header and content/sidebar */
+		--layout-bottom-gap: 12px;
+		/* bottom breathing room */
+	}
 
-    /* Optional light variant (activate by adding .light on html/body) */
-    .light {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 10%;
-        --muted: 0 0% 96%;
-        --muted-foreground: 0 0% 40%;
-        --border: 0 0% 0% / 0.08;
-        --input: 0 0% 0% / 0.08;
-        --ring: 0 0% 0% / 0.12;
-        --primary: 0 0% 10%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 0% / 0.06;
-        --secondary-foreground: 0 0% 10%;
-        --accent: 0 0% 0% / 0.04;
-        --accent-foreground: 0 0% 10%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 10%;
-        --card: 0 0% 0% / 0.04;
-        --card-foreground: 0 0% 10%;
-    }
+	/* Optional light variant (activate by adding .light on html/body) */
+	.light {
+		--background: 0 0% 100%;
+		--foreground: 0 0% 10%;
+		--muted: 0 0% 96%;
+		--muted-foreground: 0 0% 40%;
+		--border: 0 0% 0% / 0.08;
+		--input: 0 0% 0% / 0.08;
+		--ring: 0 0% 0% / 0.12;
+		--primary: 0 0% 10%;
+		--primary-foreground: 0 0% 98%;
+		--secondary: 0 0% 0% / 0.06;
+		--secondary-foreground: 0 0% 10%;
+		--accent: 0 0% 0% / 0.04;
+		--accent-foreground: 0 0% 10%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 0 0% 10%;
+		--card: 0 0% 0% / 0.04;
+		--card-foreground: 0 0% 10%;
+	}
 
-    html,
-    body,
-    #svelte {
-        height: 100%;
-        background-color: hsl(var(--background));
-        color: hsl(var(--foreground));
-    }
+	html,
+	body,
+	#svelte {
+		height: 100%;
+		background-color: hsl(var(--background));
+		color: hsl(var(--foreground));
+	}
 }
 
 @layer utilities {
-    .app-background {
-        /* Subtle glassy gradient with accented blobs + faint grid */
-        background:
-            radial-gradient(900px 500px at -10% -10%, hsl(var(--accent1) / 0.14), transparent 60%),
-            radial-gradient(900px 500px at 110% 110%, hsl(var(--accent2) / 0.12), transparent 60%),
-            radial-gradient(800px 400px at 120% -20%, hsl(var(--accent2) / 0.08), transparent 60%),
-            linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0) 40%),
-            repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 32px),
-            repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 32px),
-            hsl(var(--background));
-    }
+	.app-background {
+		/* Subtle glassy gradient with accented blobs + faint grid */
+		background:
+			radial-gradient(900px 500px at -10% -10%, hsl(var(--accent1) / 0.14), transparent 60%),
+			radial-gradient(900px 500px at 110% 110%, hsl(var(--accent2) / 0.12), transparent 60%),
+			radial-gradient(800px 400px at 120% -20%, hsl(var(--accent2) / 0.08), transparent 60%),
+			linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0) 40%),
+			repeating-linear-gradient(
+				0deg,
+				rgba(255, 255, 255, 0.02),
+				rgba(255, 255, 255, 0.02) 1px,
+				transparent 1px,
+				transparent 32px
+			),
+			repeating-linear-gradient(
+				90deg,
+				rgba(255, 255, 255, 0.02),
+				rgba(255, 255, 255, 0.02) 1px,
+				transparent 1px,
+				transparent 32px
+			),
+			hsl(var(--background));
+	}
 
-    .page-container {
-        max-width: 80rem;
-        /* ~1280px */
-        margin-left: auto;
-        margin-right: auto;
-        padding-left: 1rem;
-        padding-right: 1rem;
-        padding-top: 1.5rem;
-        padding-bottom: 1.5rem;
-    }
+	.page-container {
+		max-width: 80rem;
+		/* ~1280px */
+		margin-left: auto;
+		margin-right: auto;
+		padding-left: 1rem;
+		padding-right: 1rem;
+		padding-top: 1.5rem;
+		padding-bottom: 1.5rem;
+	}
 
-    @media (min-width: 640px) {
-        .page-container {
-            padding-left: 1.5rem;
-            padding-right: 1.5rem;
-        }
-    }
+	@media (min-width: 640px) {
+		.page-container {
+			padding-left: 1.5rem;
+			padding-right: 1.5rem;
+		}
+	}
 
-    @media (min-width: 1024px) {
-        .page-container {
-            padding-left: 2rem;
-            padding-right: 2rem;
-        }
-    }
+	@media (min-width: 1024px) {
+		.page-container {
+			padding-left: 2rem;
+			padding-right: 2rem;
+		}
+	}
 
-    .heading-1 {
-        font-size: 1.5rem;
-        font-weight: 600;
-        letter-spacing: -0.01em;
-    }
+	.heading-1 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
 
-    @media (min-width: 768px) {
-        .heading-1 {
-            font-size: 1.875rem;
-        }
-    }
+	@media (min-width: 768px) {
+		.heading-1 {
+			font-size: 1.875rem;
+		}
+	}
 
-    .heading-2 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        letter-spacing: -0.01em;
-    }
+	.heading-2 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
 
-    @media (min-width: 768px) {
-        .heading-2 {
-            font-size: 1.5rem;
-        }
-    }
+	@media (min-width: 768px) {
+		.heading-2 {
+			font-size: 1.5rem;
+		}
+	}
 
-    .glass {
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        background-color: rgba(255, 255, 255, 0.08);
-    }
+	.glass {
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		border-radius: 12px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+		background-color: rgba(255, 255, 255, 0.08);
+	}
 
-    .glass-strong {
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        border-radius: 16px;
-        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
-        background-color: rgba(255, 255, 255, 0.12);
-    }
+	.glass-strong {
+		backdrop-filter: blur(18px);
+		-webkit-backdrop-filter: blur(18px);
+		border: 1px solid rgba(255, 255, 255, 0.22);
+		border-radius: 16px;
+		box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
+		background-color: rgba(255, 255, 255, 0.12);
+	}
 
-    /* Frosted glass effect: stronger blur + slight saturation */
-    .frost {
-        backdrop-filter: blur(10px) saturate(100%);
-        -webkit-backdrop-filter: blur(10px) saturate(100%);
-        /* keep background/border from glass-strong or glass-card; this class augments the blur */
-    }
+	/* Frosted glass effect: stronger blur + slight saturation */
+	.frost {
+		backdrop-filter: blur(10px) saturate(100%);
+		-webkit-backdrop-filter: blur(10px) saturate(100%);
+		/* keep background/border from glass-strong or glass-card; this class augments the blur */
+	}
 
-    /* Ensure frost wins over glass-strong blur */
-    .glass-strong.frost {
-        backdrop-filter: blur(18px) saturate(130%);
-        -webkit-backdrop-filter: blur(18px) saturate(130%);
-        background-color: rgba(255, 255, 255, 0.08);
-        background-clip: padding-box;
-    }
+	/* Ensure frost wins over glass-strong blur */
+	.glass-strong.frost {
+		backdrop-filter: blur(18px) saturate(130%);
+		-webkit-backdrop-filter: blur(18px) saturate(130%);
+		background-color: rgba(255, 255, 255, 0.08);
+		background-clip: padding-box;
+	}
 
-    /* Polarized frosted glass: darker tint while keeping blur/saturation */
-    .frost-polarized {
-        /* keep existing blur from glass-strong/frost; only adjust tint/depth */
-        background-color: hsl(var(--background) / 0.56) !important;
-        border-color: rgba(255, 255, 255, 0.16) !important;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
-    }
+	/* Polarized frosted glass: darker tint while keeping blur/saturation */
+	.frost-polarized {
+		/* keep existing blur from glass-strong/frost; only adjust tint/depth */
+		background-color: hsl(var(--background) / 0.56) !important;
+		border-color: rgba(255, 255, 255, 0.16) !important;
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+	}
 
-    .glass-card {
-        /* alias */
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        background:
-            linear-gradient(hsl(var(--background) / 0.8), hsl(var(--background) / 0.8)) padding-box,
-            linear-gradient(135deg, hsl(var(--accent1) / 0.24), hsl(var(--accent2) / 0.24)) border-box;
-    }
+	.glass-card {
+		/* alias */
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		border-radius: 12px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+		background:
+			linear-gradient(hsl(var(--background) / 0.8), hsl(var(--background) / 0.8)) padding-box,
+			linear-gradient(135deg, hsl(var(--accent1) / 0.24), hsl(var(--accent2) / 0.24)) border-box;
+	}
 
-    .glass-surface {
-        background-color: rgba(255, 255, 255, 0.06);
-    }
+	.glass-surface {
+		background-color: rgba(255, 255, 255, 0.06);
+	}
 
-    .glass-divider {
-        border-color: rgba(255, 255, 255, 0.12);
-    }
+	.glass-divider {
+		border-color: rgba(255, 255, 255, 0.12);
+	}
 
-    .glass-input {
-        width: 100%;
-        padding: 0.75rem 0.75rem;
-        border-radius: 10px;
-        font-size: 0.95rem;
-        color: hsl(var(--foreground));
-        background-color: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
-        outline: none;
-    }
+	.glass-input {
+		width: 100%;
+		padding: 0.75rem 0.75rem;
+		border-radius: 10px;
+		font-size: 0.95rem;
+		color: hsl(var(--foreground));
+		background-color: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+		outline: none;
+	}
 
-    .glass-input:focus {
-        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.24);
-    }
+	.glass-input:focus {
+		box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.24);
+	}
 
-    /* Styled select: remove native arrow and add a subtle custom chevron */
-    .glass-select {
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
-        padding-right: 2.5rem;
-        /* space for chevron */
-        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-opacity='0.85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
-        background-repeat: no-repeat;
-        background-position: right 0.75rem center;
-        background-size: 1rem 1rem;
-        cursor: pointer;
-    }
+	/* Styled select: remove native arrow and add a subtle custom chevron */
+	.glass-select {
+		-webkit-appearance: none;
+		-moz-appearance: none;
+		appearance: none;
+		padding-right: 2.5rem;
+		/* space for chevron */
+		background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-opacity='0.85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+		background-repeat: no-repeat;
+		background-position: right 0.75rem center;
+		background-size: 1rem 1rem;
+		cursor: pointer;
+	}
 
-    /* Hide the default arrow in older browsers */
-    select.glass-select::-ms-expand {
-        display: none;
-    }
+	/* Hide the default arrow in older browsers */
+	select.glass-select::-ms-expand {
+		display: none;
+	}
 
-    .glass-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-        border-radius: 10px;
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
-    }
+	.glass-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		border-radius: 10px;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.9rem;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		transition:
+			background-color 120ms ease,
+			color 120ms ease,
+			border-color 120ms ease;
+	}
 
-    .glass-button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        pointer-events: none;
-        /* block clicks when disabled */
-    }
+	.glass-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		pointer-events: none;
+		/* block clicks when disabled */
+	}
 
-    .btn-danger {
-        color: #fecaca;
-        background-color: rgba(239, 68, 68, 0.18);
-        border-color: rgba(239, 68, 68, 0.28);
-    }
+	.btn-danger {
+		color: #fecaca;
+		background-color: rgba(239, 68, 68, 0.18);
+		border-color: rgba(239, 68, 68, 0.28);
+	}
 
-    .btn-danger:hover {
-        background-color: rgba(239, 68, 68, 0.26);
-    }
+	.btn-danger:hover {
+		background-color: rgba(239, 68, 68, 0.26);
+	}
 
-    .btn-success {
-        color: #bbf7d0;
-        background-color: rgba(34, 197, 94, 0.18);
-        border-color: rgba(34, 197, 94, 0.28);
-    }
+	.btn-success {
+		color: #bbf7d0;
+		background-color: rgba(34, 197, 94, 0.18);
+		border-color: rgba(34, 197, 94, 0.28);
+	}
 
-    .btn-success:hover {
-        background-color: rgba(34, 197, 94, 0.26);
-    }
+	.btn-success:hover {
+		background-color: rgba(34, 197, 94, 0.26);
+	}
 
-    /* Neutral disabled-looking style (used alongside disabled attribute) */
-    .btn-disabled {
-        color: #e5e7eb;
-        /* tailwind gray-200 */
-        background-color: rgba(156, 163, 175, 0.18);
-        /* gray-400 at ~18% */
-        border-color: rgba(156, 163, 175, 0.28);
-    }
+	/* Neutral disabled-looking style (used alongside disabled attribute) */
+	.btn-disabled {
+		color: #e5e7eb;
+		/* tailwind gray-200 */
+		background-color: rgba(156, 163, 175, 0.18);
+		/* gray-400 at ~18% */
+		border-color: rgba(156, 163, 175, 0.28);
+	}
 
-    .btn-disabled:hover {
-        background-color: rgba(156, 163, 175, 0.22);
-    }
+	.btn-disabled:hover {
+		background-color: rgba(156, 163, 175, 0.22);
+	}
 }
