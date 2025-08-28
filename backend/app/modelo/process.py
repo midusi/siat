@@ -29,6 +29,7 @@ ZONE_COLORS = sv.ColorPalette.from_hex(["#00FF00", "#FF0000"])
 
 ZONE_IN_POLYGONS = []
 ZONE_OUT_POLYGONS = []
+EXCLUDED_POLYGONS = []
 
 # Longitud máxima del historial de seguimiento de un objeto
 TRACK_HISTORY_LENGTH = 30 
@@ -69,7 +70,7 @@ class ObjectTracker:
     y la interacción con zonas predefinidas en un feed de video.
     """
 
-    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None, names_polygons_in: list[str] = [], names_polygons_out: list[str] = []):
+    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None, names_polygons_in: list[str] = [], names_polygons_out: list[str] = [], excluded_polygons: list[np.ndarray] = []):
         """
         Inicializa el ObjectTracker.
 
@@ -95,15 +96,16 @@ class ObjectTracker:
         
         # Lista de todos los nombres de clases conocidos, incluyendo 'indeterminado'
         self.all_class_names = list(self.class_names.values()) + ["indeterminado"]
-        
+
         self.zone_in_polygons = [
-            {"polygon": zone_in_polygons[i], "name": names_polygons_in[i]} 
+            {"polygon": zone_in_polygons[i], "name": names_polygons_in[i]}
             for i in range(len(zone_in_polygons))
         ]
         self.zone_out_polygons = [
-            {"polygon": zone_out_polygons[i], "name": names_polygons_out[i]} 
+            {"polygon": zone_out_polygons[i], "name": names_polygons_out[i]}
             for i in range(len(zone_out_polygons))
         ]
+        self.excluded_polygons = excluded_polygons or []
         
         # --- Variables de estado para el seguimiento de objetos ---
         
@@ -243,6 +245,16 @@ class ObjectTracker:
             self._draw_polygon(annotated_frame, zone_in["polygon"], zone_in["name"], ZoneType.IN, thickness)
             self._draw_polygon(annotated_frame, zone_out["polygon"], zone_in["name"], ZoneType.OUT, thickness)
         return annotated_frame
+
+    def _apply_exclusion_mask(self, frame: np.ndarray) -> np.ndarray:
+        """Rellena con negro todas las zonas excluidas sobre el frame."""
+        if not self.excluded_polygons:
+            return frame
+        overlay = frame.copy()
+        for poly in self.excluded_polygons:
+            pts = poly.reshape((-1, 1, 2))
+            cv2.fillPoly(overlay, [pts], color=(0, 0, 0))
+        return overlay
 
     def _get_zone_index(self, box: np.ndarray, polygons: list[np.ndarray]) -> int:
         """
@@ -479,7 +491,7 @@ class ObjectTracker:
         Returns:
             np.ndarray: El frame anotado con bounding boxes, trazas y zonas.
         """
-        # Dibujar las zonas de entrada y salida
+    # Dibujar las zonas de entrada y salida
         self._draw_zones_in_out(frame, 2)
         
         # Procesar los resultados de seguimiento si hay objetos detectados
@@ -582,10 +594,14 @@ class ObjectTracker:
                 break
 
             # Realizar seguimiento de objetos
-            results = self.model.track(frame, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
+            # Aplicar máscara de exclusión antes de inferir
+            masked_for_inference = self._apply_exclusion_mask(frame)
+            results = self.model.track(masked_for_inference, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
             
             # Procesar el frame (dibujar zonas, BBs, etc.)
-            processed_frame = self.process_frame(frame, results, act_frame)
+            # También aplicar la máscara al frame de salida para que "no se vea"
+            masked_for_output = self._apply_exclusion_mask(frame)
+            processed_frame = self.process_frame(masked_for_output, results, act_frame)
 
             # Escribir el frame procesado en el video de salida
             # video_writer.write(processed_frame)
@@ -653,6 +669,10 @@ if __name__ == "__main__":
         help='Polígonos de salida como lista de listas. Ejemplo: "[[816, 922], [905, 869], [1095, 908], [987, 990]]". Obligatorio.'
     )
     parser.add_argument(
+        '--excluded_zones', '-ez', type=ast.literal_eval, required=False, default=[],
+        help='Zonas excluidas (máscaras negras) como lista de polígonos.'
+    )
+    parser.add_argument(
         '--names_polygons_in', '-ni', type=ast.literal_eval, required=True,
         help='Nombres de los polígonos de entrada como lista de strings. Ejemplo: "["Zona 1", "Zona 2", "Zona 3"]". Obligatorio.'
     )
@@ -704,9 +724,10 @@ if __name__ == "__main__":
     # 2. Obtener las zonas de entrada y salida del video
     ZONE_IN_POLYGONS = [np.array(p, dtype=np.int32) for p in args.polygons_in]
     ZONE_OUT_POLYGONS = [np.array(p, dtype=np.int32) for p in args.polygons_out]
+    EXCLUDED_POLYGONS = [np.array(p, dtype=np.int32) for p in (args.excluded_zones or [])]
     
     # 3. Crear una instancia del ObjectTracker
-    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE, names_polygons_in=args.names_polygons_in, names_polygons_out=args.names_polygons_out)
+    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE, names_polygons_in=args.names_polygons_in, names_polygons_out=args.names_polygons_out, excluded_polygons=EXCLUDED_POLYGONS)
 
     # 4. Ejecutar el proceso de seguimiento
     tracker.run(

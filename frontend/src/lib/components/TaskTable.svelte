@@ -121,12 +121,11 @@
 						</tr>
 					{:else}
 						{#each rows
-							.filter((r: TaskRow) =>
-								filter.trim() === ''
-									? true
-									: r.nombre.toLowerCase().includes(filter.toLowerCase()) ||
-										r.localidad.toLowerCase().includes(filter.toLowerCase())
-							)
+							.filter((r: TaskRow) => (filter.trim() === '' ? true : r.nombre
+											.toLowerCase()
+											.includes(filter.toLowerCase()) || r.localidad
+											.toLowerCase()
+											.includes(filter.toLowerCase())))
 							// Ordenar por ID de forma descendente para mostrar las tareas más recientes primero
 							.sort((a: TaskRow, b: TaskRow) => b.id - a.id) as task}
 							<tr class="border-b glass-divider">

@@ -41,6 +41,16 @@
 		vertices: Array<{ x: number; y: number }>;
 	}> = [];
 
+	// IDs únicos para claves estables en listas
+	let _idCounter = 0;
+	function newId() {
+		_idCounter += 1;
+		return Date.now() + _idCounter;
+	}
+
+	// Modo para agregar zonas excluidas
+	let modoZonaExcluida = false;
+
 	// --- Estado del Popover Contextual ---
 	let pendingPolygon: {
 		via: string;
@@ -131,10 +141,13 @@
 	function ordenarVertices(
 		points: Array<{ x: number; y: number }>
 	): Array<{ x: number; y: number }> {
-		if (points.length !== 4) return points;
+		// Ordena los puntos alrededor del centro por ángulo polar.
+		// Funciona para N>=3 y evita polígonos auto-intersectados por orden incorrecto de clics.
+		if (points.length < 3) return points;
+		const n = points.length;
 		const centro = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
-		centro.x /= 4;
-		centro.y /= 4;
+		centro.x /= n;
+		centro.y /= n;
 		return points
 			.map((point) => ({
 				...point,
@@ -196,6 +209,12 @@
 		// Simplifica: xRel = xCanvas / canvas.width, pero guardamos la relación con frameWidth
 		currentPoints.push({ x: xCanvas / canvas.width, y: yCanvas / canvas.height });
 
+		// En modo zona excluida, no mostramos popover, se confirma con Enter y permite N puntos
+		if (modoZonaExcluida) {
+			requestAnimationFrame(redrawCanvas);
+			return;
+		}
+
 		if (currentPoints.length === 4) {
 			const verticesOrdenados = ordenarVertices(currentPoints);
 			pendingPolygon = {
@@ -235,7 +254,7 @@
 		requestAnimationFrame(redrawCanvas);
 	}
 
-	function handleKeyDown(event: KeyboardEvent) {
+	async function handleKeyDown(event: KeyboardEvent) {
 		if (pendingPolygon) {
 			if (event.key === 'Enter') {
 				if (pendingPolygon.via && pendingPolygon.via.trim().length > 0) {
@@ -243,6 +262,35 @@
 				}
 			}
 			if (event.key === 'Escape') cancelPendingPolygon();
+			return;
+		}
+
+		// Modo zona excluida: Enter confirma si hay al menos 3 puntos
+		if (modoZonaExcluida) {
+			if (event.key === 'Enter') {
+				if (currentPoints.length >= 3) {
+					// Ordenar los vértices y agregar como vía con sentido 'Excluida'
+					const verticesOrdenados = ordenarVertices(currentPoints);
+					const nextIdx = poligonos.filter((p) => p.sentido === 'Excluida').length + 1;
+					poligonos = [
+						...poligonos,
+						{
+							id: newId(),
+							via: `Zona excluída ${nextIdx}`,
+							sentido: 'Excluida',
+							vertices: verticesOrdenados
+						}
+					];
+					currentPoints = [];
+					modoZonaExcluida = false; // salir del modo tras confirmar
+					await tick(); // forzar actualización inmediata del botón
+				}
+			}
+			if (event.key === 'Escape') {
+				currentPoints = [];
+			}
+			if (event.key === 'Backspace') currentPoints.pop();
+			requestAnimationFrame(redrawCanvas);
 			return;
 		}
 		if (event.key === 'Escape') currentPoints = [];
@@ -257,7 +305,7 @@
 		poligonos = [
 			...poligonos,
 			{
-				id: Date.now(),
+				id: newId(),
 				via: pendingPolygon.via.trim(),
 				sentido: pendingPolygon.sentido,
 				vertices: pendingPolygon.vertices
@@ -293,7 +341,10 @@
 				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
 			roads_out: poligonos
 				.filter((p) => p.sentido === 'Salida')
-				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) }))
+				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
+			excluded_zones: poligonos
+				.filter((p) => p.sentido === 'Excluida')
+				.map((p) => p.vertices.map(toAbs))
 		};
 
 		console.log('Enviando datos:', payload);
@@ -326,8 +377,14 @@
 	function redrawCanvas() {
 		if (!ctx) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		// Dibujar polígonos confirmados
-		poligonos.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
+
+		// Dibujar polígonos confirmados: primero vías normales, luego excluidas para que queden por encima
+		poligonos
+			.filter((p) => p.sentido !== 'Excluida')
+			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
+		poligonos
+			.filter((p) => p.sentido === 'Excluida')
+			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
 		// Dibujar polígono pendiente
 		if (pendingPolygon) {
 			drawPolygonRel(pendingPolygon, { pending: true });
@@ -342,18 +399,20 @@
 			}));
 			ctx.moveTo(absPoints[0].x, absPoints[0].y);
 			for (const p of absPoints.slice(1)) ctx.lineTo(p.x, p.y);
-			ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+			ctx.strokeStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 0.8)';
 			ctx.lineWidth = 2;
 			ctx.setLineDash([6, 6]);
 			ctx.stroke();
 			ctx.setLineDash([]);
 			absPoints.forEach((p) => {
-				ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+				ctx.fillStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 1)';
 				ctx.beginPath();
 				ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
 				ctx.fill();
 			});
 		}
+
+		// Zonas excluidas ya se dibujan en el paso anterior con estilo especial
 	}
 
 	// Reposiciona el popover según el tamaño actual del canvas y del popover
@@ -384,14 +443,21 @@
 			x: (v.x * frameWidth * canvas.width) / frameWidth,
 			y: (v.y * frameHeight * canvas.height) / frameHeight
 		}));
-		const color = poly.sentido === 'Entrada' ? 'rgba(74, 222, 128, 1)' : 'rgba(248, 113, 113, 1)';
-		ctx.fillStyle = color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
+		const isExcluded = poly.sentido === 'Excluida';
+		const color = isExcluded
+			? 'rgba(0,0,0,1)'
+			: poly.sentido === 'Entrada'
+				? 'rgba(74, 222, 128, 1)'
+				: 'rgba(248, 113, 113, 1)';
+		ctx.fillStyle = isExcluded
+			? 'rgba(0,0,0,1)'
+			: color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
 		ctx.beginPath();
 		ctx.moveTo(absVertices[0].x, absVertices[0].y);
 		for (const v of absVertices.slice(1)) ctx.lineTo(v.x, v.y);
 		ctx.closePath();
 		ctx.fill();
-		ctx.strokeStyle = color;
+		ctx.strokeStyle = isExcluded ? 'rgba(0,0,0,1)' : color;
 		ctx.lineWidth = options.pending ? 4 : 2;
 		if (options.pending) {
 			ctx.setLineDash([8, 4]);
@@ -403,17 +469,35 @@
 				x: 0,
 				y: 0
 			});
-			centro.x /= 4;
-			centro.y /= 4;
-			ctx.font = 'bold 14px sans-serif';
-			ctx.fillStyle = 'white';
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'middle';
-			ctx.shadowColor = 'black';
-			ctx.shadowBlur = 5;
-			ctx.fillText(`${poly.via}`, centro.x, centro.y);
-			ctx.shadowBlur = 0;
+			const n = absVertices.length || 1;
+			centro.x /= n;
+			centro.y /= n;
+			if (!isExcluded) {
+				ctx.font = 'bold 14px sans-serif';
+				ctx.fillStyle = 'white';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.shadowColor = 'black';
+				ctx.shadowBlur = 5;
+				ctx.fillText(`${poly.via}`, centro.x, centro.y);
+				ctx.shadowBlur = 0;
+			}
 		}
+	}
+
+	function drawExcludedRel(vertices: Array<{ x: number; y: number }>) {
+		const absVertices = vertices.map((v) => ({
+			x: (v.x * frameWidth * canvas.width) / frameWidth,
+			y: (v.y * frameHeight * canvas.height) / frameHeight
+		}));
+		ctx.save();
+		ctx.fillStyle = 'rgba(0,0,0,1)';
+		ctx.beginPath();
+		ctx.moveTo(absVertices[0].x, absVertices[0].y);
+		for (const v of absVertices.slice(1)) ctx.lineTo(v.x, v.y);
+		ctx.closePath();
+		ctx.fill();
+		ctx.restore();
 	}
 
 	$: if (pendingPolygon) requestAnimationFrame(redrawCanvas);
@@ -436,13 +520,28 @@
 					<kbd class="key-kbd">Esc</kbd> para cancelar.
 				</p>
 			</div>
-			<button
-				class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
-				onclick={goBack}
-				aria-label="Volver"
-			>
-				← Volver
-			</button>
+			<div class="flex items-center gap-2">
+				<button
+					onclick={() => {
+						modoZonaExcluida = !modoZonaExcluida;
+						currentPoints = [];
+					}}
+					class={`px-3 py-2 rounded-md transition border bg-black text-white border-white ${
+						modoZonaExcluida ? 'btn-excluir-active' : ''
+					}`}
+					aria-pressed={modoZonaExcluida}
+					title="Excluir zona (dibuje puntos y confirme con Enter)"
+				>
+					{modoZonaExcluida ? 'Excluyendo zona...' : 'Excluir zona'}
+				</button>
+				<button
+					class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
+					onclick={goBack}
+					aria-label="Volver"
+				>
+					← Volver
+				</button>
+			</div>
 		</div>
 
 		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
@@ -450,7 +549,9 @@
 			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
 			<div class="flex flex-col h-full glass-card p-4 lg:mr-4 mb-8 lg:mb-0">
 				<div>
-					<h2 class="heading-2 mb-4">Vías Definidas ({poligonos.length})</h2>
+					<div class="flex items-center justify-between mb-4 gap-2">
+						<h2 class="heading-2">Vías Definidas ({poligonos.length})</h2>
+					</div>
 					{#if poligonos.length === 0}
 						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
@@ -670,5 +771,30 @@
 		background-color: #f3f4f6;
 		border: 1px solid #e5e7eb;
 		border-radius: 0.5rem;
+	}
+
+	/* Efecto flow/glow del botón Excluir zona cuando está activo */
+	.btn-excluir-active {
+		position: relative;
+		/* Glow solo del borde: simular con múltiples sombras exteriores, sin text-shadow */
+		box-shadow:
+			0 0 0 2px rgba(255, 255, 255, 0.25),
+			0 0 10px rgba(255, 255, 255, 0.15),
+			0 0 20px rgba(255, 255, 255, 0.1);
+		animation: excluir-flow 2.2s ease-in-out infinite alternate;
+	}
+	@keyframes excluir-flow {
+		0% {
+			box-shadow:
+				0 0 0 2px rgba(255, 255, 255, 0.2),
+				0 0 8px rgba(255, 255, 255, 0.12),
+				0 0 16px rgba(255, 255, 255, 0.08);
+		}
+		100% {
+			box-shadow:
+				0 0 0 3px rgba(255, 255, 255, 0.25),
+				0 0 14px rgba(255, 255, 255, 0.18),
+				0 0 28px rgba(255, 255, 255, 0.12);
+		}
 	}
 </style>

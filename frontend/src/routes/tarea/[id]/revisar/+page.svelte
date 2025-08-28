@@ -96,6 +96,9 @@
 	let determinadosByTrack = $derived.by(() => new Map(Object.entries(determinados)));
 	type SortedIndeterminado = [string, Indeterminado];
 	let sortedIndeterminados = $state<SortedIndeterminado[]>([]);
+	// Zonas excluidas para overlay en revisión
+	let excludedZones = $state<[number, number][][]>([]);
+	let showExcluded = $state(false);
 	// --- Búsqueda de indeterminados por ID ---
 	let searchQuery = $state('');
 	let searchInputEl = $state<HTMLInputElement | null>(null);
@@ -714,6 +717,8 @@
 			// Polígonos de vías (Entrada/Salida) para overlay
 			roadsIn = Array.isArray(apiData.roadsIn) ? apiData.roadsIn : [];
 			roadsOut = Array.isArray(apiData.roadsOut) ? apiData.roadsOut : [];
+			// Zonas excluidas
+			excludedZones = Array.isArray(apiData.excludedZones) ? apiData.excludedZones : [];
 
 			// Helper para evitar caché del navegador en JSON estáticos de MinIO
 			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
@@ -1301,7 +1306,9 @@
 </script>
 
 <div class="min-h-screen bg-background text-foreground py-8 px-4">
-	<h1 class="text-3xl font-bold mb-4 text-center">Revisar Video Analizado</h1>
+	<div class="max-w-7xl mx-auto mb-4">
+		<h1 class="text-3xl font-bold text-center">Revisar Video Analizado</h1>
+	</div>
 
 	{#if loading}
 		<p class="text-center text-xl">Cargando datos de la tarea...</p>
@@ -1401,6 +1408,24 @@
 							{/each}
 						</svg>
 
+						{#if showExcluded && excludedZones.length > 0}
+							<svg
+								class="absolute inset-0 pointer-events-none"
+								style="z-index: 11;"
+								width="100%"
+								height="100%"
+							>
+								{#each excludedZones as poly, i (i)}
+									<polygon
+										points={scaledPolygonPoints(poly)}
+										fill="rgba(0,0,0,1)"
+										stroke="#000000"
+										stroke-width="2"
+									/>
+								{/each}
+							</svg>
+						{/if}
+
 						<!-- Renderizado de bboxes generales (sin fade, sin ID) -->
 						{#each generalDisplayBBoxes as box (box.id)}
 							<div
@@ -1497,6 +1522,19 @@
 								{/if}
 							</div>
 						{/each}
+					</div>
+
+					<!-- Toggle Mostrar rutas excluídas: debajo del reproductor, alineado a la izquierda -->
+					<div class="mt-3">
+						<button
+							type="button"
+							onclick={() => (showExcluded = !showExcluded)}
+							class="rounded-md px-3 py-2 font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed bg-black text-white border border-white"
+							class:btn-excluir-active={showExcluded}
+							title={showExcluded ? 'Ocultar zonas excluídas' : 'Mostrar zonas excluídas'}
+						>
+							{showExcluded ? 'Ocultar zonas excluídas' : 'Mostrar zonas excluídas'}
+						</button>
 					</div>
 				{:else}
 					<div
@@ -1972,5 +2010,28 @@
 			0 0 5px rgba(255, 255, 255, 0.8),
 			0 0 10px rgba(255, 255, 255, 0.6),
 			0 0 20px rgba(255, 255, 255, 0.4);
+	}
+
+	/* Botón Excluir style reused for Revisar page toggle (border-only glow) */
+	.btn-excluir-active {
+		box-shadow:
+			0 0 0 2px rgba(255, 255, 255, 0.25),
+			0 0 10px rgba(255, 255, 255, 0.15),
+			0 0 20px rgba(255, 255, 255, 0.1);
+		animation: excluir-flow 2.2s ease-in-out infinite alternate;
+	}
+	@keyframes excluir-flow {
+		0% {
+			box-shadow:
+				0 0 0 2px rgba(255, 255, 255, 0.2),
+				0 0 8px rgba(255, 255, 255, 0.12),
+				0 0 16px rgba(255, 255, 255, 0.08);
+		}
+		100% {
+			box-shadow:
+				0 0 0 3px rgba(255, 255, 255, 0.25),
+				0 0 14px rgba(255, 255, 255, 0.18),
+				0 0 28px rgba(255, 255, 255, 0.12);
+		}
 	}
 </style>

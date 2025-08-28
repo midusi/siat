@@ -29,6 +29,7 @@ class RoadPolygon(BaseModel):
 class TaskConfigRequest(BaseModel):
     roads_in: list[RoadPolygon]
     roads_out: list[RoadPolygon]
+    excluded_zones: list[list[list[int]]] | None = None
     
     model_config = ConfigDict(from_attributes=True)
 

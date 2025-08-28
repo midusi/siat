@@ -117,6 +117,10 @@ class TaskService:
                     pass
             payload["roadsIn"] = roads_in
             payload["roadsOut"] = roads_out
+            # Enviar zonas excluidas
+            excluded = [r.polygon for r in roads if (str(r.direction) == str(RoadDirection.EXCLUDED.value) or r.direction == RoadDirection.EXCLUDED)]
+            if excluded:
+                payload["excludedZones"] = excluded
         except Exception:
             # No bloquear si falla por compat; simplemente no incluir
             pass
@@ -243,7 +247,7 @@ class TaskService:
         if current_task_status_history.status_id not in ["VIDEO_UPLOADED", "CONFIGURED"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no se puede configurar")
 
-        # Eliminar las vías actuales asociadas al video de la tarea
+        # Eliminar las vías actuales asociadas al video de la tarea (incluye excluidas)
         currents_road = self.road_service.find_by_fields(video_id=task.video_id)
         for road in currents_road:
             self.db.delete(road)
@@ -251,6 +255,7 @@ class TaskService:
         # roads_in y roads_out: listas de objetos con name y polygon (lista de pares [x, y])
         roads_in = task_config_request.roads_in
         roads_out = task_config_request.roads_out
+        excluded_zones = task_config_request.excluded_zones or []
 
         try:
             for i, road_in in enumerate(roads_in):
@@ -270,6 +275,17 @@ class TaskService:
                     polygon=road_out.polygon,
                     video_id=task.video.id,
                     name=road_out.name,
+                )
+                self.db.add(road)
+
+            # Guardar zonas excluidas como "roads" con dirección EXCLUDED y nombre fijo
+            for i, polygon in enumerate(excluded_zones):
+                road = self.road_service.create(
+                    number=i+1,
+                    direction=RoadDirection.EXCLUDED,
+                    polygon=polygon,
+                    video_id=task.video.id,
+                    name=f"Zona excluida {i+1}",
                 )
                 self.db.add(road)
 

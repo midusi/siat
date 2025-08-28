@@ -53,6 +53,7 @@ def run_process():
     
     polygons_in = [road.polygon for road in roads if road.direction == "Entrada"]
     polygons_out = [road.polygon for road in roads if road.direction == "Salida"]
+    excluded_zones = [road.polygon for road in roads if road.direction == "Excluida"]
     
     names_polygons_in = [road.name for road in roads if road.direction == "Entrada"]
     names_polygons_out = [road.name for road in roads if road.direction == "Salida"]
@@ -72,8 +73,9 @@ def run_process():
             f"--tracker_path={path_modelo / 'botsort_custom.yaml'}",
             f"--polygons_in={polygons_in}",
             f"--polygons_out={polygons_out}",
+            f"--excluded_zones={excluded_zones}",
             "--names_polygons_in", str(names_polygons_in),
-            "--names_polygons_out", str(names_polygons_out)
+            "--names_polygons_out", str(names_polygons_out),
         ]
         
         typer.echo("Ejecutando el script `process.py`...")
