@@ -120,11 +120,15 @@
 							<td colspan="7" class="p-6 text-center opacity-80">Cargando...</td>
 						</tr>
 					{:else}
-						{#each rows.filter((r: TaskRow) => (filter.trim() === '' ? true : r.nombre
-										.toLowerCase()
-										.includes(filter.toLowerCase()) || r.localidad
-										.toLowerCase()
-										.includes(filter.toLowerCase()))) as task}
+						{#each rows
+							.filter((r: TaskRow) =>
+								filter.trim() === ''
+									? true
+									: r.nombre.toLowerCase().includes(filter.toLowerCase()) ||
+										r.localidad.toLowerCase().includes(filter.toLowerCase())
+							)
+							// Ordenar por ID de forma descendente para mostrar las tareas más recientes primero
+							.sort((a: TaskRow, b: TaskRow) => b.id - a.id) as task}
 							<tr class="border-b glass-divider">
 								<td class="p-3"><span class="font-medium opacity-90">#{task.id}</span></td>
 								<td class="p-3">{task.fecha}</td>
