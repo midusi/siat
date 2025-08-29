@@ -93,7 +93,6 @@ def run_process():
         local_undetermined_path = os.path.join(output_dir, "transition_undetermined_object.json")
         local_determined_path = os.path.join(output_dir, "transition_determined_object.json")
         local_data_obj_history_path = os.path.join(output_dir, "data_obj_history.json")
-        local_output_video_path = os.path.join(output_dir, "processed.mp4")
         
         # Obtener el nombre del video
         filename = os.path.basename(task_to_process.video.url)
@@ -119,11 +118,6 @@ def run_process():
         typer.echo("Subiendo el archivo data_obj_history.json al bucket...")
         with open(local_data_obj_history_path, 'rb') as f:
             bucket_service.upload(f, object_name=bucket_data_obj_history_path, content_type="application/json")
-        
-        # Subir video procesado al bucket
-        typer.echo("Subiendo el video procesado al bucket...")
-        with open(local_output_video_path, "rb") as f:
-            bucket_service.upload(f, object_name=bucket_video_path, content_type="video/mp4")
         
         # Paso 7: Crear el objeto de inferencia
         inference = inference_service.create_inference(
@@ -174,11 +168,6 @@ def run_process():
         if os.path.exists(local_video_path):
             os.remove(local_video_path)
             typer.echo(f"Archivo temporal eliminado: {local_video_path}")
-            
-        # Limpiar el archivo temporal del video procesado
-        if os.path.exists(local_output_video_path):
-            os.remove(local_output_video_path)
-            typer.echo(f"Archivo temporal eliminado: {local_output_video_path}")
         
         typer.Exit(code=0)
 

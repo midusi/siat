@@ -16,10 +16,10 @@ if BACKEND_DIR not in sys.path:
 import httpx
 from passlib.context import CryptContext
 
-from app.db import SessionLocal
-from app.models import User
-from app.config import AUTH_LOGIN_FAIL_LIMIT, AUTH_LOGIN_LOCK_MINUTES, AUTH_RATE_LIMIT_PER_MIN, SECRET_KEY, ALGORITHM
-from app.auth.jwt import create_access_token, decode_token
+from db import SessionLocal
+from models import User
+from config import AUTH_LOGIN_FAIL_LIMIT, AUTH_LOGIN_LOCK_MINUTES, AUTH_RATE_LIMIT_PER_MIN, SECRET_KEY, ALGORITHM
+from auth.jwt import create_access_token, decode_token
 
 BASE_URL = os.getenv("TEST_BASE_URL", os.getenv("BASE_URL", "http://127.0.0.1:8000"))
 AUTH_COOKIE = os.getenv("AUTH_COOKIE_NAME", "access_token")
@@ -678,8 +678,8 @@ def run_all_tests() -> Tuple[int, int]:
             except Exception as e:
                 fail(str(e))
         # Use backend service to get token (no email outbox in stub)
-        from app.db import SessionLocal
-        from app.services.password_reset_service import PasswordResetService
+        from db import SessionLocal
+        from services.password_reset_service import PasswordResetService
         db = SessionLocal()
         try:
             svc = PasswordResetService(db)

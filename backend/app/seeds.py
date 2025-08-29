@@ -93,7 +93,7 @@ def seed_admin_user():
         db.close()
 
 
-def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
+def seed_provinces_districts_localities(csv_path="indec_datos.csv"):
     df = pd.read_csv(csv_path, sep=";")
     total_inserted = 0
 

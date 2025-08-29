@@ -1,5 +1,4 @@
 import cv2
-import imageio
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
@@ -55,7 +54,7 @@ CLASSES_NAMES = [
 # "auto": Intenta usar GPU si está disponible (CUDA), de lo contrario, usa CPU.
 # "cpu": Fuerza el uso de la CPU.
 # "0", "1", ...: Usa la GPU con el índice especificado.
-DEVICE_TO_USE = "cpu" # Puedes cambiar esto a "cpu", "0", etc.
+DEVICE_TO_USE = "auto" # Puedes cambiar esto a "cpu", "0", etc.
 
 class ZoneType(Enum):
     """Enumeración para definir los tipos de zonas."""
@@ -534,16 +533,6 @@ class ObjectTracker:
 
         w, h, fps = (int(cap.get(x)) for x in (cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT, cv2.CAP_PROP_FPS))
 
-        # Inicializar el video de salida
-        try:
-            # Codec avc1 (H.264) para compatibilidad con navegadores
-            # fourcc = cv2.VideoWriter_fourcc(*'avc1')
-            # video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (w, h))
-            writer = imageio.get_writer(output_video_path, fps=fps, codec="libx264", pixelformat="yuv420p")
-        except Exception as e:
-            print(f"Error al inicializar VideoWriter: {e}.")
-            exit(1)
-
         # Intentar obtener el número total de frames para el progreso
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         frames_to_process = total_frames
@@ -603,12 +592,6 @@ class ObjectTracker:
             masked_for_output = self._apply_exclusion_mask(frame)
             processed_frame = self.process_frame(masked_for_output, results, act_frame)
 
-            # Escribir el frame procesado en el video de salida
-            # video_writer.write(processed_frame)
-            frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-            writer.append_data(frame_rgb)
-            # writer.append_data(processed_frame)
-
             # Mostrar el frame procesado SOLO SI display_video es True
             if display_video:
                 cv2.imshow("Video", processed_frame)
@@ -630,8 +613,6 @@ class ObjectTracker:
 
         # Liberar recursos
         cap.release()
-        # video_writer.release()
-        writer.close()
 
         # Destruir ventanas SOLO si se mostraron
         if display_video:
