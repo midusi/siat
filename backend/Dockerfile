@@ -15,24 +15,20 @@ RUN apt-get update \
     libmediainfo0v5 libzen0v5 curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN addgroup --system app && adduser --system --ingroup app app
-
 WORKDIR /app
 
 # Install Python dependencies first for better layer caching
-COPY requirements.txt ./
+COPY app/requirements_test.txt ./
 RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
+    && pip install -r requirements_test.txt
 
-# Copy application code
-COPY alembic.ini ./
-COPY alembic ./alembic
-COPY app ./app
+# Copy application code and change ownership
+COPY app/ ./
+RUN chown -R www-data:www-data /app
 
 EXPOSE 8000
 
-USER app
+USER www-data
 
 # Default command (can be overridden by docker-compose)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
