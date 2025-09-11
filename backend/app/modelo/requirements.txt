@@ -1,9 +1,0 @@
-# Core libraries for computer vision and object detection
-opencv-python>=4.9.0.80  # OpenCV library for image processing
-numpy>=1.26.4            # Numerical computing library
-
-# Object detection and tracking framework
-ultralytics>=8.0.220     # YOLO model framework
-
-# Computer vision utilities, often used with Ultralytics
-supervision>=0.18.0      # Utilities for computer vision tasks (bounding boxes, zones)

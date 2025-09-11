@@ -1,0 +1,15 @@
+fastapi[all]
+uvicorn
+sqlmodel
+sqlalchemy
+alembic
+pandas
+PyJWT>=2.0.0
+passlib>=1.7.4
+pymediainfo
+psycopg2-binary
+bcrypt<4.0
+boto3
+httpx
+typer[all]
+opencv-python
