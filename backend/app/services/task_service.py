@@ -79,8 +79,8 @@ class TaskService:
         if not task.video:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
 
-        # Base pública para acceder a MinIO directamente
-        public_base = f"http://localhost:9000/{BucketService.BUCKET_NAME}"
+        # Base pública para acceder a MinIO. Usar ruta relativa y un proxy en el front (/bucket)
+        public_base = f"/bucket/{BucketService.BUCKET_NAME}"
 
         # Elegir siempre el video original para reproducir
         video_key = task.video.url
@@ -557,7 +557,7 @@ class TaskService:
                 "rutasUrl": inference.transition_counts,
                 "indeterminadosUrl": inference.transition_undetermined,
                 "determinadosUrl": inference.transition_determined,
-                "historyUrl": f"http://localhost:9000/{BucketService.BUCKET_NAME}/{inference.url_data_obj_history}" if inference.url_data_obj_history else None,
+                "historyUrl": f"/bucket/{BucketService.BUCKET_NAME}/{inference.url_data_obj_history}" if inference.url_data_obj_history else None,
             }
         except Exception as e:
             self.db.rollback()
