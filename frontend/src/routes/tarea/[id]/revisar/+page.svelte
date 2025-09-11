@@ -905,58 +905,66 @@
 			// Helper para evitar caché del navegador en JSON estáticos de MinIO
 			const bust = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
 
-			// Obtener historial: inline o vía URLs públicas (MinIO)
-			const historyPromise: Promise<any> = apiData.history
-				? Promise.resolve(apiData.history)
-				: apiData.historyUrl
-					? fetch(bust(apiData.historyUrl))
-							.then((r) => {
-								if (!r.ok) throw new Error(`Error al obtener historial: ${r.statusText}`);
-								return r.json();
-							})
-							.then((d) => d.history ?? d)
-					: Promise.resolve({});
+			// Detectar URL grande del historial general (bboxes por frame)
+			const generalHistoryUrl: string | null =
+				apiData.dataObjHistoryUrl || apiData.data_obj_history_url || apiData.historyUrl || null;
+			// Historial ligero para tablas: no necesitamos descargar nada si no viene inline
+			const historyPromise: Promise<any> = Promise.resolve(apiData.history ?? {});
 
-			// --- Procesar data_obj_history.json para bboxes y recorridos ---
-			let generalHistoryUrl =
-				apiData.dataObjHistoryUrl || apiData.data_obj_history_url || apiData.historyUrl;
-			if (generalHistoryUrl) {
-				const generalRes = await fetch(bust(generalHistoryUrl));
-				if (!generalRes.ok) throw new Error('Error al obtener data_obj_history.json');
-				const generalJson = await generalRes.json();
-				// Procesar a Map<frame, [bboxes]> y Map<trackId, TrackPoint[]>
-				const frameMap = new Map<number, GeneralBBox[]>();
-				const trackMap = new Map<string, TrackPoint[]>();
-				for (const [trackId, arr] of Object.entries(generalJson as Record<string, any[]>)) {
-					const points: TrackPoint[] = [];
-					for (const obj of arr) {
-						const frame = Number(obj.act_frame);
-						if (!frameMap.has(frame)) frameMap.set(frame, []);
-						frameMap.get(frame)!.push({ id: String(trackId), box: obj.box });
-						points.push({ frame, box: obj.box });
-					}
-					points.sort((a, b) => a.frame - b.frame);
-					trackMap.set(String(trackId), points);
-				}
-				generalBBoxesByFrame = frameMap;
-				generalTrackHistory = trackMap;
-				// Calcular rango de frames para mapeo calibrado tiempo<->frame
-				const frames = Array.from(frameMap.keys());
-				if (frames.length) {
-					dataFrameFirst = Math.min(...frames);
-					dataFrameLast = Math.max(...frames);
-				} else {
+			// Cargar data_obj_history.json en segundo plano para el reproductor (no bloquear UI)
+			const loadGeneralInBackground = async () => {
+				if (!generalHistoryUrl) {
+					generalBBoxesByFrame = new Map();
+					generalTrackHistory = new Map();
 					dataFrameFirst = null;
 					dataFrameLast = null;
+					generalReady = true;
+					return;
 				}
-				generalReady = true;
-			} else {
-				generalBBoxesByFrame = new Map();
-				generalTrackHistory = new Map();
-				dataFrameFirst = null;
-				dataFrameLast = null;
-				generalReady = true;
-			}
+				try {
+					const generalJson = await fetch(bust(generalHistoryUrl)).then((r) => {
+						if (!r.ok) throw new Error('Error al obtener data_obj_history.json');
+						return r.json();
+					});
+					// Procesar a Map<frame, [bboxes]> y Map<trackId, TrackPoint[]>
+					const frameMap = new Map<number, GeneralBBox[]>();
+					const trackMap = new Map<string, TrackPoint[]>();
+					for (const [trackId, arr] of Object.entries(generalJson as Record<string, any[]>)) {
+						const points: TrackPoint[] = [];
+						for (const obj of arr) {
+							const frame = Number(obj.act_frame);
+							if (!frameMap.has(frame)) frameMap.set(frame, []);
+							frameMap.get(frame)!.push({ id: String(trackId), box: obj.box });
+							points.push({ frame, box: obj.box });
+						}
+						points.sort((a, b) => a.frame - b.frame);
+						trackMap.set(String(trackId), points);
+					}
+					generalBBoxesByFrame = frameMap;
+					generalTrackHistory = trackMap;
+					// Calcular rango de frames para mapeo calibrado tiempo<->frame
+					const frames = Array.from(frameMap.keys());
+					if (frames.length) {
+						dataFrameFirst = Math.min(...frames);
+						dataFrameLast = Math.max(...frames);
+					} else {
+						dataFrameFirst = null;
+						dataFrameLast = null;
+					}
+					generalReady = true;
+				} catch (err) {
+					console.error(err);
+					// Fallback sin datos generales (permite usar tablas/edición)
+					generalBBoxesByFrame = new Map();
+					generalTrackHistory = new Map();
+					dataFrameFirst = null;
+					dataFrameLast = null;
+					generalReady = true;
+				}
+			};
+			// Lanzar sin bloquear
+			generalReady = false;
+			loadGeneralInBackground();
 
 			rutas = apiData.rutas;
 			// Compat: transformar labels array -> objeto { in, out } si fuese necesario
