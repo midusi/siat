@@ -1776,8 +1776,8 @@
 				{/if}
 			</div>
 
-			<!-- Lista de indeterminados -->
-			{#if sortedIndeterminados.length > 0}
+			<!-- Lista de indeterminados (solo cuando el reproductor está listo) -->
+			{#if generalReady && videoPath !== '' && sortedIndeterminados.length > 0}
 				<div
 					class="w-full md:w-[380px] lg:w-[420px] xl:w-[460px] shrink-0 glass-card p-1 rounded-lg shadow-lg overflow-y-auto"
 					style:height={videoHeightPx > 0 ? `${videoHeightPx}px` : 'auto'}
