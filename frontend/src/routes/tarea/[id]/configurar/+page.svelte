@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { tick } from 'svelte';
 	import { quintOut } from 'svelte/easing';
-	import { fly } from 'svelte/transition';
+	import { fly, fade } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import { BACKEND_URL } from '$lib/constants';
 	import { apiFetch } from '$lib/api';
@@ -49,7 +49,16 @@
 	}
 
 	// Modo para agregar zonas excluidas
-	let modoZonaExcluida = false;
+	let modoZonaExcluida = false; // página inicia en modo Entradas/Salidas
+
+	function setModoZonaExcluida(flag: boolean) {
+		if (modoZonaExcluida === flag) return;
+		modoZonaExcluida = flag;
+		// Al cambiar de modo, limpiar puntos actuales y cualquier polígono pendiente
+		currentPoints = [];
+		if (pendingPolygon) cancelPendingPolygon();
+		requestAnimationFrame(redrawCanvas);
+	}
 
 	// --- Estado del Popover Contextual ---
 	let pendingPolygon: {
@@ -63,6 +72,13 @@
 
 	// --- Estado de la Interfaz ---
 	let isSubmitting = false; // Para deshabilitar el botón "Finalizar" durante el envío
+
+	// Reglas de validación para finalizar: al menos 1 Entrada y 1 Salida
+	let entradasCount = 0;
+	let salidasCount = 0;
+	$: entradasCount = poligonos.filter((p) => p.sentido === 'Entrada').length;
+	$: salidasCount = poligonos.filter((p) => p.sentido === 'Salida').length;
+	$: canSubmit = entradasCount > 0 && salidasCount > 0 && !isSubmitting;
 
 	// --- Opciones ---
 	// Via ahora es texto libre; mantener únicamente los sentidos predefinidos
@@ -282,8 +298,7 @@
 						}
 					];
 					currentPoints = [];
-					modoZonaExcluida = false; // salir del modo tras confirmar
-					await tick(); // forzar actualización inmediata del botón
+					await tick(); // forzar actualización inmediata si hay elementos dependientes
 				}
 			}
 			if (event.key === 'Escape') {
@@ -327,7 +342,14 @@
 
 	// --- NUEVA FUNCIÓN ---
 	async function finalizarProceso() {
-		if (poligonos.length === 0 || isSubmitting) return;
+		if (isSubmitting) return;
+		if (entradasCount === 0 || salidasCount === 0) {
+			await showAlert({
+				message: 'Debes configurar al menos una entrada y una salida antes de continuar.',
+				variant: 'warning'
+			});
+			return;
+		}
 		isSubmitting = true;
 
 		// Construir el objeto de envío con las claves correctas para el backend
@@ -472,16 +494,14 @@
 			const n = absVertices.length || 1;
 			centro.x /= n;
 			centro.y /= n;
-			if (!isExcluded) {
-				ctx.font = 'bold 14px sans-serif';
-				ctx.fillStyle = 'white';
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				ctx.shadowColor = 'black';
-				ctx.shadowBlur = 5;
-				ctx.fillText(`${poly.via}`, centro.x, centro.y);
-				ctx.shadowBlur = 0;
-			}
+			ctx.font = 'bold 14px sans-serif';
+			ctx.fillStyle = 'white';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.shadowColor = 'black';
+			ctx.shadowBlur = 5;
+			ctx.fillText(`${poly.via}`, centro.x, centro.y);
+			ctx.shadowBlur = 0;
 		}
 	}
 
@@ -509,38 +529,107 @@
 <div class="page-container page-vertical">
 	<div class="mx-auto">
 		<!-- Título y descripción generales -->
-		<div class="mb-6 flex items-center justify-between">
-			<div>
-				<h1 class="heading-1">Asignar Vías</h1>
-				<p class="text-white/70 mt-1 text-sm">
-					Haz clic 4 veces en la imagen para definir una zona. Usa <kbd class="key-kbd"
-						>Backspace</kbd
-					>
-					para deshacer o
-					<kbd class="key-kbd">Esc</kbd> para cancelar.
+		<div class="mb-2">
+			<h1 class="heading-1">Asignar Vías</h1>
+			<div class="mt-2 flex items-center justify-between gap-4 flex-wrap">
+				<p class="text-white/70 text-sm m-0">
+					<span class="swap-container">
+						<span class="swap-measure">
+							{#if !modoZonaExcluida}
+								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
+								<kbd class="key-kbd">Backspace</kbd> para deshacer o
+								<kbd class="key-kbd">Esc</kbd> para cancelar.
+							{:else}
+								Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para
+								confirmar una zona excluída (mín. 3 puntos). Use
+								<kbd class="key-kbd">Backspace</kbd> para deshacer o
+								<kbd class="key-kbd">Esc</kbd> para cancelar.
+							{/if}
+						</span>
+						{#if !modoZonaExcluida}
+							<span class="swap-layer" transition:fade={{ duration: 210 }}>
+								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
+								<kbd class="key-kbd">Backspace</kbd> para deshacer o
+								<kbd class="key-kbd">Esc</kbd> para cancelar.
+							</span>
+						{:else}
+							<span class="swap-layer" transition:fade={{ duration: 210 }}>
+								Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para
+								confirmar una zona excluída (mín. 3 puntos). Use
+								<kbd class="key-kbd">Backspace</kbd> para deshacer o
+								<kbd class="key-kbd">Esc</kbd> para cancelar.
+							</span>
+						{/if}
+					</span>
 				</p>
-			</div>
-			<div class="flex items-center gap-2">
-				<button
-					onclick={() => {
-						modoZonaExcluida = !modoZonaExcluida;
-						currentPoints = [];
-					}}
-					class={`px-3 py-2 rounded-md transition border bg-black text-white border-white ${
-						modoZonaExcluida ? 'btn-excluir-active' : ''
-					}`}
-					aria-pressed={modoZonaExcluida}
-					title="Excluir zona (dibuje puntos y confirme con Enter)"
-				>
-					{modoZonaExcluida ? 'Excluyendo zona...' : 'Excluir zona'}
-				</button>
-				<button
-					class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
-					onclick={goBack}
-					aria-label="Volver"
-				>
-					← Volver
-				</button>
+				<div class="flex items-center gap-2">
+					<!-- Toggle de modos: Entradas/Salidas vs Zonas Excluídas -->
+					<div class="mode-toggle" role="group" aria-label="Modo de dibujo">
+						<div
+							class={`mode-indicator ${modoZonaExcluida ? 'right bg-excluded' : 'left bg-inout'}`}
+							aria-hidden="true"
+						></div>
+						<button
+							class="mode-option left"
+							disabled={!modoZonaExcluida}
+							aria-pressed={!modoZonaExcluida}
+							onclick={() => setModoZonaExcluida(false)}
+							title="Dibujar entradas/salidas"
+						>
+							<span class="swap-container">
+								<span class="swap-measure">
+									{#if !modoZonaExcluida}
+										Dibujando entradas/salidas...
+									{:else}
+										Dibujar entradas/salidas
+									{/if}
+								</span>
+								{#if !modoZonaExcluida}
+									<span class="swap-layer" transition:fade={{ duration: 210 }}
+										>Dibujando entradas/salidas...</span
+									>
+								{:else}
+									<span class="swap-layer" transition:fade={{ duration: 210 }}
+										>Dibujar entradas/salidas</span
+									>
+								{/if}
+							</span>
+						</button>
+						<button
+							class="mode-option right"
+							disabled={modoZonaExcluida}
+							aria-pressed={modoZonaExcluida}
+							onclick={() => setModoZonaExcluida(true)}
+							title="Dibujar zonas excluídas (confirme con Enter)"
+						>
+							<span class="swap-container">
+								<span class="swap-measure">
+									{#if modoZonaExcluida}
+										Dibujando zonas excluídas...
+									{:else}
+										Dibujar zonas excluídas
+									{/if}
+								</span>
+								{#if modoZonaExcluida}
+									<span class="swap-layer" transition:fade={{ duration: 210 }}
+										>Dibujando zonas excluídas...</span
+									>
+								{:else}
+									<span class="swap-layer" transition:fade={{ duration: 210 }}
+										>Dibujar zonas excluídas</span
+									>
+								{/if}
+							</span>
+						</button>
+					</div>
+					<button
+						class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
+						onclick={goBack}
+						aria-label="Volver"
+					>
+						← Volver
+					</button>
+				</div>
 			</div>
 		</div>
 
@@ -608,7 +697,10 @@
 				<div class="mt-auto pt-8">
 					<button
 						onclick={finalizarProceso}
-						disabled={poligonos.length === 0 || isSubmitting}
+						disabled={!canSubmit}
+						title={!canSubmit && !isSubmitting
+							? 'Requiere al menos 1 entrada y 1 salida'
+							: undefined}
 						class="w-full glass-button btn-success py-3 text-base flex items-center justify-center gap-2"
 					>
 						{#if isSubmitting}
@@ -647,7 +739,9 @@
 						role="button"
 						tabindex="0"
 						onkeydown={() => {}}
-						aria-label="Definir zona en la imagen"
+						aria-label={modoZonaExcluida
+							? 'Definir zona excluída en la imagen'
+							: 'Definir entrada/salida en la imagen'}
 					>
 						<img
 							src={imageSrc}
@@ -773,28 +867,102 @@
 		border-radius: 0.5rem;
 	}
 
-	/* Efecto flow/glow del botón Excluir zona cuando está activo */
-	.btn-excluir-active {
+	/* Utilidades para crossfade en el mismo lugar sin afectar layout */
+	.swap-container {
 		position: relative;
-		/* Glow solo del borde: simular con múltiples sombras exteriores, sin text-shadow */
-		box-shadow:
-			0 0 0 2px rgba(255, 255, 255, 0.25),
-			0 0 10px rgba(255, 255, 255, 0.15),
-			0 0 20px rgba(255, 255, 255, 0.1);
-		animation: excluir-flow 2.2s ease-in-out infinite alternate;
+		display: inline-block;
+		vertical-align: middle;
 	}
-	@keyframes excluir-flow {
-		0% {
-			box-shadow:
-				0 0 0 2px rgba(255, 255, 255, 0.2),
-				0 0 8px rgba(255, 255, 255, 0.12),
-				0 0 16px rgba(255, 255, 255, 0.08);
-		}
-		100% {
-			box-shadow:
-				0 0 0 3px rgba(255, 255, 255, 0.25),
-				0 0 14px rgba(255, 255, 255, 0.18),
-				0 0 28px rgba(255, 255, 255, 0.12);
+	.swap-measure {
+		visibility: hidden;
+		pointer-events: none;
+	}
+	.swap-layer {
+		position: absolute;
+		top: 0;
+		left: 0;
+		white-space: nowrap;
+	}
+
+	/* Efecto flow/glow del botón Excluir zona cuando está activo */
+	/* Toggle de modos */
+	.mode-toggle {
+		position: relative;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0;
+		align-items: center;
+		/* Fondo totalmente transparente para que el lado inactivo se vea "vacío" */
+		background: transparent;
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		border-radius: 12px;
+		overflow: hidden;
+		min-width: 420px;
+		height: 40px;
+	}
+	.mode-option {
+		position: relative;
+		z-index: 1;
+		background: transparent;
+		border: none;
+		outline: none;
+		color: white;
+		font-weight: 600;
+		font-size: 0.9rem;
+		padding: 0 16px;
+		height: 100%;
+		cursor: pointer;
+	}
+	.mode-option:disabled {
+		cursor: default;
+	}
+	.mode-indicator {
+		position: absolute;
+		top: -1px;
+		left: -1px;
+		height: calc(100% + 2px);
+		width: calc(50% + 2px);
+		border: 1px solid rgba(255, 255, 255, 0.65);
+		border-radius: 12px;
+		box-shadow:
+			0 0 0 2px rgba(255, 255, 255, 0.12),
+			0 8px 24px rgba(0, 0, 0, 0.35);
+		transition:
+			transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+			background 260ms ease;
+		will-change: transform;
+	}
+	.mode-indicator.left {
+		transform: translateX(0%);
+	}
+	.mode-indicator.right {
+		transform: translateX(100%);
+	}
+	/* Fondos activos */
+	.bg-inout {
+		/* Gradiente con efecto glass */
+		background: linear-gradient(
+			90deg,
+			rgba(74, 222, 128, 0.35) 0%,
+			rgba(74, 222, 128, 0.35) 40%,
+			rgba(248, 113, 113, 0.35) 60%,
+			rgba(248, 113, 113, 0.35) 100%
+		);
+		backdrop-filter: blur(8px) saturate(140%);
+		-webkit-backdrop-filter: blur(8px) saturate(140%);
+		/* Quitar borde/blanco del botón de entradas/salidas */
+		border-color: transparent;
+		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+	}
+	.bg-excluded {
+		background: rgba(0, 0, 0, 0.9);
+	}
+
+	/* Responsive: reducir ancho mínimo en pantallas chicas */
+	@media (max-width: 640px) {
+		.mode-toggle {
+			min-width: 300px;
+			font-size: 0.85rem;
 		}
 	}
 </style>
