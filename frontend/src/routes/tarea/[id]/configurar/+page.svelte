@@ -10,6 +10,7 @@
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
+	import ScrollArea from '$lib/components/ScrollArea.svelte';
 
 	// --- Estado de la Carga de Datos ---
 	let imageSrc: string = '';
@@ -527,7 +528,7 @@
 </script>
 
 <div class="page-container page-vertical">
-	<div class="mx-auto">
+	<div class="mx-auto flex flex-col flex-1 min-h-0 h-full">
 		<!-- Título y descripción generales -->
 		<div class="mb-2">
 			<h1 class="heading-1">Asignar Vías</h1>
@@ -634,13 +635,18 @@
 		</div>
 
 		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
-		<div class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start">
+		<div
+			class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start flex-1 min-h-0 h-full overflow-hidden"
+		>
 			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
-			<div class="flex flex-col h-full glass-card p-4 lg:mr-4 mb-8 lg:mb-0">
-				<div>
-					<div class="flex items-center justify-between mb-4 gap-2">
-						<h2 class="heading-2">Vías Definidas ({poligonos.length})</h2>
-					</div>
+			<div
+				class="flex flex-col h-full max-h-full min-h-0 overflow-hidden glass-card p-4 lg:mr-4 mb-8 lg:mb-0"
+			>
+				<div class="flex items-center justify-between mb-4 gap-2">
+					<h2 class="heading-2">Vías Definidas ({poligonos.length})</h2>
+				</div>
+				<!-- Área desplazable de la lista (con scrollbar custom) -->
+				<ScrollArea orientation="y" className="flex-1 min-h-0 pr-1" autoHide>
 					{#if poligonos.length === 0}
 						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
@@ -692,7 +698,7 @@
 							{/each}
 						</div>
 					{/if}
-				</div>
+				</ScrollArea>
 				<!-- Botón Finalizar -->
 				<div class="mt-auto pt-8">
 					<button
@@ -714,7 +720,7 @@
 			</div>
 
 			<!-- Columna Derecha: Imagen y Canvas (ocupa todo el ancho disponible) -->
-			<div class="mt-8 lg:mt-0 w-full">
+			<div class="mt-8 lg:mt-0 w-full min-h-0">
 				{#if isLoading}
 					<div
 						class="glass-card overflow-hidden shadow-2xl flex items-center justify-center text-white/90"
