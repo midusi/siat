@@ -107,7 +107,7 @@
 	// Zonas excluidas para overlay en revisión
 	let excludedZones = $state<[number, number][][]>([]);
 	let showExcluded = $state(false);
-	// Flag derivado para saber si hay zonas excluídas
+	// Flag derivado para saber si hay zonas excluidas
 	let hasExcludedZones = $derived.by(() => (excludedZones?.length ?? 0) > 0);
 	// --- Búsqueda de indeterminados por ID ---
 	let searchQuery = $state('');
@@ -1745,7 +1745,7 @@
 						{/each}
 					</div>
 
-					<!-- Toggle Mostrar rutas excluídas: debajo del reproductor, alineado a la izquierda -->
+					<!-- Toggle Mostrar rutas excluidas: debajo del reproductor, alineado a la izquierda -->
 					<div class="mt-3">
 						<button
 							type="button"
@@ -1755,15 +1755,15 @@
 							class:btn-excluir-active={showExcluded}
 							title={hasExcludedZones
 								? showExcluded
-									? 'Ocultar zonas excluídas'
-									: 'Mostrar zonas excluídas'
-								: 'No hay zonas excluídas'}
+									? 'Ocultar zonas excluidas'
+									: 'Mostrar zonas excluidas'
+								: 'No hay zonas excluidas'}
 						>
 							{hasExcludedZones
 								? showExcluded
-									? 'Ocultar zonas excluídas'
-									: 'Mostrar zonas excluídas'
-								: 'No hay zonas excluídas'}
+									? 'Ocultar zonas excluidas'
+									: 'Mostrar zonas excluidas'
+								: 'No hay zonas excluidas'}
 						</button>
 					</div>
 				{:else}

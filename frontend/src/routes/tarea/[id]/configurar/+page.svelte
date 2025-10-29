@@ -564,7 +564,7 @@
 					</span>
 				</p>
 				<div class="flex items-center gap-2">
-					<!-- Toggle de modos: Entradas/Salidas vs Zonas Excluídas -->
+					<!-- Toggle de modos: Entradas/Salidas vs Zonas Excluidas -->
 					<div class="mode-toggle" role="group" aria-label="Modo de dibujo">
 						<div
 							class={`mode-indicator ${modoZonaExcluida ? 'right bg-excluded' : 'left bg-inout'}`}
@@ -601,23 +601,23 @@
 							disabled={modoZonaExcluida}
 							aria-pressed={modoZonaExcluida}
 							onclick={() => setModoZonaExcluida(true)}
-							title="Dibujar zonas excluídas (confirme con Enter)"
+							title="Dibujar zonas excluidas (confirme con Enter)"
 						>
 							<span class="swap-container">
 								<span class="swap-measure">
 									{#if modoZonaExcluida}
-										Dibujando zonas excluídas...
+										Dibujando zonas excluidas...
 									{:else}
-										Dibujar zonas excluídas
+										Dibujar zonas excluidas
 									{/if}
 								</span>
 								{#if modoZonaExcluida}
 									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujando zonas excluídas...</span
+										>Dibujando zonas excluidas...</span
 									>
 								{:else}
 									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujar zonas excluídas</span
+										>Dibujar zonas excluidas</span
 									>
 								{/if}
 							</span>
