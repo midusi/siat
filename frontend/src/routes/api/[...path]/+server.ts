@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
+import { env } from '$env/dynamic/private';
 
-const BACKEND_BASE = 'http://127.0.0.1:8000';
+const BACKEND_BASE = env.BACKEND_URL || 'http://127.0.0.1:8000';
 
 async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
 	const { request, params, fetch } = event;

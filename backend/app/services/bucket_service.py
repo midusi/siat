@@ -9,13 +9,30 @@ import os
 
 class BucketService:
     def __init__(self):
+        # URL interna para operaciones del backend
+        self.endpoint_url = os.getenv('MINIO_ENDPOINT_URL', 'http://localhost:9000')
+        # URL pública para que el navegador pueda acceder (usada en presigned URLs)
+        self.public_endpoint_url = os.getenv('MINIO_PUBLIC_URL', 'http://localhost:9000')
+        
+        # Cliente S3 para operaciones internas (upload, download, delete, etc.)
         self.s3_client = boto3.client(
             's3',
-            endpoint_url='http://localhost:9000',
-            aws_access_key_id='minioadmin', # Cambia esto por tu clave de acceso de MinIO
-            aws_secret_access_key='minioadmin', # Cambia esto por tu clave secreta de MinIO
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
+            aws_secret_access_key=os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
             config=Config(signature_version='s3v4'),
             region_name='us-east-1' # La región no es crítica para MinIO, pero el SDK la requiere
+        )
+        
+        # Cliente S3 separado para generar URLs presignadas con el endpoint público
+        # Esto es necesario porque la firma criptográfica incluye el endpoint URL
+        self.s3_client_public = boto3.client(
+            's3',
+            endpoint_url=self.public_endpoint_url,
+            aws_access_key_id=os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
+            aws_secret_access_key=os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
+            config=Config(signature_version='s3v4'),
+            region_name='us-east-1'
         )
         
     BUCKET_NAME = 'traffic-analysis' # El nombre del bucket que creaste
@@ -184,3 +201,42 @@ class BucketService:
             raise FileNotFoundError(f"Objeto no encontrado: {object_name}")
         except Exception as e:
             raise RuntimeError(f"Error al obtener objeto '{object_name}': {e}")
+    
+    def generate_presigned_upload_url(self, object_name: str, expiration: int = 3600, content_type: Optional[str] = None) -> str:
+        """
+        Genera una URL presignada para permitir uploads directos desde el navegador a MinIO/S3.
+        Esto evita pasar archivos grandes a través del servidor backend.
+        
+        Args:
+            object_name: La key/nombre del objeto en el bucket
+            expiration: Tiempo en segundos hasta que expire la URL (default: 1 hora)
+            content_type: Content-Type esperado del archivo (opcional pero recomendado)
+        
+        Returns:
+            URL presignada que el cliente puede usar para hacer PUT directo
+        """
+        try:
+            params = {
+                'Bucket': self.BUCKET_NAME,
+                'Key': object_name,
+            }
+            
+            # Si se especifica content_type, requerirlo en la firma
+            if content_type:
+                params['ContentType'] = content_type
+            
+            # IMPORTANTE: Usar el cliente público para generar la URL
+            # Esto asegura que la firma criptográfica sea válida para el endpoint público
+            url = self.s3_client_public.generate_presigned_url(
+                'put_object',
+                Params=params,
+                ExpiresIn=expiration,
+                HttpMethod='PUT'
+            )
+            
+            print(f"Generated presigned URL for upload to '{self.BUCKET_NAME}/{object_name}'")
+            print(f"Public URL: {url}")
+            return url
+        except Exception as e:
+            print(f"Error generating presigned URL: {e}")
+            raise

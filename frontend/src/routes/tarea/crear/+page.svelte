@@ -9,6 +9,7 @@
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
+	import { uploadVideoToMinio } from '$lib/services/upload';
 
 	// Estado agrupado en un objeto form
 	let form = $state<TaskForm>({
@@ -92,7 +93,7 @@
 		}
 	}
 
-	// Función para iniciar la subida
+	// Función para iniciar la subida con el nuevo método de presigned URLs
 	async function handleSubmit(): Promise<void> {
 		if (isUploading) return; // evitar envíos duplicados
 		submitted = true;
@@ -106,56 +107,57 @@
 		}
 		errors = {};
 
-		isUploading = true;
-		isProcessing = false;
-
-		const formData = new FormData();
-		formData.append('name', form.name);
-		formData.append('locality_id', form.selectedLocality?.toString() ?? '');
-		formData.append('date', form.date);
-		if (form.file) {
-			formData.append('file', form.file);
+		if (!form.file) {
+			await showAlert({ message: 'Debe seleccionar un archivo de video', variant: 'warning' });
+			return;
 		}
 
+		isUploading = true;
+		isProcessing = false;
+		uploadProgress = 0;
+
 		try {
-			const data = await new Promise<any>((resolve, reject) => {
-				const xhr = new XMLHttpRequest();
-				xhr.open('POST', `${BACKEND_URL}/task`, true);
-				xhr.withCredentials = true;
-				xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
-					if (event.lengthComputable) {
-						uploadProgress = Math.round((event.loaded / event.total) * 100);
-					}
-				};
-				xhr.upload.onload = () => {
-					// Subida terminada, ahora el servidor procesa la creación de la tarea
-					uploadProgress = 100;
-					isProcessing = true;
-				};
-				xhr.upload.onerror = () => {
-					reject(new Error('Error durante la subida del archivo'));
-				};
-				xhr.onload = () => {
-					if (xhr.status >= 200 && xhr.status < 300) {
-						try {
-							const json = JSON.parse(xhr.responseText || '{}');
-							resolve(json);
-						} catch (e) {
-							resolve({});
-						}
-					} else {
-						reject(new Error(`Error en la subida: ${xhr.status} ${xhr.responseText}`));
-					}
-				};
-				xhr.onerror = () => reject(new Error('Error de red durante la subida'));
-				xhr.send(formData);
+			// 1. Subir video directo a MinIO con seguimiento de progreso
+			const objectKey = await uploadVideoToMinio(form.file, (progress) => {
+				uploadProgress = progress.percentage;
 			});
 
+			// 2. Ahora que el video está subido, crear la tarea
+			uploadProgress = 100;
+			isProcessing = true;
+
+			const formData = new FormData();
+			formData.append('name', form.name);
+			formData.append('locality_id', form.selectedLocality?.toString() ?? '');
+			formData.append('date', form.date);
+			formData.append('object_key', objectKey);
+
+			const response = await fetch(`${BACKEND_URL}/task`, {
+				method: 'POST',
+				credentials: 'include',
+				body: formData
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Error al crear la tarea: ${errorText}`);
+			}
+
+			const data = await response.json();
 			console.log('Tarea creada:', data);
+			
+			// Mostrar mensaje de éxito y redirigir
+			await showAlert({ 
+				message: 'Tarea creada exitosamente', 
+				variant: 'success' 
+			});
 			goto('/');
 		} catch (error) {
 			console.error('Error al crear la tarea:', error);
-			await showAlert({ message: 'Hubo un error al crear la tarea.', variant: 'danger' });
+			await showAlert({ 
+				message: error instanceof Error ? error.message : 'Hubo un error al crear la tarea.', 
+				variant: 'danger' 
+			});
 		} finally {
 			isUploading = false;
 			isProcessing = false;

@@ -5,15 +5,22 @@ services:
     image: postgres:15
     container_name: postgres_db
     restart: always
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin123
       POSTGRES_DB: traffic_analysis
       TZ: America/Argentina/Buenos_Aires
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d traffic_analysis" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - traffic_network
 
   minio:
     image: minio/minio:latest
@@ -32,52 +39,126 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
-  # backend:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   container_name: traffic_backend
-  #   environment:
-  #     # DB
-  #     DB_DRIVER: postgresql+psycopg2
-  #     DB_USER: admin
-  #     DB_PASS: admin123
-  #     DB_HOST: db
-  #     DB_PORT: 5432
-  #     DB_NAME: traffic_analysis
-  #     # JWT & Cookies
-  #     SECRET_KEY: ${SECRET_KEY:-please-change-me}
-  #     JWT_ALGORITHM: HS256
-  #     ACCESS_TOKEN_EXPIRES_MIN: 60
-  #     REFRESH_TOKEN_EXPIRES_DAYS: 7
-  #     AUTH_COOKIE_NAME: access_token
-  #     AUTH_COOKIE_SECURE: "false"
-  #     AUTH_COOKIE_SAMESITE: Lax
-  #     AUTH_COOKIE_PATH: /
-  #     AUTH_REFRESH_COOKIE_NAME: refresh_token
-  #     AUTH_REFRESH_COOKIE_SECURE: "false"
-  #     AUTH_REFRESH_COOKIE_SAMESITE: Lax
-  #     AUTH_REFRESH_COOKIE_PATH: /auth
-  #     # Security
-  #     BCRYPT_ROUNDS: 12
-  #     AUTH_RATE_LIMIT_PER_MIN: 10
-  #     AUTH_LOGIN_FAIL_LIMIT: 5
-  #     AUTH_LOGIN_LOCK_MINUTES: 5
-  #     # CORS (set frontend URL in prod)
-  #     CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000"
-  #     CORS_ALLOW_CREDENTIALS: "true"
-  #     # Email/Reset
-  #     RESET_TOKEN_EXPIRES_MIN: 30
-  #     EMAIL_FROM: no-reply@example.com
-  #     EMAIL_STUB: "true"
-  #   ports:
-  #     - "8000:8000"
-  #   depends_on:
-  #     - db
-  #     - minio
+    networks:
+      - traffic_network
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: traffic_backend_api
+    command: /app/api-entrypoint.sh
+    environment:
+      # DB
+      DB_DRIVER: postgresql+psycopg2
+      DB_USER: admin
+      DB_PASS: admin123
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: traffic_analysis
+      # MinIO
+      MINIO_ENDPOINT_URL: http://minio:9000
+      MINIO_PUBLIC_URL: http://localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      # JWT & Cookies
+      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRES_MIN: 60
+      REFRESH_TOKEN_EXPIRES_DAYS: 7
+      AUTH_COOKIE_NAME: access_token
+      AUTH_COOKIE_SECURE: "false"
+      AUTH_COOKIE_SAMESITE: Lax
+      AUTH_COOKIE_PATH: /
+      AUTH_REFRESH_COOKIE_NAME: refresh_token
+      AUTH_REFRESH_COOKIE_SECURE: "false"
+      AUTH_REFRESH_COOKIE_SAMESITE: Lax
+      AUTH_REFRESH_COOKIE_PATH: /auth
+      # Security
+      BCRYPT_ROUNDS: 12
+      AUTH_RATE_LIMIT_PER_MIN: 10
+      AUTH_LOGIN_FAIL_LIMIT: 5
+      AUTH_LOGIN_LOCK_MINUTES: 5
+      # CORS (allow frontend)
+      CORS_ALLOWED_ORIGINS: "http://frontend:3000,http://localhost:3000"
+      CORS_ALLOW_CREDENTIALS: "true"
+      # Email/Reset
+      RESET_TOKEN_EXPIRES_MIN: 30
+      EMAIL_FROM: no-reply@example.com
+      EMAIL_STUB: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - traffic_network
+    volumes:
+      - model_weights:/app/app/modelo
+
+  backend-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: traffic_backend_worker
+    command: /app/worker-entrypoint.sh
+    environment:
+      # DB
+      DB_DRIVER: postgresql+psycopg2
+      DB_USER: admin
+      DB_PASS: admin123
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: traffic_analysis
+      # MinIO
+      MINIO_ENDPOINT_URL: http://minio:9000
+      MINIO_PUBLIC_URL: http://localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      backend-api:
+        condition: service_started
+    networks:
+      - traffic_network
+    volumes:
+      - model_weights:/app/app/modelo
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: traffic_frontend
+    environment:
+      BACKEND_URL: http://backend-api:8000
+      MINIO_URL: http://minio:9000
+      ORIGIN: http://localhost:3000
+      BODY_SIZE_LIMIT: 104857600 # 100MB in bytes for video uploads
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend-api
+    networks:
+      - traffic_network
+
+networks:
+  traffic_network:
+    driver: bridge
 
 volumes:
   postgres_data:
   minio_data:
+  model_weights:
 
 

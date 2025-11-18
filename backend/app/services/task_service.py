@@ -231,6 +231,108 @@ class TaskService:
         finally:
             # Close the file after processing
             file.file.close()
+    
+    def create_from_object_key(
+        self,
+        task_request: TaskCreateRequest,
+        object_key: str
+    ) -> TaskResponse:
+        """
+        Crea una tarea a partir de un archivo ya subido a MinIO (usando presigned URL).
+        El archivo debe estar en la ubicación temporal 'uploads/{hash}.{ext}'.
+        Este método lo moverá a su ubicación final 'task/{id}/{hash}.{ext}'.
+        """
+        name = task_request.name
+        locality_id = task_request.locality_id
+        date = task_request.date
+        
+        # Validar localidad
+        locality = self.locality_service.get_by_id(locality_id)
+        if not locality:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La localidad no existe")
+        
+        # Extraer metadata del nombre del archivo
+        filename = os.path.basename(object_key)
+        video_name, file_ext = os.path.splitext(filename)
+        video_extension = file_ext[1:] if file_ext else 'mp4'
+        
+        # Validar formato
+        if video_extension.lower() not in ('mp4', 'avi', 'mov'):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de video no soportado")
+        
+        # Obtener metadata del video desde MinIO
+        try:
+            data_video = self.video_service.get_metadata_from_s3(object_key)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail=f"No se pudo obtener metadata del video: {str(e)}"
+            )
+        
+        # Crear objetos en base de datos
+        try:
+            # Crear registro de video
+            video_obj = Video(
+                name=video_name,
+                format=video_extension,
+                url=object_key,  # Temporalmente apunta al upload
+                **data_video
+            )
+            self.db.add(video_obj)
+            self.db.flush()
+            
+            # Crear tarea
+            task_obj = Task(
+                name=name,
+                locality_id=locality_id,
+                video_id=video_obj.id,
+                date=date,
+                created_at=datetime.datetime.now()
+            )
+            self.db.add(task_obj)
+            self.db.flush()
+            
+            # Mover archivo a ubicación final en MinIO
+            final_key = f"task/{task_obj.id}/{filename}"
+            try:
+                # Copiar archivo a nueva ubicación
+                self.bucket_service.s3_client.copy_object(
+                    Bucket=self.bucket_service.BUCKET_NAME,
+                    CopySource={'Bucket': self.bucket_service.BUCKET_NAME, 'Key': object_key},
+                    Key=final_key
+                )
+                # Eliminar archivo temporal
+                self.bucket_service.delete_object(object_key)
+                # Actualizar URL del video
+                video_obj.url = final_key
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error al mover archivo en MinIO: {str(e)}"
+                )
+            
+            # Crear historial de estado
+            task_status_pending = self.task_status_service.get_by_id("VIDEO_UPLOADED")
+            task_status_history_obj = TaskStatusHistory(
+                from_date=datetime.datetime.now(),
+                task_id=task_obj.id,
+                status_id=task_status_pending.id,
+            )
+            self.db.add(task_status_history_obj)
+            
+            # Commit
+            self.db.commit()
+            
+            return self._to_response(task_obj)
+            
+        except Exception as e:
+            self.db.rollback()
+            # Intentar limpiar archivo temporal en caso de error
+            try:
+                self.bucket_service.delete_object(object_key)
+            except:
+                pass
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
         
 
     
