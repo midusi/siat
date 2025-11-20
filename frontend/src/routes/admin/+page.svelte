@@ -483,7 +483,7 @@
 	<div class="mb-4 relative">
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
-			class="h-5 w-5 absolute left-3 top-3 text-white/60"
+			class="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-white/60"
 			fill="none"
 			viewBox="0 0 24 24"
 			stroke="currentColor"
@@ -499,7 +499,7 @@
 			type="text"
 			bind:value={searchQuery}
 			placeholder="Buscar usuarios por nombre o email..."
-			class="glass-input pl-10"
+			class="glass-input !pl-10"
 		/>
 	</div>
 

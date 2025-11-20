@@ -1784,14 +1784,30 @@
 				>
 					<h3 class="text-xl font-semibold mt-3 mb-2 text-center">Vehículos Indeterminados</h3>
 					<div class="px-2 mb-3">
-						<input
-							bind:this={searchInputEl}
-							type="text"
-							placeholder="Buscar por ID  (Ctrl + K)"
-							class="w-full px-3 py-2 rounded bg-transparent border outline-none focus:ring focus:ring-white/20"
-							value={searchQuery}
-							oninput={(e) => (searchQuery = (e.target as HTMLInputElement).value)}
-						/>
+						<div class="relative">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-white/60 pointer-events-none"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+								/>
+							</svg>
+							<input
+								bind:this={searchInputEl}
+								type="text"
+								placeholder="Buscar por ID  (Ctrl + K)"
+								class="w-full pl-10 pr-3 py-2 rounded bg-transparent border outline-none focus:ring focus:ring-white/20"
+								value={searchQuery}
+								oninput={(e) => (searchQuery = (e.target as HTMLInputElement).value)}
+							/>
+						</div>
 					</div>
 
 					<div class="overflow-y-auto flex-1">
