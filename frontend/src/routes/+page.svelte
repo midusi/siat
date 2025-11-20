@@ -1,7 +1,7 @@
 <!-- src/routes/+page.svelte (refactor to use TaskTable) -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { apiFetch } from '$lib/api';
 	import { showConfirm } from '$lib/dialog';
 	import TaskTable from '$lib/components/TaskTable.svelte';
@@ -52,6 +52,7 @@
 	let busy = $state<Record<number, import('$lib/components/TaskTable.svelte').ActionType | true>>(
 		{}
 	);
+	let eventSource: EventSource | undefined;
 
 	function formatDate(d: string | Date): string {
 		const date = typeof d === 'string' ? new Date(d) : d;
@@ -95,6 +96,33 @@
 
 	onMount(async () => {
 		await fetchActiveTasks();
+
+		// Setup SSE
+		eventSource = new EventSource('/api/events');
+		eventSource.onmessage = (event) => {
+			try {
+				const data = JSON.parse(event.data);
+				if (data.task_id && data.status) {
+					// Update the specific row
+					rows = rows.map((row) => {
+						if (row.id === data.task_id) {
+							const meta = STATUS_META[data.status] ?? { badgeClass: '', actions: [] };
+							fetchActiveTasks();
+							return row;
+						}
+						return row;
+					});
+				}
+			} catch (e) {
+				console.error('Error parsing SSE event:', e);
+			}
+		};
+	});
+
+	onDestroy(() => {
+		if (eventSource) {
+			eventSource.close();
+		}
 	});
 
 	async function archiveTask(taskId: number) {

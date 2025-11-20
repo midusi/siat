@@ -58,6 +58,11 @@ async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
 		return new Response(null, { status, headers: responseHeaders });
 	}
 
+	// Check for SSE
+	if (responseHeaders.get('content-type')?.includes('text/event-stream')) {
+		return new Response(res.body, { status, headers: responseHeaders });
+	}
+
 	const buf = await res.arrayBuffer();
 	return new Response(buf, { status, headers: responseHeaders });
 }

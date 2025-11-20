@@ -2,6 +2,7 @@ import subprocess
 import os
 from pathlib import Path
 import time
+import httpx
 
 import typer
 
@@ -9,7 +10,13 @@ from app.services.dependencies import get_task_service, get_bucket_service, get_
 from app.db import get_db_session
 from app.crud import task as task_crud
 
-
+def notify_backend(task_id: int, status: str):
+    try:
+        # La URL del backend-api dentro de la red de Docker
+        url = "http://backend-api:8000/internal/notify"
+        httpx.post(url, json={"task_id": task_id, "status": status})
+    except Exception as e:
+        typer.echo(f"Error notificando al backend: {e}")
 
 # Crea una instancia de Typer para tu aplicación CLI
 app = typer.Typer(
@@ -64,6 +71,7 @@ def run_process():
     try:
         typer.echo("Cambiando estado de tarea a PROCESSING...")
         task_service.update_task_status(task_to_process.id, "PROCESSING", commit=True)
+        notify_backend(task_to_process.id, "PROCESSING")
         
         # Paso 5: Construir y ejecutar el comando
         path_modelo = Path(__file__).resolve().parent.parent / "modelo"
@@ -191,6 +199,7 @@ def run_process():
         task_service.update_task_status(task_to_process.id, "PROCESSED")
         
         db.commit()
+        notify_backend(task_to_process.id, "PROCESSED")
         
         # Mostrar resultados
         typer.echo("\n--- Salida del script process.py ---")
