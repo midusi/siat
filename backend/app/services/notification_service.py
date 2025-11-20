@@ -11,8 +11,11 @@ class NotificationManager:
         self.connections.append(queue)
         try:
             while True:
-                message = await queue.get()
-                yield f"data: {message}\n\n"
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {message}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
         except asyncio.CancelledError:
             self.connections.remove(queue)
 

@@ -14,7 +14,8 @@ def notify_backend(task_id: int, status: str):
     try:
         # La URL del backend-api dentro de la red de Docker
         url = "http://backend-api:8000/internal/notify"
-        httpx.post(url, json={"task_id": task_id, "status": status})
+        httpx.post(url, json={"task_id": task_id, "status": status}, timeout=10.0)
+        typer.echo(f"Notificación enviada al backend: Tarea {task_id} -> {status}")
     except Exception as e:
         typer.echo(f"Error notificando al backend: {e}")
 
