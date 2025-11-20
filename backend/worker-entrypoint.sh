@@ -1,5 +1,10 @@
 #!/bin/bash
 
+export YOLO_CONFIG_DIR=${YOLO_CONFIG_DIR:-/tmp/Ultralytics}
+export MPLCONFIGDIR=${MPLCONFIGDIR:-/tmp/matplotlib}
+
+mkdir -p "$YOLO_CONFIG_DIR" "$MPLCONFIGDIR"
+
 echo "Starting inference worker..."
 echo "Polling for tasks every 30 seconds..."
 

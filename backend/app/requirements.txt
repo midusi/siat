@@ -16,3 +16,4 @@ opencv-python
 ultralytics
 supervision
 imageio[ffmpeg]
+lapx>=0.5.12
