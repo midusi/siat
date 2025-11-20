@@ -1,11 +1,13 @@
 import subprocess
 import os
 from pathlib import Path
+import time
 
 import typer
 
 from app.services.dependencies import get_task_service, get_bucket_service, get_inference_service
 from app.db import get_db_session
+from app.crud import task as task_crud
 
 
 
@@ -81,8 +83,63 @@ def run_process():
         
         typer.echo("Ejecutando el script `process.py`...")
         typer.echo(f"Comando: {' '.join(command)}")
-        # Ejecuta el comando en un subproceso
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        
+        # Archivos temporales para capturar salida
+        stdout_path = f"stdout_{task_to_process.id}.txt"
+        stderr_path = f"stderr_{task_to_process.id}.txt"
+        
+        cancelled = False
+        stdout = ""
+        stderr = ""
+        
+        with open(stdout_path, "w+") as stdout_file, open(stderr_path, "w+") as stderr_file:
+            # Ejecuta el comando en un subproceso sin bloquear
+            process = subprocess.Popen(command, stdout=stdout_file, stderr=stderr_file, text=True)
+            
+            # Monitorear el proceso y la existencia de la tarea
+            while process.poll() is None:
+                # Refrescar sesión y verificar si la tarea sigue existiendo
+                db.expire_all()
+                task_check = task_crud.find_one_by_fields(db, id=task_to_process.id)
+                
+                if not task_check:
+                    typer.echo(f"ALERTA: La tarea {task_to_process.id} ha sido eliminada. Cancelando ejecución...")
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    cancelled = True
+                    break
+                
+                time.sleep(2)
+            
+            if not cancelled:
+                # Leer salidas
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                stdout = stdout_file.read()
+                stderr = stderr_file.read()
+            
+        # Limpiar archivos de log temporales
+        if os.path.exists(stdout_path):
+            os.remove(stdout_path)
+        if os.path.exists(stderr_path):
+            os.remove(stderr_path)
+
+        if cancelled:
+            raise typer.Exit(code=0)
+
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, command, output=stdout, stderr=stderr)
+            
+        # Objeto resultado compatible con subprocess.run
+        class ProcessResult:
+            def __init__(self, stdout, stderr):
+                self.stdout = stdout
+                self.stderr = stderr
+        
+        result = ProcessResult(stdout, stderr)
         
         # Paso 6: Obtener la información resultante del procesamiento
         # Obtener el directorio donde process.py generó los archivos
