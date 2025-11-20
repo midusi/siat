@@ -61,7 +61,7 @@ def run_process():
     # Manejar la transacción completa
     try:
         typer.echo("Cambiando estado de tarea a PROCESSING...")
-        task_service.update_task_status(task_to_process.id, "PROCESSING")
+        task_service.update_task_status(task_to_process.id, "PROCESSING", commit=True)
         
         # Paso 5: Construir y ejecutar el comando
         path_modelo = Path(__file__).resolve().parent.parent / "modelo"
@@ -146,6 +146,13 @@ def run_process():
         db.rollback()
         typer.echo("Error en el procesamiento. Haciendo rollback de todos los cambios...")
         
+        # Revertir estado a READY_TO_PROCESS
+        try:
+            typer.echo("Revirtiendo estado de tarea a READY_TO_PROCESS...")
+            task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
+        except Exception as ex:
+            typer.echo(f"Error al revertir estado: {ex}")
+
         typer.echo(f"Error: El script `process.py` falló con código {e.returncode}")
         typer.echo("\n--- Salida estándar (stdout) ---")
         typer.echo(e.stdout)
@@ -157,12 +164,27 @@ def run_process():
         # Hacer rollback de toda la transacción
         db.rollback()
         typer.echo("Error: Archivo no encontrado. Haciendo rollback de todos los cambios...")
+        
+        # Revertir estado a READY_TO_PROCESS
+        try:
+            typer.echo("Revirtiendo estado de tarea a READY_TO_PROCESS...")
+            task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
+        except Exception as ex:
+            typer.echo(f"Error al revertir estado: {ex}")
+
         typer.echo("Error: Asegúrate de que `process.py` existe en la ruta especificada.")
         typer.echo(f"Error: {e}")
     except Exception as e:
         # Cualquier otro error
         db.rollback()
         typer.echo(f"Error inesperado: {str(e)}. Haciendo rollback de todos los cambios...")
+        
+        # Revertir estado a READY_TO_PROCESS
+        try:
+            typer.echo("Revirtiendo estado de tarea a READY_TO_PROCESS...")
+            task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
+        except Exception as ex:
+            typer.echo(f"Error al revertir estado: {ex}")
         
     finally:
         # Limpiar el archivo temporal del video
