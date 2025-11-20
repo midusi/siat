@@ -90,20 +90,16 @@
 			radial-gradient(900px 500px at 110% 110%, hsl(var(--accent2) / 0.12), transparent 60%),
 			radial-gradient(800px 400px at 120% -20%, hsl(var(--accent2) / 0.08), transparent 60%),
 			linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0) 40%),
-			repeating-linear-gradient(
-				0deg,
+			repeating-linear-gradient(0deg,
 				rgba(255, 255, 255, 0.02),
 				rgba(255, 255, 255, 0.02) 1px,
 				transparent 1px,
-				transparent 32px
-			),
-			repeating-linear-gradient(
-				90deg,
+				transparent 32px),
+			repeating-linear-gradient(90deg,
 				rgba(255, 255, 255, 0.02),
 				rgba(255, 255, 255, 0.02) 1px,
 				transparent 1px,
-				transparent 32px
-			),
+				transparent 32px),
 			hsl(var(--background));
 	}
 
@@ -158,7 +154,6 @@
 
 	.glass {
 		backdrop-filter: blur(12px);
-		-webkit-backdrop-filter: blur(12px);
 		border: 1px solid rgba(255, 255, 255, 0.18);
 		border-radius: 12px;
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
@@ -167,7 +162,6 @@
 
 	.glass-strong {
 		backdrop-filter: blur(18px);
-		-webkit-backdrop-filter: blur(18px);
 		border: 1px solid rgba(255, 255, 255, 0.22);
 		border-radius: 16px;
 		box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
@@ -177,14 +171,12 @@
 	/* Frosted glass effect: stronger blur + slight saturation */
 	.frost {
 		backdrop-filter: blur(10px) saturate(100%);
-		-webkit-backdrop-filter: blur(10px) saturate(100%);
 		/* keep background/border from glass-strong or glass-card; this class augments the blur */
 	}
 
 	/* Ensure frost wins over glass-strong blur */
 	.glass-strong.frost {
 		backdrop-filter: blur(18px) saturate(130%);
-		-webkit-backdrop-filter: blur(18px) saturate(130%);
 		background-color: rgba(255, 255, 255, 0.08);
 		background-clip: padding-box;
 	}
@@ -200,7 +192,6 @@
 	.glass-card {
 		/* alias */
 		backdrop-filter: blur(12px);
-		-webkit-backdrop-filter: blur(12px);
 		border: 1px solid rgba(255, 255, 255, 0.18);
 		border-radius: 12px;
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
