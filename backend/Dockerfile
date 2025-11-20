@@ -22,6 +22,7 @@ WORKDIR /app
 # Install Python dependencies first for better layer caching
 COPY app/requirements_test.txt ./
 RUN pip install --upgrade pip \
+    && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
     && pip install -r requirements_test.txt
 
 # Copy application code and entrypoint scripts

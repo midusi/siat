@@ -145,18 +145,18 @@
 
 			const data = await response.json();
 			console.log('Tarea creada:', data);
-			
+
 			// Mostrar mensaje de éxito y redirigir
-			await showAlert({ 
-				message: 'Tarea creada exitosamente', 
-				variant: 'success' 
+			await showAlert({
+				message: 'Tarea creada exitosamente',
+				variant: 'success'
 			});
 			goto('/');
 		} catch (error) {
 			console.error('Error al crear la tarea:', error);
-			await showAlert({ 
-				message: error instanceof Error ? error.message : 'Hubo un error al crear la tarea.', 
-				variant: 'danger' 
+			await showAlert({
+				message: error instanceof Error ? error.message : 'Hubo un error al crear la tarea.',
+				variant: 'danger'
 			});
 		} finally {
 			isUploading = false;

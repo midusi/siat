@@ -76,6 +76,7 @@ def run_process():
             f"--excluded_zones={excluded_zones}",
             "--names_polygons_in", str(names_polygons_in),
             "--names_polygons_out", str(names_polygons_out),
+            "--no_display",
         ]
         
         typer.echo("Ejecutando el script `process.py`...")
