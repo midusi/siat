@@ -29,6 +29,10 @@
 			badgeClass: 'border border-indigo-300/30 bg-indigo-300/10 text-indigo-100',
 			actions: ['configurar', 'eliminar']
 		},
+		READY_TO_PROCESS: {
+			badgeClass: 'border border-cyan-300/30 bg-cyan-300/10 text-cyan-100',
+			actions: ['eliminar']
+		},
 		PROCESSING: {
 			badgeClass: 'border border-blue-300/30 bg-blue-300/10 text-blue-100',
 			actions: ['eliminar']
