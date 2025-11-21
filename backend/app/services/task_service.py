@@ -415,6 +415,15 @@ class TaskService:
             self.db.add(new_task_status_history)
 
             self.db.commit()
+            
+            # Trigger worker immediately
+            try:
+                import httpx
+                # Use a short timeout so we don't block the user if worker is busy/slow
+                httpx.post("http://backend-worker:8001/trigger", timeout=1.0)
+            except Exception as e:
+                print(f"Failed to trigger worker: {e}")
+
             # self.process_video(task.id)
             return task
         except Exception as e:
