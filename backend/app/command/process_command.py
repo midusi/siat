@@ -26,8 +26,12 @@ app = typer.Typer(
 
 @app.command()
 def run_process():
+    process_next_task()
+
+def process_next_task() -> bool:
     """
     Obtiene la primer tarea lista para procesar de la cola de tareas (más antigua en la BD).
+    Retorna True si se procesó una tarea exitosamente (o se canceló), False si no había tareas, estaba ocupado o hubo error.
     """
     typer.echo(f"Verificando que no haya ninguna tarea procesando actualmente...")
     
@@ -45,14 +49,14 @@ def run_process():
         processing_tasks = task_service.get_tasks_by_status(status_id="PROCESSING")
         if processing_tasks:
             typer.echo(f"Hay una tarea en proceso. ID: {processing_tasks[0].id}")
-            raise typer.Exit(code=1)
+            return False
 
         # Paso2: Verificar que haya alguna tarea lista para procesar y obtener sus parámetros
         typer.echo(f"Verificando que haya alguna tarea lista para procesar y obteniendo sus parámetros...")
         ready_to_process_tasks = task_service.get_tasks_by_status(status_id="READY_TO_PROCESS")
         if not ready_to_process_tasks:
             typer.echo(f"No hay ninguna tarea lista para procesar. Finalizando...")
-            raise typer.Exit(code=0)
+            return False
         task_to_process = ready_to_process_tasks[0]
         
         # Paso 3: Descargar el video del bucket
@@ -141,7 +145,7 @@ def run_process():
                 os.remove(stderr_path)
 
             if cancelled:
-                raise typer.Exit(code=0)
+                return True
 
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(process.returncode, command, output=stdout, stderr=stderr)
@@ -211,6 +215,7 @@ def run_process():
             typer.echo(result.stdout)
             typer.echo("-------------------------------------\n")
             typer.echo(f"Tarea finalizada exitosamente para el video {task_to_process.id}.")
+            return True
             
         except subprocess.CalledProcessError as e:
             # Hacer rollback de toda la transacción
@@ -230,6 +235,7 @@ def run_process():
             typer.echo("\n--- Salida de error (stderr) ---")
             typer.echo(e.stderr)
             typer.echo("-------------------------------------\n")
+            return False
             
         except FileNotFoundError as e:
             # Hacer rollback de toda la transacción
@@ -245,6 +251,7 @@ def run_process():
 
             typer.echo("Error: Asegúrate de que `process.py` existe en la ruta especificada.")
             typer.echo(f"Error: {e}")
+            return False
         except Exception as e:
             # Cualquier otro error
             db.rollback()
@@ -256,6 +263,7 @@ def run_process():
                 task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
             except Exception as ex:
                 typer.echo(f"Error al revertir estado: {ex}")
+            return False
             
     finally:
         # Limpiar el archivo temporal del video
@@ -264,7 +272,6 @@ def run_process():
             typer.echo(f"Archivo temporal eliminado: {local_video_path}")
         
         db_gen.close()
-        typer.Exit(code=0)
 
 if __name__ == "__main__":
     app()

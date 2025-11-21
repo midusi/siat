@@ -4,30 +4,33 @@ import typer
 import httpx
 from fastapi import FastAPI, BackgroundTasks
 from contextlib import asynccontextmanager
-from app.command.process_command import run_process
+from app.command.process_command import process_next_task
 
 # Lock to ensure only one processing job runs at a time
 processing_lock = threading.Lock()
 
 def safe_run_process():
     """
-    Runs the process command safely, catching SystemExit/typer.Exit
-    and ensuring only one instance runs at a time.
+    Runs the process command safely.
+    Loops processing tasks until no more tasks are available.
     """
     # Try to acquire lock without blocking. If locked, it means it's already running.
     if processing_lock.acquire(blocking=False):
         try:
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting processing check...")
-            try:
-                run_process()
-            except (SystemExit, typer.Exit):
-                # Typer raises Exit to signal end of command. This is expected.
-                pass
-            except Exception as e:
-                print(f"Error running process: {e}")
+            while True:
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting processing check...")
+                processed = False
+                try:
+                    processed = process_next_task()
+                except Exception as e:
+                    print(f"Error running process: {e}")
+                
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Processing check finished. Processed: {processed}")
+                
+                if not processed:
+                    break
         finally:
             processing_lock.release()
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Processing check finished.")
     else:
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Worker is busy, skipping check.")
 
