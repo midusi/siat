@@ -203,7 +203,7 @@
 						role="option"
 						aria-selected={i === selectedIndex}
 						data-highlighted={i === highlighted}
-						class="flex w-full items-center justify-between px-3 py-2 text-sm rounded
+						class="flex w-full items-center justify-between px-3 py-2 text-sm rounded cursor-pointer
                             {i === selectedIndex
 							? 'bg-white/15 text-white'
 							: 'text-white/90 hover:bg-white/10'}

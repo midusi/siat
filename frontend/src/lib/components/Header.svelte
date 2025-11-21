@@ -87,7 +87,7 @@
 	<div class="flex items-center gap-3 relative user-dropdown-container">
 		<span class="opacity-90">{user?.first_name ?? user?.username}</span>
 		<button
-			class="w-9 h-9 glass rounded-full flex items-center justify-center focus:outline-none hover:bg-white/10 transition-colors"
+			class="w-9 h-9 glass rounded-full flex items-center justify-center focus:outline-none hover:bg-white/10 transition-colors cursor-pointer"
 			bind:this={btnEl}
 			onclick={toggleDropdown}
 			aria-label="Menú de usuario"

@@ -54,7 +54,7 @@
 					<div class="mt-0.5 text-sm">{getIcon(t.variant)}</div>
 					<div class="flex-1 text-sm leading-5">{t.message}</div>
 					<button
-						class="ml-2 text-white/80 hover:text-white"
+						class="ml-2 text-white/80 hover:text-white cursor-pointer"
 						on:click={() => toasts.dismissToast(t.id)}
 						aria-label="Cerrar">✕</button
 					>

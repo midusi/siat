@@ -64,7 +64,7 @@
 			/>
 			<button
 				type="button"
-				class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white focus:outline-none"
+				class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white focus:outline-none cursor-pointer"
 				onclick={() => (showNew = !showNew)}
 				aria-label="Mostrar u ocultar contraseña"
 				aria-pressed={showNew}
@@ -137,7 +137,7 @@
 			/>
 			<button
 				type="button"
-				class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white focus:outline-none"
+				class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white focus:outline-none cursor-pointer"
 				onclick={() => (showConfirm = !showConfirm)}
 				aria-label="Mostrar u ocultar contraseña"
 				aria-pressed={showConfirm}

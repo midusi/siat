@@ -126,7 +126,7 @@
 					/>
 					<button
 						type="button"
-						class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white"
+						class="absolute inset-y-0 right-0 px-3 text-white/75 hover:text-white cursor-pointer"
 						onclick={() => (showCurrent = !showCurrent)}
 						aria-label="Mostrar u ocultar contraseña"
 						aria-pressed={showCurrent}

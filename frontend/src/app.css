@@ -251,10 +251,15 @@
 		padding: 0.5rem 0.75rem;
 		font-size: 0.9rem;
 		border: 1px solid rgba(255, 255, 255, 0.18);
+		cursor: pointer;
 		transition:
 			background-color 120ms ease,
 			color 120ms ease,
 			border-color 120ms ease;
+	}
+
+	.glass-button:hover {
+		background-color: rgba(255, 255, 255, 0.1);
 	}
 
 	.glass-button:disabled {
