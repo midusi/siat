@@ -55,7 +55,7 @@ services:
       DB_NAME: traffic_analysis
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_PUBLIC_URL: "http://localhost:9000"
+      MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL:-http://localhost:9000}"
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       # JWT & Cookies
@@ -77,12 +77,14 @@ services:
       AUTH_LOGIN_FAIL_LIMIT: 5
       AUTH_LOGIN_LOCK_MINUTES: 5
       # CORS (allow frontend)
-      CORS_ALLOWED_ORIGINS: "http://frontend:3000,http://localhost:3000,http://localhost:3000"
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://frontend:3000,http://localhost:3000,http://localhost:3000}"
       CORS_ALLOW_CREDENTIALS: "true"
       # Email/Reset
       RESET_TOKEN_EXPIRES_MIN: 30
       EMAIL_FROM: no-reply@example.com
       EMAIL_STUB: "true"
+    ports:
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -141,9 +143,9 @@ services:
       dockerfile: Dockerfile
     container_name: traffic_frontend
     environment:
-      BACKEND_URL: http://backend-api:8000
-      MINIO_URL: http://minio:9000
-      ORIGIN: "http://localhost:3000"
+      BACKEND_URL: ${BACKEND_URL:-http://backend-api:8000}
+      MINIO_URL: ${MINIO_URL:-http://minio:9000}
+      ORIGIN: "${ORIGIN:-http://localhost:3000}"
       BODY_SIZE_LIMIT: 104857600 # 100MB in bytes for video uploads
     ports:
       - "3000:3000"
