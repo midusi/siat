@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigin": ["https://siat-unlp.unlp.dev"],
+    "AllowedMethod": ["GET","PUT","POST","DELETE","HEAD"],
+    "AllowedHeader": ["*"],
+    "ExposeHeader": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
