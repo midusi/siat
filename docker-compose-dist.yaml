@@ -113,7 +113,7 @@ services:
     container_name: traffic_frontend
     environment:
       BACKEND_URL: ${BACKEND_URL}
-      MINIO_URL: ${MINIO_ENDPOINT_URL}
+      MINIO_URL: ${MINIO_ENDPOINT_URL_SSL}
       ORIGIN: "${FRONTEND_URL}"
       BODY_SIZE_LIMIT: 104857600 # 100MB in bytes for video uploads
     networks:
