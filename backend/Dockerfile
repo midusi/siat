@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-
 # Use a slim Python base image
 FROM python:3.11-slim AS base
 
@@ -11,11 +10,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # - libmediainfo/libzen: required by pymediainfo
 # - libgl1, libglib2.0-0: required by OpenCV (cv2)
 # - curl: optional, useful for basic diagnostics
-RUN apt-get update \
+# For Dokploy: force HTTPS repos and install system deps
+RUN echo "deb https://deb.debian.org/debian trixie main contrib non-free" > /etc/apt/sources.list \
+    && echo "deb https://deb.debian.org/debian-security trixie-security main contrib non-free" >> /etc/apt/sources.list \
+    && echo "deb https://deb.debian.org/debian trixie-updates main contrib non-free" >> /etc/apt/sources.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
-    libmediainfo0v5 libzen0v5 curl \
-    libgl1 libglib2.0-0 \
+        libmediainfo0v5 libzen0v5 curl \
+        libgl1 libglib2.0-0 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 
@@ -29,7 +34,6 @@ RUN pip install --upgrade pip \
 COPY app/ ./app/
 COPY worker-entrypoint.sh ./worker-entrypoint.sh
 COPY api-entrypoint.sh ./api-entrypoint.sh
-
 # Make scripts executable and set ownership
 RUN chmod +x ./worker-entrypoint.sh ./api-entrypoint.sh \
     && chown -R www-data:www-data /app
@@ -37,6 +41,5 @@ RUN chmod +x ./worker-entrypoint.sh ./api-entrypoint.sh \
 EXPOSE 8000
 
 USER www-data
-
 # Default command (can be overridden by docker-compose)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
