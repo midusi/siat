@@ -1,25 +1,4 @@
 services:
-  db:
-    image: postgres:15
-    container_name: postgres_db
-    restart: always
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: traffic_analysis
-      TZ: America/Argentina/Buenos_Aires
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U admin -d traffic_analysis" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - traffic_network
-
   minio:
     image: minio/minio:latest
     container_name: minio-server
@@ -27,16 +6,17 @@ services:
       - "9000:9000"
       - "9001:9001" # Puerto para la consola de MinIO (UI)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
     volumes:
       - minio_data:/data # Monta un volumen para persistir los datos
     command: server /data --console-address ":9001"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      test: ["CMD-SHELL", "curl -f http://minio:9000/minio/health/live || exit 1"]
       interval: 30s
       timeout: 20s
       retries: 3
+      start_period: 5s
     networks:
       - traffic_network
   backend-api:
@@ -48,18 +28,17 @@ services:
     environment:
       # DB
       DB_DRIVER: postgresql+psycopg2
-      DB_USER: admin
-      DB_PASS: admin123
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: traffic_analysis
+      DB_USER: "${DB_USER}"
+      DB_PASS: "${DB_PASS}"
+      DB_HOST: "${DB_HOST}"
+      DB_PORT: "${DB_PORT}"
+      DB_NAME: "${DB_NAME}"
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
       MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL:-http://localhost:9000}"
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
       # JWT & Cookies
-      SECRET_KEY: ${SECRET_KEY:-please-change-me}
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRES_MIN: 60
       REFRESH_TOKEN_EXPIRES_DAYS: 7
@@ -72,12 +51,13 @@ services:
       AUTH_REFRESH_COOKIE_SAMESITE: Lax
       AUTH_REFRESH_COOKIE_PATH: /auth
       # Security
+      SECRET_KEY: "${SECRET_KEY:-please-change-me}"
       BCRYPT_ROUNDS: 12
       AUTH_RATE_LIMIT_PER_MIN: 10
       AUTH_LOGIN_FAIL_LIMIT: 5
       AUTH_LOGIN_LOCK_MINUTES: 5
       # CORS (allow frontend)
-      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://frontend:3000,http://localhost:3000,http://localhost:3000}"
+      CORS_ALLOWED_ORIGINS: http://frontend:3000,http://localhost:3000
       CORS_ALLOW_CREDENTIALS: "true"
       # Email/Reset
       RESET_TOKEN_EXPIRES_MIN: 30
@@ -85,15 +65,15 @@ services:
       EMAIL_STUB: "true"
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://backend-api:8000/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 5s
     networks:
       - traffic_network
     volumes:
-      - ./backend:/app
       - model_weights:/app/app/modelo
 
   backend-worker:
@@ -105,38 +85,30 @@ services:
     environment:
       # DB
       DB_DRIVER: postgresql+psycopg2
-      DB_USER: admin
-      DB_PASS: admin123
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: traffic_analysis
+      DB_USER: "${DB_USER}"
+      DB_PASS: "${DB_PASS}"
+      DB_HOST: "${DB_HOST}"
+      DB_PORT: "${DB_PORT}"
+      DB_NAME: "${DB_NAME}"
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
       MINIO_PUBLIC_URL: "http://localhost:9000"
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
       # Security
-      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      SECRET_KEY: "${SECRET_KEY:-please-change-me}"
       YOLO_CONFIG_DIR: /tmp/Ultralytics
       MPLCONFIGDIR: /tmp/matplotlib
-    depends_on:
-      db:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      backend-api:
-        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://backend-api:8000/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 5s
     networks:
       - traffic_network
     volumes:
       - model_weights:/app/app/modelo
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
 
   frontend:
     build:
@@ -158,7 +130,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
   minio_data:
   model_weights:
 

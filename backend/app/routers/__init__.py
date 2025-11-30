@@ -10,6 +10,7 @@ from .user_self import router as user_router
 from .password_reset import router as password_reset_router
 from .observability import router as observability_router
 from .notifications import router as notifications_router
+from .default import router as default_router
 
 all_routers = [
     district_router, 
@@ -23,4 +24,5 @@ all_routers = [
     password_reset_router,
     observability_router,
     notifications_router,
+    default_router,
 ]
