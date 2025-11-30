@@ -24,7 +24,7 @@ services:
     command: /app/api-entrypoint.sh
     environment:
       # DB
-      DB_DRIVER: postgresql+psycopg2
+      DB_DRIVER: "${DB_DRIVER}"postgresql
       DB_USER: "${DB_USER}"
       DB_PASS: "${DB_PASS}"
       DB_HOST: "${DB_HOST}"
