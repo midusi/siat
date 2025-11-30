@@ -8,16 +8,7 @@ services:
     volumes:
       - minio_data:/data # Monta un volumen para persistir los datos
       - ./minio-init:/minio-init
-    command: >
-      sh -c "
-      server /data --console-address ':9001' &
-      sleep 5 &&
-      mc alias set localminio http://127.0.0.1:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD &&
-      mc mb --ignore-existing localminio/traffic-analysis &&
-      mc anonymous set download localminio/traffic-analysis &&
-      mc admin cors set localminio/traffic-analysis /minio-init/minio-cors.json &&
-      fg
-      "
+    command: ["/minio-init/minio-init.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f $MINIO_ENDPOINT_URL/minio/health/live || exit 1"]
       interval: 30s
