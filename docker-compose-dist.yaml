@@ -8,7 +8,7 @@ services:
     volumes:
       - minio_data:/data # Monta un volumen para persistir los datos
       - ./minio-init:/minio-init
-    command: ["/minio-init/minio-init.sh"]
+    command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD-SHELL", "curl -f $MINIO_ENDPOINT_URL/minio/health/live || exit 1"]
       interval: 30s
