@@ -15,10 +15,10 @@
 	{#if !isLoginPage && user}
 		<Header {user} />
 		<div
-			class="flex flex-1 gap-[var(--layout-gap)] px-[var(--layout-gap)] pb-[var(--layout-bottom-gap)] mt-[var(--layout-gap)]"
+			class="flex flex-1 gap-[var(--layout-gap)] px-[var(--layout-gap)] pb-[var(--layout-bottom-gap)] mt-[var(--layout-gap)] overflow-y-auto"
 		>
 			<Sidebar {user} />
-			<main class="flex-1 overflow-x-auto pt-[var(--layout-gap)]">
+			<main class="flex-1 overflow-auto pt-[var(--layout-gap)]">
 				{@render children()}
 			</main>
 		</div>

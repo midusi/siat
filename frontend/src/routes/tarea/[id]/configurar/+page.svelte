@@ -636,7 +636,7 @@
 
 		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
 		<div
-			class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start flex-1 min-h-0 h-full overflow-hidden"
+			class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start flex-1 min-h-0 overflow-y-auto"
 		>
 			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
 			<div
@@ -831,11 +831,7 @@
 	.page-vertical {
 		display: flex;
 		flex-direction: column;
-		/* Altura disponible: viewport menos header + gaps superiores/inferiores del layout */
-		height: calc(
-			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
-				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
-		);
+		/* Altura mínima disponible: viewport menos header + gaps superiores/inferiores del layout */
 		min-height: calc(
 			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
 				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
