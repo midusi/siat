@@ -4,7 +4,7 @@ import { env } from '$env/dynamic/private';
 const BACKEND_BASE = env.BACKEND_URL || 'http://127.0.0.1:8000';
 
 async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
-	const { request, params, fetch } = event;
+	const { request, params } = event;
 	const targetPath = params.path as string; // catch-all
 	const url = `${BACKEND_BASE}/${targetPath}`;
 
@@ -13,14 +13,16 @@ async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
 	const cookie = request.headers.get('cookie');
 	if (cookie) headers.set('cookie', cookie);
 
-	const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer();
+	const body = ['GET', 'HEAD'].includes(request.method) ? undefined : request.body;
 
-	const res = await fetch(url, {
+	const res = await globalThis.fetch(url, {
 		method: request.method,
 		headers,
 		body,
-		redirect: 'manual'
-	} as RequestInit);
+		redirect: 'manual',
+		// @ts-ignore
+		duplex: 'half'
+	});
 
 	// Build response and forward Set-Cookie headers
 	const responseHeaders = new Headers(res.headers);
@@ -58,13 +60,7 @@ async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
 		return new Response(null, { status, headers: responseHeaders });
 	}
 
-	// Check for SSE
-	if (responseHeaders.get('content-type')?.includes('text/event-stream')) {
-		return new Response(res.body, { status, headers: responseHeaders });
-	}
-
-	const buf = await res.arrayBuffer();
-	return new Response(buf, { status, headers: responseHeaders });
+	return new Response(res.body, { status, headers: responseHeaders });
 }
 
 export const GET: RequestHandler = async (e) => proxy(e);

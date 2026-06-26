@@ -5,24 +5,26 @@ import { env } from '$env/dynamic/private';
 const BUCKET_BASE = env.MINIO_URL || 'http://127.0.0.1:9000';
 
 async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
-    const { request, params, fetch, url } = event;
+    const { request, params } = event;
     const targetPath = params.path as string; // catch-all
     const targetUrl = `${BUCKET_BASE}/${targetPath}`;
 
     // Forward request headers (including Range for video streaming)
     const headers = new Headers(request.headers);
 
-    // For GET/HEAD, no body. For others, stream the body as ArrayBuffer
+    // For GET/HEAD, no body. For others, stream the body directly
     const body = ['GET', 'HEAD'].includes(request.method)
         ? undefined
-        : await request.arrayBuffer();
+        : request.body;
 
-    const res = await fetch(targetUrl, {
+    const res = await globalThis.fetch(targetUrl, {
         method: request.method,
         headers,
         body,
-        redirect: 'manual'
-    } as RequestInit);
+        redirect: 'manual',
+        // @ts-ignore
+        duplex: 'half'
+    });
 
     // Stream the body back to the client, preserving status and headers
     const responseHeaders = new Headers(res.headers);

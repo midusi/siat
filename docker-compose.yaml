@@ -6,19 +6,19 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: traffic_analysis
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
       TZ: America/Argentina/Buenos_Aires
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U admin -d traffic_analysis" ]
-      interval: 5s
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - traffic_network
+      - siat_network
 
   minio:
     image: minio/minio:latest
@@ -27,8 +27,8 @@ services:
       - "9000:9000"
       - "9001:9001" # Puerto para la consola de MinIO (UI)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data # Monta un volumen para persistir los datos
     command: server /data --console-address ":9001"
@@ -38,28 +38,29 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - traffic_network
+      - siat_network
+  
   backend-api:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: traffic_backend_api
+    container_name: siat_backend_api
     command: /app/api-entrypoint.sh
     environment:
       # DB
       DB_DRIVER: postgresql+psycopg2
-      DB_USER: admin
-      DB_PASS: admin123
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
       DB_HOST: db
       DB_PORT: 5432
-      DB_NAME: traffic_analysis
+      DB_NAME: ${DB_NAME}
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL:-http://localhost:9000}"
+      MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       # JWT & Cookies
-      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      SECRET_KEY: ${SECRET_KEY}
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRES_MIN: 60
       REFRESH_TOKEN_EXPIRES_DAYS: 7
@@ -91,7 +92,7 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - traffic_network
+      - siat_network
     volumes:
       - ./backend:/app
       - model_weights:/app/app/modelo
@@ -100,19 +101,19 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: traffic_backend_worker
+    container_name: siat_backend_worker
     command: /app/worker-entrypoint.sh
     environment:
       # DB
       DB_DRIVER: postgresql+psycopg2
-      DB_USER: admin
-      DB_PASS: admin123
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
       DB_HOST: db
       DB_PORT: 5432
-      DB_NAME: traffic_analysis
+      DB_NAME: ${DB_NAME}
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_PUBLIC_URL: "http://localhost:9000"
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       # Security
@@ -127,7 +128,7 @@ services:
       backend-api:
         condition: service_started
     networks:
-      - traffic_network
+      - siat_network
     volumes:
       - model_weights:/app/app/modelo
     # deploy:
@@ -142,19 +143,20 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: traffic_frontend
+    container_name: siat_frontend
     environment:
-      BACKEND_URL: ${BACKEND_URL:-http://backend-api:8000}
-      MINIO_URL: ${MINIO_URL:-http://minio:9000}
-      ORIGIN: "${ORIGIN:-http://localhost:3000}"
+      BACKEND_URL: ${BACKEND_URL}
+      MINIO_URL: ${MINIO_URL}
+      ORIGIN: "${ORIGIN}"
       BODY_SIZE_LIMIT: 104857600 # 100MB in bytes for video uploads
     ports:
       - "3000:3000"
     networks:
-      - traffic_network
+      - siat_network
 
 networks:
-  traffic_network:
+  siat_network:
+    name: "${NETWORK_NAME}"
     driver: bridge
 
 volumes:

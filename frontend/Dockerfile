@@ -33,5 +33,7 @@ EXPOSE 3000
 # Set environment to production
 ENV NODE_ENV=production
 
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Start the application
 CMD ["node", "build"]
