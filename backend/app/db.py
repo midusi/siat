@@ -8,12 +8,12 @@ from fastapi import Depends
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 # 🔹 Construir DATABASE_URL desde variables
-db_driver = os.getenv("DB_DRIVER")
-db_user = os.getenv("DB_USER")
-db_pass = os.getenv("DB_PASS")
-db_host = os.getenv("DB_HOST")
-db_port = os.getenv("DB_PORT")
-db_name = os.getenv("DB_NAME")
+db_driver = os.getenv("POSTGRES_DRIVER")
+db_user = os.getenv("POSTGRES_USER")
+db_pass = os.getenv("POSTGRES_PASS")
+db_host = os.getenv("POSTGRES_HOST")
+db_port = os.getenv("POSTGRES_PORT")
+db_name = os.getenv("POSTGRES_NAME")
 
 DATABASE_URL = f"{db_driver}://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 engine = create_engine(DATABASE_URL, echo=True)

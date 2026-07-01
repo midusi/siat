@@ -9,10 +9,10 @@ sleep 5
 mc alias set localminio http://127.0.0.1:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
 
 # crea el bucket si no existe
-mc mb --ignore-existing localminio/traffic-analysis
+mc mb --ignore-existing localminio/siat
 
 # aplica CORS
-mc cors set localminio/traffic-analysis /minio-init/minio-cors.json
+mc cors set localminio/siat /minio-init/minio-cors.json
 
 # espera al proceso principal
 wait

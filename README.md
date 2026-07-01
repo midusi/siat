@@ -12,7 +12,7 @@ El sistema está completamente dockerizado y consiste en 5 servicios:
 4. **Backend Worker** - Procesa tareas de inferencia YOLO de forma asíncrona (polling cada 30s)
 5. **Frontend** - Aplicación SvelteKit con SSR (puerto 3000)
 
-Todos los servicios se comunican a través de la red interna `traffic_network`.
+Todos los servicios se comunican a través de la red interna `siat_network`.
 
 ## Inicio Rápido con Docker
 
@@ -25,7 +25,7 @@ Todos los servicios se comunican a través de la red interna `traffic_network`.
 ### 1. Clonar y configurar variables de entorno
 
 ```bash
-cd traffic_analysis
+cd siat
 cp .env.example .env
 ```
 

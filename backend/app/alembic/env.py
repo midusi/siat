@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 🔹 Construir DATABASE_URL desde variables
-db_driver = os.getenv("DB_DRIVER")
-db_user = os.getenv("DB_USER")
-db_pass = os.getenv("DB_PASS")
-db_host = os.getenv("DB_HOST")
-db_port = os.getenv("DB_PORT", "5432")
-db_name = os.getenv("DB_NAME")
+db_driver = os.getenv("POSTGRES_DRIVER")
+db_user = os.getenv("POSTGRES_USER")
+db_pass = os.getenv("POSTGRES_PASS")
+db_host = os.getenv("POSTGRES_HOST")
+db_port = os.getenv("POSTGRES_PORT")
+db_name = os.getenv("POSTGRES_NAME")
 
 DATABASE_URL = f"{db_driver}://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 # DATABASE_URL = f"{db_driver}://{db_user}:{db_pass}@{db_host}/{db_name}"

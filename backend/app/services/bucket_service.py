@@ -10,16 +10,17 @@ import os
 class BucketService:
     def __init__(self):
         # URL interna para operaciones del backend
-        self.endpoint_url = os.getenv('MINIO_ENDPOINT_URL', 'http://localhost:9000')
+        self.endpoint_url = os.getenv('MINIO_ENDPOINT_URL')
         # URL pública para que el navegador pueda acceder (usada en presigned URLs)
-        self.public_endpoint_url = os.getenv('MINIO_PUBLIC_URL', 'http://localhost:9000')
-        
+        self.public_endpoint_url = os.getenv('MINIO_PUBLIC_URL')
+        access_key = os.getenv('MINIO_ROOT_USER')
+        access_secret = os.getenv('MINIO_ROOT_PASSWORD')
         # Cliente S3 para operaciones internas (upload, download, delete, etc.)
         self.s3_client = boto3.client(
             's3',
             endpoint_url=self.endpoint_url,
-            aws_access_key_id=os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
-            aws_secret_access_key=os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=access_secret,
             config=Config(signature_version='s3v4'),
             region_name='us-east-1' # La región no es crítica para MinIO, pero el SDK la requiere
         )
@@ -29,13 +30,13 @@ class BucketService:
         self.s3_client_public = boto3.client(
             's3',
             endpoint_url=self.public_endpoint_url,
-            aws_access_key_id=os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
-            aws_secret_access_key=os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=access_secret,
             config=Config(signature_version='s3v4'),
             region_name='us-east-1'
         )
         
-    BUCKET_NAME = 'traffic-analysis' # El nombre del bucket que creaste
+    BUCKET_NAME =  os.getenv('MINIO_BUCKET_NAME')# El nombre del bucket que creaste
 
     def set_public_read_policy(self):
         policy = {
@@ -49,6 +50,16 @@ class BucketService:
                     "Action": ["s3:GetObject"], # Permite la acción de obtener objetos
                     "Resource": [
                         f"arn:aws:s3:::{self.BUCKET_NAME}/*" # Aplica a todos los objetos en este bucket
+                    ]
+                },
+                 {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": ["*"] # Permite acceso a cualquier entidad (público)
+                    },
+                    "Action": ["s3:ListBucket"], # Permite la acción de obtener objetos
+                    "Resource": [
+                        f"arn:aws:s3:::{self.BUCKET_NAME}" # Aplica a todos los objetos en este bucket
                     ]
                 }
             ]
@@ -127,6 +138,7 @@ class BucketService:
             
     def download(self, path: str, object_name: str):
         try:
+            print(f"Descargando '{object_name}' desde bucket '{self.BUCKET_NAME}' a '{path}'...")
             self.s3_client.download_file(self.BUCKET_NAME, object_name, path)
             print(f"'{object_name}' descargado a '{path}'")
         except Exception as e:

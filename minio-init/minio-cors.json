@@ -1,6 +1,6 @@
 [
   {
-    "AllowedOrigin": ["https://siat-unlp.unlp.dev"],
+    "AllowedOrigin": ["https://siat.unlp.dev"],
     "AllowedMethod": ["GET","PUT","POST","DELETE","HEAD"],
     "AllowedHeader": ["*"],
     "ExposeHeader": ["ETag"],

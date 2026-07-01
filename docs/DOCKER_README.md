@@ -50,7 +50,7 @@ Si **no tienes GPU**, comenta o elimina la sección `deploy` del servicio `backe
 ### 1. Clonar y configurar
 
 ```bash
-cd traffic_analysis
+cd siat
 cp .env.example .env
 # Edita .env y cambia SECRET_KEY por un valor seguro
 ```
@@ -169,7 +169,7 @@ docker compose down -v
 
 ## Estructura de Red
 
-Todos los contenedores están en la red `traffic_network`:
+Todos los contenedores están en la red `siat_network`:
 
 - `db` → PostgreSQL (puerto 5432 interno)
 - `minio` → MinIO (puertos 9000 y 9001)
@@ -180,7 +180,7 @@ Todos los contenedores están en la red `traffic_network`:
 **Comunicación**:
 - Frontend → Backend API: `http://backend-api:8000`
 - Frontend → MinIO: `http://minio:9000`
-- Backend → PostgreSQL: `postgresql://admin:admin123@db:5432/traffic_analysis`
+- Backend → PostgreSQL: `postgresql://admin:admin123@db:5432/siat`
 - Backend → MinIO: `http://minio:9000`
 
 ## Troubleshooting

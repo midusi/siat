@@ -24,7 +24,7 @@
   - `backend-api` (FastAPI) - **solo accesible desde frontend** (sin puerto expuesto)
   - `backend-worker` (Inference) - con soporte GPU opcional
   - `frontend` (SvelteKit) - puerto 3000 expuesto
-- ✅ **Creada**: Red `traffic_network` para comunicación entre contenedores
+- ✅ **Creada**: Red `siat_network` para comunicación entre contenedores
 - ✅ **Agregado**: Volumen `model_weights` compartido entre backend-api y backend-worker
 
 ### 5. Documentación
@@ -36,7 +36,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Docker Network                          │
-│                   (traffic_network)                         │
+│                   (siat_network)                            │
 │                                                             │
 │  ┌──────────┐         ┌─────────────┐       ┌──────────┐    │
 │  │PostgreSQL│◄────────┤ Backend API │◄──────┤ Frontend │    │

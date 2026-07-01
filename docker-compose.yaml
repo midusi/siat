@@ -1,3 +1,14 @@
+x-db: &db-env
+  POSTGRES_DRIVER: postgresql+psycopg2
+  POSTGRES_USER: ${DB_USER}
+  POSTGRES_PASSWORD: ${DB_PASS}
+  POSTGRES_DB: ${DB_NAME}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+
+x-minio: &minio-env
+  
+
 services:
   db:
     image: postgres:15
@@ -6,9 +17,7 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASS}
-      POSTGRES_DB: ${DB_NAME}
+      <<: *db-env
       TZ: America/Argentina/Buenos_Aires
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -48,17 +57,13 @@ services:
     command: /app/api-entrypoint.sh
     environment:
       # DB
-      DB_DRIVER: postgresql+psycopg2
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
+      <<: *db-env
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
       MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_BUCKET_NAME: "${MINIO_BUCKET_NAME}"
       # JWT & Cookies
       SECRET_KEY: ${SECRET_KEY}
       JWT_ALGORITHM: HS256
@@ -105,19 +110,16 @@ services:
     command: /app/worker-entrypoint.sh
     environment:
       # DB
-      DB_DRIVER: postgresql+psycopg2
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
+      
+      <<: *db-env
       # MinIO
       MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_BUCKET_NAME: "${MINIO_BUCKET_NAME}"
       # Security
-      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      SECRET_KEY: ${SECRET_KEY}
       YOLO_CONFIG_DIR: /tmp/Ultralytics
       MPLCONFIGDIR: /tmp/matplotlib
     depends_on:

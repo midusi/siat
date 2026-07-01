@@ -32,6 +32,7 @@ python -m seeds
 
 # Initialize MinIO bucket
 echo "Initializing MinIO bucket..."
+echo $MINIO_BUCKET_NAME
 python -m init_bucket
 
 # Return to root and start the server
