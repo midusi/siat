@@ -1,6 +1,7 @@
 import subprocess
 import os
 from pathlib import Path
+import tempfile
 import time
 import httpx
 
@@ -60,10 +61,13 @@ def process_next_task() -> bool:
         task_to_process = ready_to_process_tasks[0]
         
         # Paso 3: Descargar el video del bucket
+        base_folder = Path(tempfile.gettempdir())/"siat_temp"
+        base_folder.mkdir(parents=True, exist_ok=True)  
+        print(f"Procesando tarea en carpeta temporal: {base_folder}")
         typer.echo(f"Descargando video desde el bucket: {task_to_process.video.url}")
         video_key = task_to_process.video.url  # Asumiendo que url contiene la key del bucket
-        local_video_path = f"temp_video_{task_to_process.id}.mp4"
-        bucket_service.download(local_video_path, video_key)
+        local_video_path = base_folder/f"temp_video_{task_to_process.id}.mp4"
+        bucket_service.download(str(local_video_path), video_key)
         input_video_path = local_video_path
         
         # Paso 4: Obtener los polígonos de entrada y salida
@@ -102,8 +106,8 @@ def process_next_task() -> bool:
             typer.echo(f"Comando: {' '.join(command)}")
             
             # Archivos temporales para capturar salida
-            stdout_path = f"stdout_{task_to_process.id}.txt"
-            stderr_path = f"stderr_{task_to_process.id}.txt"
+            stdout_path = base_folder/ f"stdout_{task_to_process.id}.txt"
+            stderr_path =  base_folder/ f"stderr_{task_to_process.id}.txt"
             
             cancelled = False
             stdout = ""

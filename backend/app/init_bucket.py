@@ -2,7 +2,7 @@
 Script de inicialización del bucket de MinIO.
 Crea el bucket 'MINIO_BUCKET_NAME' si no existe y aplica la política de lectura pública.
 """
-from services.bucket_service import BucketService
+from app.services.bucket_service import BucketService
 
 def init_bucket():
     """Inicializa el bucket de MinIO si no existe."""

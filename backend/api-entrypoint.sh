@@ -4,15 +4,17 @@ set -e
 echo "=== Backend API Initialization ==="
 
 # Change to app directory for alembic
-cd /app/app
+cd /app
 
 echo "Waiting for database to be ready..."
 # Retry logic for database connection
 MAX_RETRIES=30
 RETRY_COUNT=0
-until alembic upgrade head 2>/dev/null || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+PYTHONPATH=/app
+alembic -c app/alembic.ini upgrade head
+until alembic -c app/alembic.ini upgrade head 2>/dev/null || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
   RETRY_COUNT=$((RETRY_COUNT+1))
-  echo "Database not ready yet (attempt $RETRY_COUNT/$MAX_RETRIES), waiting..."
+  echo "Database not ready (attempt $RETRY_COUNT/$MAX_RETRIES), waiting..."
   sleep 2
 done
 
@@ -22,21 +24,21 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
 fi
 
 echo "Running database migrations..."
-alembic upgrade head
+alembic -c app/alembic.ini upgrade head
 
 echo "Migrations completed successfully!"
 
 # Run seeds to initialize database data
 echo "Running database seeds..."
-python -m seeds
+python -m app.seeds
 
 # Initialize MinIO bucket
 echo "Initializing MinIO bucket..."
 echo $MINIO_BUCKET_NAME
-python -m init_bucket
+python -m app.init_bucket
 
 # Return to root and start the server
-cd /app
+#cd /app
 
 echo "Starting FastAPI server..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

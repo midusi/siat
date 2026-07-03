@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 
-// Proxy to MinIO (or S3-compatible) running locally on 127.0.0.1:9000
+// Proxy to MinIO (or S3-compatible) 
 const BUCKET_BASE = env.MINIO_URL;
 
 async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
@@ -11,7 +11,7 @@ async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
 
     // Forward request headers (including Range for video streaming)
     const headers = new Headers(request.headers);
-
+    console.log("Proxying response to ", targetUrl);
     // For GET/HEAD, no body. For others, stream the body directly
     const body = ['GET', 'HEAD'].includes(request.method)
         ? undefined

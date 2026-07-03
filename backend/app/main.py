@@ -1,10 +1,10 @@
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
-from app.routers import all_routers  # tu lista de routers ya definidos
+from .routers import all_routers  # tu lista de routers ya definidos
 from pydantic import BaseModel
 import logging
-from app.config import LOG_LEVEL, LOG_FILE
+from .config import LOG_LEVEL, LOG_FILE
 import os
 
 # Definición del modelo para los polígonos (ejemplo)

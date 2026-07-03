@@ -1,7 +1,7 @@
 import csv
 import pandas as pd
 from sqlmodel import Session, select
-from models import (
+from app.models import (
     # VehicleType,
     # InferenceStatus,
     TaskStatus,
@@ -9,11 +9,11 @@ from models import (
     District,
     Locality,
 )
-from db import engine
+from app.db import engine
 
 # Added imports
 from sqlalchemy.orm import Session as SASession
-from models import User
+from app.models import User
 from passlib.context import CryptContext
 
 
@@ -70,7 +70,7 @@ def seed_static_data():
 
 def seed_admin_user():
     # Use SQLAlchemy session directly bound to same engine URL
-    from db import SessionLocal
+    from app.db import SessionLocal
     db: SASession = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == "admin").first()
@@ -93,7 +93,7 @@ def seed_admin_user():
         db.close()
 
 
-def seed_provinces_districts_localities(csv_path="indec_datos.csv"):
+def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
     df = pd.read_csv(csv_path, sep=";")
     total_inserted = 0
 

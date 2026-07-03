@@ -1,9 +1,9 @@
 import os
 from datetime import timedelta
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
 # Carga variables de entorno desde backend/.env si existe
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+#load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # JWT
 SECRET_KEY: str = os.getenv("SECRET_KEY", "change-this-secret")
@@ -57,3 +57,18 @@ def access_token_timedelta() -> timedelta:
 
 def refresh_token_timedelta() -> timedelta:
     return timedelta(days=REFRESH_TOKEN_EXPIRES_DAYS)
+
+
+
+def db_url(path=None):
+    variables = ["POSTGRES_DRIVER", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB"]
+    values = [os.getenv(var) for var in variables]
+    
+    for var,val in zip(variables, values):
+        if val is None:
+            raise ValueError(f"Database configuration is incomplete. variable {var} is missing. Please check your environment variables. Found\n: {dict(zip(variables, values))}")
+    
+    db_driver, db_user, db_pass, db_host, db_port, db_name = values
+    
+    DATABASE_URL = f"{db_driver}://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    return DATABASE_URL
