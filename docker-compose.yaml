@@ -2,11 +2,16 @@ x-db: &db-env
   POSTGRES_DRIVER: postgresql+psycopg2
   POSTGRES_USER: ${DB_USER}
   POSTGRES_PASSWORD: ${DB_PASS}
-  POSTGRES_DB: ${DB_NAME}
+  POSTGRES_NAME: ${DB_NAME}
   POSTGRES_HOST: db
   POSTGRES_PORT: 5432
 
 x-minio: &minio-env
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  MINIO_ENDPOINT_URL: http://minio:9000
+  MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
+  MINIO_BUCKET_NAME: "${MINIO_BUCKET_NAME}"
   
 
 services:
@@ -36,8 +41,7 @@ services:
       - "9000:9000"
       - "9001:9001" # Puerto para la consola de MinIO (UI)
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+        <<: *minio-env
     volumes:
       - minio_data:/data # Monta un volumen para persistir los datos
     command: server /data --console-address ":9001"
@@ -56,14 +60,9 @@ services:
     container_name: siat_backend_api
     command: /app/api-entrypoint.sh
     environment:
-      # DB
-      <<: *db-env
-      # MinIO
-      MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-      MINIO_BUCKET_NAME: "${MINIO_BUCKET_NAME}"
+      # DB & MINIO
+      <<: [*minio-env, *db-env]
+      
       # JWT & Cookies
       SECRET_KEY: ${SECRET_KEY}
       JWT_ALGORITHM: HS256
@@ -110,14 +109,7 @@ services:
     command: /app/worker-entrypoint.sh
     environment:
       # DB
-      
-      <<: *db-env
-      # MinIO
-      MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-      MINIO_BUCKET_NAME: "${MINIO_BUCKET_NAME}"
+      <<: [*minio-env, *db-env]
       # Security
       SECRET_KEY: ${SECRET_KEY}
       YOLO_CONFIG_DIR: /tmp/Ultralytics

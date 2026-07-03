@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 
 // Proxy to MinIO (or S3-compatible) running locally on 127.0.0.1:9000
-const BUCKET_BASE = env.MINIO_URL || 'http://127.0.0.1:9000';
+const BUCKET_BASE = env.MINIO_URL;
 
 async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
     const { request, params } = event;
