@@ -88,11 +88,25 @@ def process_next_task() -> bool:
             
             # Paso 5: Construir y ejecutar el comando
             path_modelo = Path(__file__).resolve().parent.parent / "modelo"
+            
+            # Buscar el archivo del modelo (.pt)
+            model_file = path_modelo / "model-v5.pt"
+            if not model_file.exists():
+                model_file = path_modelo / "model-v2.pt"
+            if not model_file.exists():
+                pt_files = list(path_modelo.glob("*.pt"))
+                if pt_files:
+                    model_file = pt_files[0]
+                else:
+                    typer.echo(f"ERROR: No se encontró ningún archivo de modelo (.pt) en {path_modelo}")
+                    typer.echo("Por favor coloca 'model-v5.pt' o 'model-v2.pt' en backend/app/modelo/")
+                    raise FileNotFoundError(f"No se encontró el archivo del modelo YOLO (.pt) en {path_modelo}")
+
             command = [
                 "python",
                 str(path_modelo / "process.py"),
                 f"--input_video_path={input_video_path}",
-                f"--model_path={path_modelo / 'model-v5.pt'}",
+                f"--model_path={model_file}",
                 f"--tracker_path={path_modelo / 'botsort_custom.yaml'}",
                 f"--polygons_in={polygons_in}",
                 f"--polygons_out={polygons_out}",
