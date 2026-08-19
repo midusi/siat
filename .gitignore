@@ -137,6 +137,3 @@ videos/
 minio/
 *.mp4
 .vscode
-
-# Modelos PyTorch
-*.pt
