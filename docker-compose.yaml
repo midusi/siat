@@ -93,7 +93,6 @@ services:
     networks:
       - siat_network
     volumes:
-      - ./backend:/app
       - model_weights:/app/app/modelo
 
   backend-worker:
@@ -119,7 +118,6 @@ services:
     networks:
       - siat_network
     volumes:
-      - ./backend:/app
       - model_weights:/app/app/modelo
     # deploy:
     #   resources:
