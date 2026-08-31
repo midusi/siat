@@ -1,8 +1,9 @@
 # Local development only.
-# Publishes container ports on the host so services are reachable at localhost.
+# Publishes container ports on the host and mounts the source tree into the
+# backend containers for live reload.
 # Docker Compose loads this file automatically on `docker compose up`.
 # Deployment platforms that pass an explicit `-f docker-compose.yaml` ignore it,
-# so nothing is exposed on the host in production.
+# so production runs the built image untouched.
 services:
   db:
     ports:
@@ -16,6 +17,12 @@ services:
   backend-api:
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app
+
+  backend-worker:
+    volumes:
+      - ./backend:/app
 
   frontend:
     ports:
