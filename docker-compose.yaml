@@ -45,8 +45,6 @@ services:
     image: postgres:15
     container_name: postgres_db
     restart: always
-    ports:
-      - "5432:5432"
     environment:
       <<: *db-env
       TZ: America/Argentina/Buenos_Aires
@@ -63,9 +61,6 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio-server
-    ports:
-      - "9000:9000"
-      - "9001:9001" # Puerto para la consola de MinIO (UI)
     environment:
         <<: *minio-env
     volumes:
@@ -90,8 +85,6 @@ services:
       <<: [*minio-env, *db-env, *jwt-env]
       # JWT & Cookies
       
-    ports:
-      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -147,8 +140,6 @@ services:
       ORIGIN: "${ORIGIN}"
       BODY_SIZE_LIMIT: 104857600 # 100MB in bytes for video uploads
 
-    ports:
-      - "3000:3000"
     networks:
       - siat_network
     depends_on:

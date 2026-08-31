@@ -1,0 +1,22 @@
+# Local development only.
+# Publishes container ports on the host so services are reachable at localhost.
+# Docker Compose loads this file automatically on `docker compose up`.
+# Deployment platforms that pass an explicit `-f docker-compose.yaml` ignore it,
+# so nothing is exposed on the host in production.
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001" # MinIO console (UI)
+
+  backend-api:
+    ports:
+      - "8000:8000"
+
+  frontend:
+    ports:
+      - "3000:3000"
