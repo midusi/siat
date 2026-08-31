@@ -544,7 +544,26 @@ class ObjectTracker:
 
         act_frame = 0  # Contador de frames leídos (no de frames procesados por YOLO)
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
+
+        # Escritor del video de salida. Se abre solo si se pidió una ruta.
+        writer = None
         if output_video_path:
+            os.makedirs(os.path.dirname(output_video_path) or ".", exist_ok=True)
+            # FPS de respaldo: algunos contenedores reportan 0 y VideoWriter lo rechaza.
+            out_fps = fps if fps and fps > 0 else 25
+            writer = cv2.VideoWriter(
+                output_video_path,
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                out_fps,
+                (w, h),
+            )
+            if not writer.isOpened():
+                writer.release()
+                cap.release()
+                raise RuntimeError(
+                    f"No se pudo abrir el escritor de video en {output_video_path} "
+                    f"(codec mp4v, {w}x{h} @ {out_fps} FPS)."
+                )
             print(f"Guardando video procesado en: {output_video_path}")
         else:
             print(
@@ -592,6 +611,9 @@ class ObjectTracker:
             masked_for_output = self._apply_exclusion_mask(frame)
             processed_frame = self.process_frame(masked_for_output, results, act_frame)
 
+            if writer is not None:
+                writer.write(processed_frame)
+
             # Mostrar el frame procesado SOLO SI display_video es True
             if display_video:
                 cv2.imshow("Video", processed_frame)
@@ -613,6 +635,8 @@ class ObjectTracker:
 
         # Liberar recursos
         cap.release()
+        if writer is not None:
+            writer.release()
 
         # Destruir ventanas SOLO si se mostraron
         if display_video:
