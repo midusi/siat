@@ -211,6 +211,13 @@ def process_next_task() -> bool:
             typer.echo("Subiendo el archivo data_obj_history.json al bucket...")
             with open(local_data_obj_history_path, 'rb') as f:
                 bucket_service.upload(f, object_name=bucket_data_obj_history_path, content_type="application/json")
+
+            # Subir el video procesado al bucket
+            typer.echo("Subiendo el video procesado al bucket...")
+            _, input_ext = os.path.splitext(input_video_path)
+            local_processed_video_path = os.path.join(output_dir, f"processed{input_ext}")
+            with open(local_processed_video_path, 'rb') as f:
+                bucket_service.upload(f, object_name=bucket_video_path, content_type="video/mp4")
             
             # Paso 7: Crear el objeto de inferencia
             inference = inference_service.create_inference(
