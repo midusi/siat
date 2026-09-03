@@ -92,8 +92,6 @@ services:
         condition: service_healthy
     networks:
       - siat_network
-    volumes:
-      - model_weights:/app/app/modelo
 
   backend-worker:
     build:
@@ -117,8 +115,6 @@ services:
         condition: service_started
     networks:
       - siat_network
-    volumes:
-      - model_weights:/app/app/modelo
     # deploy:
     #   resources:
     #     reservations:
@@ -152,6 +148,5 @@ networks:
 volumes:
   postgres_data:
   minio_data:
-  model_weights:
 
 
