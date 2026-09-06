@@ -115,6 +115,13 @@ def process_next_task() -> bool:
                 "--names_polygons_out", str(names_polygons_out),
                 "--no_display",
             ]
+
+            # Resolución de inferencia. Sin definir, process.py usa la nativa del
+            # video. Permite bajarla para acelerar el procesamiento a costa de
+            # detectar menos objetos.
+            imgsz = os.getenv("YOLO_IMGSZ")
+            if imgsz:
+                command.append(f"--imgsz={imgsz}")
             
             typer.echo("Ejecutando el script `process.py`...")
             typer.echo(f"Comando: {' '.join(command)}")
