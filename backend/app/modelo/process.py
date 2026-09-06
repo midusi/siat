@@ -515,7 +515,7 @@ class ObjectTracker:
         
         return frame
 
-    def run(self, video_path: str, max_frames: Optional[int] = None, output_video_path: Optional[str] = None, display_video: bool = True):
+    def run(self, video_path: str, max_frames: Optional[int] = None, output_video_path: Optional[str] = None, display_video: bool = True, imgsz: Optional[int] = None):
         """
         Ejecuta el proceso de seguimiento de objetos en un video.
 
@@ -544,8 +544,15 @@ class ObjectTracker:
         # Si el número de frames es incierto o 0, deshabilitar el progreso en porcentaje
         progress_enabled = frames_to_process > 0 and frames_to_process != float('inf')
 
+        # Resolución de inferencia. Sin este valor Ultralytics usa 640, que sobre
+        # material aéreo reduce los vehículos hasta hacerlos indetectables: el
+        # seguimiento no llega a confirmar ninguna identidad y el historial queda
+        # vacío. Por defecto se infiere a la resolución nativa del video.
+        infer_imgsz = imgsz if imgsz else max(32, ((max(w, h) + 31) // 32) * 32)
+
         act_frame = 0  # Contador de frames leídos (no de frames procesados por YOLO)
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
+        print(f"Resolución de inferencia: {infer_imgsz}")
 
         # Escritor del video de salida. Se abre solo si se pidió una ruta.
         # Los frames se encodean con ffmpeg en lugar de cv2.VideoWriter: el ffmpeg
@@ -608,7 +615,7 @@ class ObjectTracker:
             # Realizar seguimiento de objetos
             # Aplicar máscara de exclusión antes de inferir
             masked_for_inference = self._apply_exclusion_mask(frame)
-            results = self.model.track(masked_for_inference, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, tracker=self.tracker_path)
+            results = self.model.track(masked_for_inference, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, imgsz=infer_imgsz, tracker=self.tracker_path)
             
             # Procesar el frame (dibujar zonas, BBs, etc.)
             # También aplicar la máscara al frame de salida para que "no se vea"
@@ -707,6 +714,10 @@ if __name__ == "__main__":
              '"video.mp4" y el modelo es "model.pt", la salida será "video_dir/model/video_processed.mp4".'
     )
     parser.add_argument(
+        '--imgsz', type=int, default=None,
+        help='Resolución de inferencia. Por defecto, la resolución nativa del video.'
+    )
+    parser.add_argument(
         '--max_frames', '-f', type=int, default=None,
         help='Número máximo de frames a procesar. Por defecto, se procesa el video completo.'
     )
@@ -752,7 +763,8 @@ if __name__ == "__main__":
         video_path=args.input_video_path, 
         max_frames=args.max_frames, 
         output_video_path=final_output_video_path,
-        display_video=show_video_window
+        display_video=show_video_window,
+        imgsz=args.imgsz
     )
 
     # 5. Guardar resultados en archivos JSON
