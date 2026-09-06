@@ -10,6 +10,8 @@ import sys # Importar sys para manejar la salida en la terminal
 import argparse # Importar argparse para manejar argumentos de línea de comandos
 import ast # Para convertir strings a listas/arrays
 import os # Importar os para operaciones de sistema de archivos (rutas)
+import subprocess # Para encodear el video de salida con ffmpeg
+import imageio_ffmpeg # Provee un ffmpeg estático con soporte de H.264
 import json
 
 # Importar torch para la detección de GPU
@@ -546,24 +548,26 @@ class ObjectTracker:
         print(f"Procesando video: {video_path} (dimensiones: {w}x{h}, FPS: {fps})")
 
         # Escritor del video de salida. Se abre solo si se pidió una ruta.
+        # Los frames se encodean con ffmpeg en lugar de cv2.VideoWriter: el ffmpeg
+        # embebido en opencv-python no incluye libx264, y sin H.264 el video no se
+        # reproduce en los navegadores, que es donde se revisa el resultado.
         writer = None
         if output_video_path:
             os.makedirs(os.path.dirname(output_video_path) or ".", exist_ok=True)
-            # FPS de respaldo: algunos contenedores reportan 0 y VideoWriter lo rechaza.
+            # FPS de respaldo: algunos contenedores reportan 0.
             out_fps = fps if fps and fps > 0 else 25
-            writer = cv2.VideoWriter(
-                output_video_path,
-                cv2.VideoWriter_fourcc(*"mp4v"),
-                out_fps,
-                (w, h),
+            writer = subprocess.Popen(
+                [
+                    imageio_ffmpeg.get_ffmpeg_exe(),
+                    "-y", "-loglevel", "error",
+                    "-f", "rawvideo", "-pix_fmt", "bgr24",
+                    "-s", f"{w}x{h}", "-r", str(out_fps), "-i", "-",
+                    "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    output_video_path,
+                ],
+                stdin=subprocess.PIPE,
             )
-            if not writer.isOpened():
-                writer.release()
-                cap.release()
-                raise RuntimeError(
-                    f"No se pudo abrir el escritor de video en {output_video_path} "
-                    f"(codec mp4v, {w}x{h} @ {out_fps} FPS)."
-                )
             print(f"Guardando video procesado en: {output_video_path}")
         else:
             print(
@@ -612,7 +616,12 @@ class ObjectTracker:
             processed_frame = self.process_frame(masked_for_output, results, act_frame)
 
             if writer is not None:
-                writer.write(processed_frame)
+                if processed_frame.shape[:2] != (h, w):
+                    raise RuntimeError(
+                        f"El frame {act_frame} mide {processed_frame.shape[1]}x{processed_frame.shape[0]}, "
+                        f"se esperaba {w}x{h}."
+                    )
+                writer.stdin.write(processed_frame.tobytes())
 
             # Mostrar el frame procesado SOLO SI display_video es True
             if display_video:
@@ -636,7 +645,11 @@ class ObjectTracker:
         # Liberar recursos
         cap.release()
         if writer is not None:
-            writer.release()
+            writer.stdin.close()
+            if writer.wait() != 0:
+                raise RuntimeError(
+                    f"ffmpeg terminó con código {writer.returncode} al escribir {output_video_path}."
+                )
 
         # Destruir ventanas SOLO si se mostraron
         if display_video:
