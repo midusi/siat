@@ -33,6 +33,18 @@
 	let districts = $state<{ id: number; name: string }[]>([]);
 	let provinces = $state<{ id: number; name: string }[]>([]);
 
+	type Option = { id: number; name: string };
+
+	const toItems = (arr: Option[]) =>
+		arr
+			.slice()
+			.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+			.map((x) => ({ value: x.id, label: x.name }));
+
+	const provinceItems = $derived(toItems(provinces));
+	const districtItems = $derived(toItems(districts));
+	const localityItems = $derived(toItems(localities));
+
 	async function fetchProvinces() {
 		try {
 			const response = await fetch(`${BACKEND_URL}/province`, { credentials: 'include' });
@@ -178,6 +190,11 @@
 	});
 
 	$effect(() => {
+		console.log('provinceItems', $state.snapshot(provinceItems));
+		console.log('districtItems', $state.snapshot(districtItems));
+	});
+
+	$effect(() => {
 		isFormValid = TaskFormSchema.safeParse(form).success;
 		// console.log(isFormValid, form);
 	});
@@ -262,7 +279,7 @@
 					<GlassSelect
 						id="provincia"
 						ariaLabel="Provincia"
-						items={provinces.map((p) => ({ value: p.id, label: p.name }))}
+						items={provinceItems}
 						value={form.selectedProvince}
 						onChange={(v) => {
 							form.selectedProvince = Number(v);
@@ -281,7 +298,7 @@
 					<GlassSelect
 						id="distrito"
 						ariaLabel="Distrito"
-						items={districts.map((d) => ({ value: d.id, label: d.name }))}
+						items={districtItems}
 						value={form.selectedDistrict}
 						onChange={(v) => {
 							form.selectedDistrict = v === null ? null : Number(v);
@@ -299,7 +316,7 @@
 					<GlassSelect
 						id="localidad"
 						ariaLabel="Localidad"
-						items={localities.map((l) => ({ value: l.id, label: l.name }))}
+						items={localityItems}
 						value={form.selectedLocality}
 						onChange={(v) => {
 							form.selectedLocality = v === null ? null : Number(v);

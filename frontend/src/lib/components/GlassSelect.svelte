@@ -71,16 +71,50 @@
 		open = false;
 	}
 
-	function selectIndex(idx: number) {
+	function normalizeText(text: string): string {
+		return text
+			.normalize('NFD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.toLocaleLowerCase('es');
+	}
+
+	function highlightFirstMatch(key: string): void {
+		const normalizedKey = normalizeText(key);
+		const startIndex = selectedIndex >= 0 ? selectedIndex + 1 : 0;
+		const matches = items
+			.map((item: Item, index: number) => ({ item, index }))
+			.filter(({ item }: { item: Item; index: number }) =>
+				normalizeText(item.label).startsWith(normalizedKey)
+			)
+			.map(({ index }: { item: Item; index: number }) => index);
+		const matchIndex =
+			matches.find((index: number) => index >= startIndex) ?? matches[0] ?? -1;
+
+		if (matchIndex >= 0) {
+			highlighted = matchIndex;
+			selectIndex(matchIndex, false);
+			requestAnimationFrame(scrollHighlightedIntoView);
+		}
+	}
+
+	function selectIndex(idx: number, closeMenu = true) {
 		const it = items[idx] as Item | undefined;
 		if (!it) return;
 		value = it.value;
 		if (typeof onChange === 'function') onChange(value);
-		close();
+		if (closeMenu) close();
 	}
 
 	function onKeydown(e: KeyboardEvent) {
 		if (disabled) return;
+		if (e.key.length === 1 && /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(e.key)) {
+			e.preventDefault();
+			if (!open) {
+				toggle();
+			}
+			highlightFirstMatch(e.key);
+			return;
+		}
 		if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) {
 			e.preventDefault();
 			toggle();
@@ -124,13 +158,23 @@
 		updatePosition();
 	}
 
+	function onDocumentPointerDown(event: PointerEvent): void {
+		if (!open) return;
+		const target = event.target as Node | null;
+		if (target && !buttonEl?.contains(target) && !menuEl?.contains(target)) {
+			close();
+		}
+	}
+
 	onMount(() => {
 		if (!browser) return;
 		window.addEventListener('scroll', onWindow, true);
 		window.addEventListener('resize', onWindow, true);
+		document.addEventListener('pointerdown', onDocumentPointerDown, true);
 		return () => {
 			window.removeEventListener('scroll', onWindow, true);
 			window.removeEventListener('resize', onWindow, true);
+			document.removeEventListener('pointerdown', onDocumentPointerDown, true);
 		};
 	});
 </script>
