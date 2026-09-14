@@ -14,6 +14,12 @@ El sistema está completamente dockerizado y consiste en 5 servicios:
 
 Todos los servicios se comunican a través de la red interna `siat_network`.
 
+El object store corre como contenedor en el mismo compose (`pgsty/minio`, fork de MinIO). La imagen oficial `minio/minio` dejó de publicarse en Docker Hub.
+
+### Pendiente: desacoplar storage y persistencia
+
+Hace falta un puerto/adapter para object storage y para la DB, de modo que cambiar MinIO o Postgres no toque el dominio. Hoy `BucketService` ya habla S3 (boto3); SQLAlchemy está repartido en el backend. No es bloqueante para el deploy: el volumen y las APIs actuales se mantienen.
+
 ## Inicio Rápido con Docker
 
 ### Prerrequisitos

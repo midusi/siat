@@ -59,7 +59,10 @@ services:
       - siat_network
 
   minio:
-    image: minio/minio:latest
+    # minio/minio ya no se publica en Docker Hub (source-only / repo archivado).
+    # pgsty/minio (Silo) es drop-in: misma API S3, mismas env MINIO_*, mismo /data.
+    # Pendiente: desacoplar storage/DB con puertos (ver README).
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: minio-server
     environment:
         <<: *minio-env

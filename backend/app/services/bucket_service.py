@@ -8,6 +8,7 @@ import io
 import os
 
 class BucketService:
+    # Pendiente: extraer un puerto de object storage (S3) para no atar el dominio a MinIO.
     def __init__(self):
         # URL interna para operaciones del backend
         self.endpoint_url = os.getenv('MINIO_ENDPOINT_URL')
