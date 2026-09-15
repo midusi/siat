@@ -5,6 +5,7 @@ from .routers import all_routers  # tu lista de routers ya definidos
 from pydantic import BaseModel
 import logging
 from .config import LOG_LEVEL, LOG_FILE
+from .api.exception_handlers import register_exception_handlers
 import os
 
 # Definición del modelo para los polígonos (ejemplo)
@@ -53,6 +54,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+register_exception_handlers(app)
 
 # Incluir routers
 app.include_router(poligonos_router)

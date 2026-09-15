@@ -6,13 +6,13 @@ import numpy as np
 from fastapi import UploadFile
 from sqlalchemy.orm import sessionmaker
 from pymediainfo import MediaInfo
-from app.services.bucket_service import BucketService
+from app.ports.storage import ObjectStorage
 
 
 class VideoService:
-    def __init__(self, db: sessionmaker, bucket_service: BucketService):
+    def __init__(self, db: sessionmaker, storage: ObjectStorage):
         self.db = db
-        self.bucket_service = bucket_service
+        self.storage = storage
 
     def get_metadata_video(self, file: UploadFile) -> dict:
         try:
@@ -57,7 +57,7 @@ class VideoService:
             
             try:
                 # 1. Descargar el video desde MinIO al archivo temporal
-                self.bucket_service.download(temp_path, video_key)
+                self.storage.download(temp_path, video_key)
             except Exception as e:
                 # Si falla la descarga, lanza un error claro.
                 raise ValueError(f"Could not download video '{video_key}' from bucket: {e}")
@@ -85,7 +85,7 @@ class VideoService:
         """Obtiene un generador de bytes para transmitir el video desde el bucket.
         Devuelve (generator, content_type, content_length)
         """
-        return self.bucket_service.stream_object(video_key)
+        return self.storage.stream_object(video_key)
     
     def get_metadata_from_s3(self, object_key: str) -> dict:
         """
@@ -97,7 +97,7 @@ class VideoService:
         
         try:
             # Descargar video desde MinIO
-            self.bucket_service.download(tmp_path, object_key)
+            self.storage.download(tmp_path, object_key)
             
             # Extraer metadata
             media_info = MediaInfo.parse(tmp_path)

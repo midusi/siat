@@ -54,13 +54,16 @@ class PasswordResetService:
             return None
 
     def request_reset(self, identifier: str) -> Optional[str]:
-        # identifier can be username or email
+        token, _email = self.request_reset_with_email(identifier)
+        return token
+
+    def request_reset_with_email(self, identifier: str) -> tuple[Optional[str], Optional[str]]:
         user = user_crud.find_one_by_fields(self.db, username=identifier) or user_crud.find_one_by_fields(self.db, email=identifier)
         if not user:
-            return None
+            return None, None
         iat = datetime.now(UTC)
         token = self._make_token(user.id, user.email, iat)
-        return token
+        return token, user.email
 
     def perform_reset(self, token: str, new_password: str, confirm_password: str) -> bool:
         data = self._parse_and_verify(token)

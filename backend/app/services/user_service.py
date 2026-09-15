@@ -1,5 +1,4 @@
 # services/user_service.py
-from fastapi import HTTPException, status
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 import logging
@@ -15,6 +14,7 @@ from app.schemas.user import (
 )
 from app.models import User
 from app.config import BCRYPT_ROUNDS
+from app.domain.exceptions import NotFoundError, ValidationError, InternalError
 
 logger = logging.getLogger("audit")
 
@@ -27,7 +27,7 @@ class UserService:
         self._validate_passwords(user_request.password, user_request.confirm_password)
         existing_user = self.user_exists(user_request.username, user_request.email)
         if existing_user:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya existe un usuario con el mismo email o username")
+            raise ValidationError("Ya existe un usuario con el mismo email o username")
         
         try:
             user_obj = User(
@@ -46,15 +46,15 @@ class UserService:
             return UserResponse.model_validate(user_obj)
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
 
     def update(self, user_id: int, req: UserUpdateRequest) -> UserResponse:
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         # Email/username uniqueness check when email changes
         if req.email and req.email != user.email and self.user_exists(user.username, req.email):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email ya en uso")
+            raise ValidationError("Email ya en uso")
         old_role = user.role
         # Apply changes
         if req.email is not None:
@@ -78,7 +78,7 @@ class UserService:
     def disable(self, user_id: int) -> UserResponse:
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         user.active = False
         self.db.commit()
         self.db.refresh(user)
@@ -88,7 +88,7 @@ class UserService:
     def enable(self, user_id: int) -> UserResponse:
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         user.active = True
         self.db.commit()
         self.db.refresh(user)
@@ -98,23 +98,23 @@ class UserService:
     def delete(self, user_id: int) -> None:
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         try:
             self.db.delete(user)
             self.db.commit()
             logger.info(f"user deleted id={user.id} username={user.username}")
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
 
     # Admin: reset password
     def admin_reset_password(self, user_id: int, req: AdminResetPasswordRequest) -> None:
         if req.new_password != req.confirm_password:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Las contraseñas no coinciden")
+            raise ValidationError("Las contraseñas no coinciden")
         self._validate_policy(req.new_password)
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         user.password = self.hash_password(req.new_password)
         # invalidar tokens
         user.refresh_token_version = (user.refresh_token_version or 0) + 1
@@ -124,13 +124,13 @@ class UserService:
     # Self-service: change password
     def change_password(self, user_id: int, req: ChangePasswordRequest) -> None:
         if req.new_password != req.confirm_password:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Las contraseñas no coinciden")
+            raise ValidationError("Las contraseñas no coinciden")
         self._validate_policy(req.new_password)
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         if not self.verify_password(req.current_password, user.password):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contraseña actual incorrecta")
+            raise ValidationError("Contraseña actual incorrecta")
         user.password = self.hash_password(req.new_password)
         # invalidar tokens
         user.refresh_token_version = (user.refresh_token_version or 0) + 1
@@ -141,9 +141,9 @@ class UserService:
     def update_profile(self, user_id: int, req: UserProfileUpdateRequest) -> UserResponse:
         user = user_crud.find_one_by_fields(self.db, id=user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise NotFoundError("Usuario no encontrado")
         if req.email and req.email != user.email and self.user_exists(user.username, req.email):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email ya en uso")
+            raise ValidationError("Email ya en uso")
         if req.first_name is not None:
             user.first_name = req.first_name
         if req.last_name is not None:
@@ -165,12 +165,12 @@ class UserService:
 
     def _validate_passwords(self, p1: str, p2: str):
         if p1 != p2:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Las contraseñas no coinciden")
+            raise ValidationError("Las contraseñas no coinciden")
         self._validate_policy(p1)
 
     def _validate_policy(self, pwd: str):
         # Política básica: longitud mínima 6, al menos una letra y un número (ajustable)
         if len(pwd) < 6:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La contraseña debe tener al menos 6 caracteres")
+            raise ValidationError("La contraseña debe tener al menos 6 caracteres")
         if not any(c.isalpha() for c in pwd) or not any(c.isdigit() for c in pwd):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La contraseña debe incluir letras y números")
+            raise ValidationError("La contraseña debe incluir letras y números")
