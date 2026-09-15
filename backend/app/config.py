@@ -1,5 +1,6 @@
 import os
 from datetime import timedelta
+from sqlalchemy.engine import URL
 #from dotenv import load_dotenv
 
 # Carga variables de entorno desde backend/.env si existe
@@ -64,15 +65,28 @@ def refresh_token_timedelta() -> timedelta:
 
 
 
-def db_url(path=None):
+def db_url() -> URL:
     variables = ["POSTGRES_DRIVER", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB"]
     values = [os.getenv(var) for var in variables]
     
     for var,val in zip(variables, values):
-        if val is None:
-            raise ValueError(f"Database configuration is incomplete. variable {var} is missing. Please check your environment variables. Found\n: {dict(zip(variables, values))}")
+        if not val:
+            configured = {
+                name: "<set>" if value else "<missing>"
+                for name, value in zip(variables, values)
+            }
+            raise ValueError(
+                f"Database configuration is incomplete. Variable {var} is missing. "
+                f"Configured variables: {configured}"
+            )
     
     db_driver, db_user, db_pass, db_host, db_port, db_name = values
     
-    DATABASE_URL = f"{db_driver}://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-    return DATABASE_URL
+    return URL.create(
+        drivername=db_driver,
+        username=db_user,
+        password=db_pass,
+        host=db_host,
+        port=int(db_port),
+        database=db_name,
+    )

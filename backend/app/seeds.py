@@ -1,6 +1,6 @@
-import csv
 import pandas as pd
-from sqlmodel import Session, select
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from app.models import (
     # VehicleType,
     # InferenceStatus,
@@ -11,8 +11,6 @@ from app.models import (
 )
 from app.db import engine
 
-# Added imports
-from sqlalchemy.orm import Session as SASession
 from app.models import User
 from passlib.context import CryptContext
 
@@ -45,7 +43,7 @@ def seed_static_data():
         #     print("🔁 InferenceStatus ya tiene datos.")
 
         # TASK STATUS
-        if not session.exec(select(TaskStatus)).first():
+        if session.scalars(select(TaskStatus)).first() is None:
             session.add_all([
                 TaskStatus(id="VIDEO_UPLOADED", name="Video subido"),
                 TaskStatus(id="CONFIGURED", name="Configurada"),
@@ -58,7 +56,9 @@ def seed_static_data():
             print("✔ TaskStatus cargado.")
         else:
             # Ensure ARCHIVED exists even if statuses were already seeded
-            archived = session.exec(select(TaskStatus).where(TaskStatus.id == "ARCHIVED")).first()
+            archived = session.scalars(
+                select(TaskStatus).where(TaskStatus.id == "ARCHIVED")
+            ).first()
             if not archived:
                 session.add(TaskStatus(id="ARCHIVED", name="Archivada"))
                 print("✔ TaskStatus ARCHIVED agregado.")
@@ -69,9 +69,8 @@ def seed_static_data():
 
 
 def seed_admin_user():
-    # Use SQLAlchemy session directly bound to same engine URL
     from app.db import SessionLocal
-    db: SASession = SessionLocal()
+    db = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == "admin").first()
         if not admin:
@@ -98,14 +97,14 @@ def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
     total_inserted = 0
 
     with Session(engine) as session:
-        if not session.exec(select(Province)).first():
+        if session.scalars(select(Province)).first() is None:
             for _, row in df.iterrows():
                 locality_name = row["locality_name"].strip()
                 district_name = row["district_name"].strip()
                 province_name = row["province_name"].strip()
 
                 # Insertar provincia si no existe
-                province = session.exec(
+                province = session.scalars(
                     select(Province).where(Province.name == province_name)
                 ).first()
                 if not province:
@@ -115,7 +114,7 @@ def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
                     session.refresh(province)
 
                 # Insertar distrito si no existe
-                district = session.exec(
+                district = session.scalars(
                     select(District).where(
                         (District.name == district_name) &
                         (District.province_id == province.id)
@@ -128,7 +127,7 @@ def seed_provinces_districts_localities(csv_path="app/indec_datos.csv"):
                     session.refresh(district)
 
                 # Insertar localidad si no existe
-                locality = session.exec(
+                locality = session.scalars(
                     select(Locality).where(
                         (Locality.name == locality_name) &
                         (Locality.district_id == district.id)
