@@ -1,6 +1,6 @@
 # services/task_service.py
 import os
-from fastapi import HTTPException, status, UploadFile
+from fastapi import UploadFile
 from sqlalchemy.orm import sessionmaker
 import hashlib
 import time
@@ -21,19 +21,24 @@ from app.schemas.locality import LocalityWDistrictResponse
 from app.schemas.district import DistrictResponse
 from app.models import Task, Video, TaskStatusHistory, Road, Inference
 from app.enums.road_direction import RoadDirection
-from app.services.bucket_service import BucketService
+from app.ports.storage import ObjectStorage
+from app.adapters.storage.minio import MinioObjectStorage
+from app.services.task_upload import presign_upload as build_presigned_upload
 
 ARCHIVED_STATUS_ID = "ARCHIVED"
 
 class TaskService:
-    def __init__(self, db: sessionmaker):
+    def __init__(self, db: sessionmaker, storage: ObjectStorage | None = None):
         self.db = db
+        self.storage = storage or MinioObjectStorage.from_env()
         self.locality_service = LocalityService(db)
-        self.bucket_service = BucketService()
-        self.video_service = VideoService(db, self.bucket_service)
+        self.video_service = VideoService(db, self.storage)
         self.task_status_service = TaskStatusService(db)
         self.task_status_history_service = TaskStatusHistoryService(db)
         self.road_service = RoadService(db)
+
+    def presign_upload(self, filename: str, content_type: str, expiration: int = 3600) -> dict:
+        return build_presigned_upload(self.storage, filename, content_type, expiration)
         
     def _to_response(self, task: Task) -> TaskResponse:
         history = task.status_history[0]
@@ -75,12 +80,12 @@ class TaskService:
         """
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         if not task.video:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
+            raise ValidationError("La tarea no tiene video asociado")
 
         # Base pública para acceder a MinIO. Usar ruta relativa y un proxy en el front (/bucket)
-        public_base = f"/bucket/{BucketService.BUCKET_NAME}"
+        public_base = f"/bucket/{self.storage.bucket_name}"
 
         # Elegir siempre el video original para reproducir
         video_key = task.video.url
@@ -167,10 +172,10 @@ class TaskService:
         locality = self.locality_service.get_by_id(locality_id)
         
         if not locality:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La localidad no existe")
+            raise ValidationError("La localidad no existe")
         
         if not file.filename.endswith(('.mp4', '.avi', '.mov')):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de video no soportado")
+            raise ValidationError("Formato de video no soportado")
         
         data_video = self.video_service.get_metadata_video(file)
         
@@ -208,10 +213,10 @@ class TaskService:
             
             # Upload video to bucket
             try:
-                self.bucket_service.upload(file, video_obj.url)
+                self.storage.upload(file, video_obj.url)
                 
             except Exception as e:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+                raise InternalError(str(e))
             
             # Create task status history
             task_status_pending = self.task_status_service.get_by_id("VIDEO_UPLOADED")
@@ -227,7 +232,7 @@ class TaskService:
 
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
         finally:
             # Close the file after processing
             file.file.close()
@@ -249,7 +254,7 @@ class TaskService:
         # Validar localidad
         locality = self.locality_service.get_by_id(locality_id)
         if not locality:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La localidad no existe")
+            raise ValidationError("La localidad no existe")
         
         # Extraer metadata del nombre del archivo
         filename = os.path.basename(object_key)
@@ -258,16 +263,18 @@ class TaskService:
         
         # Validar formato
         if video_extension.lower() not in ('mp4', 'avi', 'mov'):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de video no soportado")
+            raise ValidationError("Formato de video no soportado")
+
+        if not self.storage.exists(object_key):
+            raise ValidationError(
+                "El archivo no fue encontrado en el almacenamiento. Asegúrese de subirlo primero usando la URL presignada."
+            )
         
         # Obtener metadata del video desde MinIO
         try:
             data_video = self.video_service.get_metadata_from_s3(object_key)
         except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                detail=f"No se pudo obtener metadata del video: {str(e)}"
-            )
+            raise InternalError(f"No se pudo obtener metadata del video: {str(e)}")
         
         # Crear objetos en base de datos
         try:
@@ -295,21 +302,11 @@ class TaskService:
             # Mover archivo a ubicación final en MinIO
             final_key = f"task/{task_obj.id}/{filename}"
             try:
-                # Copiar archivo a nueva ubicación
-                self.bucket_service.s3_client.copy_object(
-                    Bucket=self.bucket_service.BUCKET_NAME,
-                    CopySource={'Bucket': self.bucket_service.BUCKET_NAME, 'Key': object_key},
-                    Key=final_key
-                )
-                # Eliminar archivo temporal
-                self.bucket_service.delete_object(object_key)
-                # Actualizar URL del video
+                self.storage.copy(object_key, final_key)
+                self.storage.delete_object(object_key)
                 video_obj.url = final_key
             except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Error al mover archivo en MinIO: {str(e)}"
-                )
+                raise InternalError(f"Error al mover archivo en MinIO: {str(e)}")
             
             # Crear historial de estado
             task_status_pending = self.task_status_service.get_by_id("VIDEO_UPLOADED")
@@ -329,10 +326,10 @@ class TaskService:
             self.db.rollback()
             # Intentar limpiar archivo temporal en caso de error
             try:
-                self.bucket_service.delete_object(object_key)
+                self.storage.delete_object(object_key)
             except:
                 pass
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
         
 
     
@@ -341,13 +338,13 @@ class TaskService:
         # Buscar la tarea por ID
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
 
         # Verificar que la tarea se pueda configurar
         # Solo se puede configurar si el estado actual es VIDEO_UPLOADED o CONFIGURED
         current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
         if current_task_status_history.status_id not in ["VIDEO_UPLOADED", "CONFIGURED"]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no se puede configurar")
+            raise ValidationError("La tarea no se puede configurar")
 
         # Eliminar las vías actuales asociadas al video de la tarea (incluye excluidas)
         currents_road = self.road_service.find_by_fields(video_id=task.video_id)
@@ -428,16 +425,16 @@ class TaskService:
             return task
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
     
     def get_first_frame(self, task_id: int):
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         
         video = task.video
         if not video:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+            raise NotFoundError("El video de la tarea no existe")
         
         # Ahora video.url es la key del objeto, que es lo que espera get_frame
         # Y el valor de retorno ya es una cadena Base64, lista para ser enviada como JSON.
@@ -447,11 +444,11 @@ class TaskService:
     def get_video_dimensions(self, task_id: int) -> dict:
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         
         video = task.video
         if not video:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+            raise NotFoundError("El video de la tarea no existe")
         
         return {
             "width": video.width,
@@ -463,17 +460,17 @@ class TaskService:
         # Verificar que la tarea exista
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
 
         # Verificar que el video de la tarea exista
         video = task.video
         if not video:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+            raise NotFoundError("El video de la tarea no existe")
 
         # Verificar que la tarea esté configurada para procesar el video
         current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
         if current_task_status_history.status_id != "CONFIGURED":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no está configurada para procesar el video")
+            raise ValidationError("La tarea no está configurada para procesar el video")
         
         # -----------------
         # HARCODEADO:
@@ -582,8 +579,8 @@ class TaskService:
         transition_undetermined_path = f"{video_folder}/{transition_undetermined_filename}"
 
         # Upload files to the bucket
-        self.bucket_service.upload(transition_counts_str, transition_counts_path)
-        self.bucket_service.upload(transition_undetermined_str, transition_undetermined_path)
+        self.storage.upload(transition_counts_str, transition_counts_path)
+        self.storage.upload(transition_undetermined_str, transition_undetermined_path)
 
         # Store URLs in the inference object
         inference = Inference(
@@ -620,14 +617,14 @@ class TaskService:
         # Validaciones básicas
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         video = task.video
         if not video:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El video de la tarea no existe")
+            raise NotFoundError("El video de la tarea no existe")
 
         inference = task.inference
         if not inference:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no tiene inferencia")
+            raise NotFoundError("La tarea no tiene inferencia")
 
         rutas = updated_data.rutas or {}
         indeterminados = updated_data.indeterminados or {}
@@ -657,7 +654,7 @@ class TaskService:
 
                 history_str = json.dumps(data_obj_history, ensure_ascii=False, separators=(",", ":"))
                 # Subir (sobrescribe si existe)
-                self.bucket_service.upload(history_str, history_key, content_type="application/json")
+                self.storage.upload(history_str, history_key, content_type="application/json")
                 # Guardar/actualizar key en la BD
                 inference.url_data_obj_history = history_key
 
@@ -668,20 +665,17 @@ class TaskService:
                 "rutasUrl": inference.transition_counts,
                 "indeterminadosUrl": inference.transition_undetermined,
                 "determinadosUrl": inference.transition_determined,
-                "historyUrl": f"/bucket/{BucketService.BUCKET_NAME}/{inference.url_data_obj_history}" if inference.url_data_obj_history else None,
+                "historyUrl": self.storage.public_url(inference.url_data_obj_history) if inference.url_data_obj_history else None,
             }
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"No se pudo actualizar los datos: {str(e)}",
-            )
+            raise InternalError(f"No se pudo actualizar los datos: {str(e)}")
 
     # NEW: Archive and unarchive tasks by changing current TaskStatusHistory
     def archive(self, task_id: int) -> TaskResponse:
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         current = self.task_status_history_service.get_current_by_task(task.id)
         if current.status_id == ARCHIVED_STATUS_ID:
             return self._to_response(task)
@@ -690,7 +684,7 @@ class TaskService:
             self.db.flush()
             archived_status = self.task_status_service.get_by_id(ARCHIVED_STATUS_ID)
             if not archived_status:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estado ARCHIVED no existe")
+                raise ValidationError("Estado ARCHIVED no existe")
             new_hist = TaskStatusHistory(
                 from_date=datetime.datetime.now(),
                 task_id=task.id,
@@ -702,12 +696,12 @@ class TaskService:
             return self._to_response(task)
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
 
     def unarchive(self, task_id: int) -> TaskResponse:
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         current = self.task_status_history_service.get_current_by_task(task.id)
         if current.status_id != ARCHIVED_STATUS_ID:
             return self._to_response(task)
@@ -722,7 +716,7 @@ class TaskService:
             target_status_id = prev_non_archived.status_id if prev_non_archived else "REVIEW"
             target_status = self.task_status_service.get_by_id(target_status_id)
             if not target_status:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estado de destino inválido")
+                raise ValidationError("Estado de destino inválido")
             current.to_date = datetime.datetime.now()
             self.db.flush()
             new_hist = TaskStatusHistory(
@@ -735,7 +729,7 @@ class TaskService:
             return self._to_response(task)
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))
 
     def delete(self, task_id: int) -> None:
         """Elimina una tarea y todos sus datos relacionados, además de su carpeta en el bucket.
@@ -749,10 +743,10 @@ class TaskService:
         """
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         video = task.video
         if not video:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
+            raise ValidationError("La tarea no tiene video asociado")
 
         # Prefijo en el bucket, p.ej. "task/123"
         prefix = os.path.dirname(video.url)
@@ -773,13 +767,13 @@ class TaskService:
 
             # 6) Eliminar objetos del bucket bajo el prefijo
             # Se hace antes del commit; si falla, se hace rollback de la BD para mantener consistencia
-            self.bucket_service.delete_prefix(prefix)
+            self.storage.delete_prefix(prefix)
 
             # 7) Confirmar transacción en BD
             self.db.commit()
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No se pudo eliminar la tarea: {str(e)}")
+            raise InternalError(f"No se pudo eliminar la tarea: {str(e)}")
 
     def get_video_download_info(self, task_id: int) -> tuple[str, str]:
         """Retorna (video_key, filename_sugerido) para descarga.
@@ -787,9 +781,9 @@ class TaskService:
         """
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         if not task.video:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La tarea no tiene video asociado")
+            raise ValidationError("La tarea no tiene video asociado")
         if task.inference and task.inference.url_video_processed:
             key = task.inference.url_video_processed
             base_name = f"{task.video.name}_processed.{task.video.format}"
@@ -807,7 +801,7 @@ class TaskService:
     def update_task_status(self, task_id: int, status_id: str, commit: bool = False):
         task = task_crud.find_one_by_fields(self.db, id=task_id)
         if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La tarea no existe")
+            raise NotFoundError("La tarea no existe")
         try:
             current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
             current_task_status_history.to_date = datetime.datetime.now()
@@ -824,4 +818,4 @@ class TaskService:
                 self.db.commit()
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise InternalError(str(e))

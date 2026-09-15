@@ -22,17 +22,20 @@ def get_province_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.province_service import ProvinceService
     return ProvinceService(db)
 
+def get_object_storage():
+    from app.adapters.storage.minio import MinioObjectStorage
+    return MinioObjectStorage.from_env()
+
 def get_task_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.task_service import TaskService
-    return TaskService(db)
+    return TaskService(db, get_object_storage())
 
 def get_video_service(db: sessionmaker = Depends(get_db_session)):
     from app.services.video_service import VideoService
-    return VideoService(db)
+    return VideoService(db, get_object_storage())
 
 def get_bucket_service():
-    from app.services.bucket_service import BucketService
-    return BucketService()
+    return get_object_storage()
 
 def get_password_reset_service(db: Session = Depends(get_db_session)):
     from app.services.password_reset_service import PasswordResetService
