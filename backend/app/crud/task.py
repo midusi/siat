@@ -1,12 +1,12 @@
 # crud/task.py
-from sqlalchemy.orm import sessionmaker, joinedload
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql import and_, or_, asc
 from app.models import Task, TaskStatusHistory, Locality
 import datetime
 
 ARCHIVED_STATUS_ID = "ARCHIVED"
 
-def find_all(db: sessionmaker) -> list[Task]:
+def find_all(db: Session) -> list[Task]:
     now = datetime.datetime.now()
     tasks = (
         db.query(Task)
@@ -26,7 +26,7 @@ def find_all(db: sessionmaker) -> list[Task]:
     )
     return tasks
 
-def find_all_active(db: sessionmaker) -> list[Task]:
+def find_all_active(db: Session) -> list[Task]:
     """Return tasks whose current status is not ARCHIVED."""
     now = datetime.datetime.now()
     tasks = (
@@ -48,7 +48,7 @@ def find_all_active(db: sessionmaker) -> list[Task]:
     )
     return tasks
 
-def find_all_archived(db: sessionmaker) -> list[Task]:
+def find_all_archived(db: Session) -> list[Task]:
     """Return tasks whose current status is ARCHIVED."""
     now = datetime.datetime.now()
     tasks = (
@@ -70,7 +70,7 @@ def find_all_archived(db: sessionmaker) -> list[Task]:
     )
     return tasks
 
-def find_by_fields(db: sessionmaker, status_id: str = None) -> list[Task] | None:
+def find_by_fields(db: Session, status_id: str = None) -> list[Task] | None:
     now = datetime.datetime.now()
     
     # Construir las condiciones de filtro dinámicamente
@@ -95,11 +95,11 @@ def find_by_fields(db: sessionmaker, status_id: str = None) -> list[Task] | None
         .all()
     )
 
-def find_one_by_fields(db: sessionmaker, **filters) -> list[Task] | None:
+def find_one_by_fields(db: Session, **filters) -> list[Task] | None:
     return db.query(Task).filter_by(**filters).first()
 
 
-def find_all_by_status(db: sessionmaker, status_id: str) -> list[Task]:
+def find_all_by_status(db: Session, status_id: str) -> list[Task]:
     now = datetime.datetime.now()
     tasks = (
         db.query(Task)
