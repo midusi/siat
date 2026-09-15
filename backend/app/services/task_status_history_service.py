@@ -1,12 +1,10 @@
-# services/task_status_history_service.py
-from sqlalchemy.orm import sessionmaker
+from app.domain.entities import TaskStatusHistory
+from app.ports.uow import UnitOfWork
 
-from app.crud import task_status_history as task_status_history_crud
-from app.models import TaskStatus
 
 class TaskStatusHistoryService:
-    def __init__(self, db: sessionmaker):
-        self.db = db
-        
-    def get_current_by_task(self, task_id: int) -> TaskStatus:
-        return task_status_history_crud.get_current_by_task(self.db, task_id)
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+
+    def get_current_by_task(self, task_id: int) -> TaskStatusHistory | None:
+        return self.uow.status_histories.get_current(task_id)

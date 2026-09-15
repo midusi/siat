@@ -2,11 +2,11 @@
 Script de inicialización del bucket de object storage.
 Crea el bucket 'MINIO_BUCKET_NAME' si no existe y aplica la política de lectura pública.
 """
-from app.adapters.storage.minio import MinioObjectStorage
+from app.adapters.wiring import build_object_storage
 
 def init_bucket():
     """Inicializa el bucket si no existe."""
-    storage = MinioObjectStorage.from_env()
+    storage = build_object_storage()
     try:
         print(f"🔧 Inicializando bucket '{storage.bucket_name}'...")
         storage.ensure_bucket()

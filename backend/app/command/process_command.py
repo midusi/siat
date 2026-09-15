@@ -9,7 +9,7 @@ import typer
 
 from app.services.dependencies import get_task_service, get_bucket_service, get_inference_service
 from app.db import get_db_session
-from app.crud import task as task_crud
+from app.adapters.wiring import build_uow
 
 def notify_backend(task_id: int, status: str):
     try:
@@ -40,10 +40,11 @@ def process_next_task() -> bool:
     # Obtener la sesión de base de datos y los servicios
     db_gen = get_db_session()
     db = next(db_gen)
+    uow = build_uow(db)
     
     try:
-        task_service = get_task_service(db)
-        inference_service = get_inference_service(db)
+        task_service = get_task_service(uow)
+        inference_service = get_inference_service(uow)
         bucket_service = get_bucket_service()
         
         # Paso1: Verificar si hay alguna tarea en estado "processing"
@@ -141,8 +142,8 @@ def process_next_task() -> bool:
                 # Monitorear el proceso y la existencia de la tarea
                 while process.poll() is None:
                     # Refrescar sesión y verificar si la tarea sigue existiendo
-                    db.expire_all()
-                    task_check = task_crud.find_one_by_fields(db, id=task_to_process.id)
+                    uow.expire_all()
+                    task_check = uow.tasks.get(task_to_process.id)
                     
                     if not task_check:
                         typer.echo(f"ALERTA: La tarea {task_to_process.id} ha sido eliminada. Cancelando ejecución...")
@@ -239,7 +240,7 @@ def process_next_task() -> bool:
             # Paso 8: Cambiar estado de tarea a PROCESSED
             task_service.update_task_status(task_to_process.id, "PROCESSED")
             
-            db.commit()
+            uow.commit()
             notify_backend(task_to_process.id, "PROCESSED")
             
             # Mostrar resultados
@@ -251,7 +252,7 @@ def process_next_task() -> bool:
             
         except subprocess.CalledProcessError as e:
             # Hacer rollback de toda la transacción
-            db.rollback()
+            uow.rollback()
             typer.echo("Error en el procesamiento. Haciendo rollback de todos los cambios...")
             
             # Revertir estado a READY_TO_PROCESS
@@ -271,7 +272,7 @@ def process_next_task() -> bool:
             
         except FileNotFoundError as e:
             # Hacer rollback de toda la transacción
-            db.rollback()
+            uow.rollback()
             typer.echo("Error: Archivo no encontrado. Haciendo rollback de todos los cambios...")
             
             # Revertir estado a READY_TO_PROCESS
@@ -286,7 +287,7 @@ def process_next_task() -> bool:
             return False
         except Exception as e:
             # Cualquier otro error
-            db.rollback()
+            uow.rollback()
             typer.echo(f"Error inesperado: {str(e)}. Haciendo rollback de todos los cambios...")
             
             # Revertir estado a READY_TO_PROCESS

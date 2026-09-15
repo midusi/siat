@@ -41,6 +41,10 @@ AUTH_LOGIN_LOCK_MINUTES: int = int(os.getenv("AUTH_LOGIN_LOCK_MINUTES", "5"))
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE: str | None = os.getenv("LOG_FILE") or None
 
+# Adapters: sql|memory  y  minio|memory (wiring las lee al instanciar)
+PERSISTENCE_ADAPTER: str = os.getenv("PERSISTENCE_ADAPTER", "sql")
+STORAGE_ADAPTER: str = os.getenv("STORAGE_ADAPTER", "minio")
+
 # Password reset / email verification
 RESET_TOKEN_EXPIRES_MIN: int = int(os.getenv("RESET_TOKEN_EXPIRES_MIN", "30"))
 EMAIL_FROM: str | None = os.getenv("EMAIL_FROM") or None

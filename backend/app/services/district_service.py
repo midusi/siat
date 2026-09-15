@@ -1,20 +1,11 @@
-# services/district_service.py
-from fastapi import Depends
-from app.db import get_db_session
-from sqlalchemy.orm import sessionmaker
-
-from app.models import District
-from app.crud.district import *
-from app.crud import district as district_crud
 from app.schemas.district import DistrictResponse
+from app.ports.uow import UnitOfWork
+
 
 class DistrictService:
-    def __init__(self, db: sessionmaker):
-        self.db = db
-        
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+
     def get_list(self, **params) -> list[DistrictResponse]:
-        districts = district_crud.find_by_fields(self.db, **params)
-        return [
-            DistrictResponse.model_validate(d) for d in districts
-        ]
-    
+        districts = self.uow.districts.list_all(**params)
+        return [DistrictResponse.model_validate(d) for d in districts]
