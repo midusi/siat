@@ -12,7 +12,11 @@ x-minio: &minio-env
   MINIO_ENDPOINT_URL: http://minio:9000
   MINIO_PUBLIC_URL: "${MINIO_PUBLIC_URL}"
   MINIO_BUCKET_NAME: "${MINIO_BUCKET_NAME}"
-  
+
+x-adapters: &adapter-env
+  PERSISTENCE_ADAPTER: "${PERSISTENCE_ADAPTER:-sql}"
+  STORAGE_ADAPTER: "${STORAGE_ADAPTER:-minio}"
+ 
 
 x-jwtcookies: &jwt-env
   SECRET_KEY: ${SECRET_KEY}
@@ -85,7 +89,7 @@ services:
     command: /app/api-entrypoint.sh
     environment:
       # DB & MINIO
-      <<: [*minio-env, *db-env, *jwt-env]
+      <<: [*minio-env, *db-env, *jwt-env, *adapter-env]
       # JWT & Cookies
       
     depends_on:
@@ -104,7 +108,7 @@ services:
     command: /app/worker-entrypoint.sh
     environment:
       # DB
-      <<: [*minio-env, *db-env]
+      <<: [*minio-env, *db-env, *adapter-env]
       # Security
       SECRET_KEY: ${SECRET_KEY}
       YOLO_CONFIG_DIR: /tmp/Ultralytics

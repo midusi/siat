@@ -1,29 +1,26 @@
-# services/district_service.py
-from sqlalchemy.orm import sessionmaker
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import logging
 
-from app.crud.district import *
-from app.crud import user as user_crud
 from app.auth.jwt import create_access_token, create_refresh_token
 from app.config import BCRYPT_ROUNDS, AUTH_LOGIN_FAIL_LIMIT, AUTH_LOGIN_LOCK_MINUTES
 from app.observability.metrics import inc_login_attempt, inc_login_failed, inc_login_success
+from app.ports.uow import UnitOfWork
 
 logger = logging.getLogger("auth")
 
-# In-memory trackers for failed attempts and locks (simple, per-process)
 _failed_attempts: dict[str, dict] = {}
-# structure: { key: { count: int, locked_until: datetime | None, last_fail: datetime } }
+
 
 def _attempt_key(username: str) -> str:
     return username.lower().strip()
 
+
 class AuthService:
-    def __init__(self, db: sessionmaker):
-        self.db = db
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
-        
+
     def _is_locked(self, username: str) -> bool:
         k = _attempt_key(username)
         info = _failed_attempts.get(k)
@@ -33,7 +30,6 @@ class AuthService:
         if until and datetime.utcnow() < until:
             return True
         if until and datetime.utcnow() >= until:
-            # lock expired -> reset
             _failed_attempts.pop(k, None)
             return False
         return False
@@ -59,7 +55,7 @@ class AuthService:
             logger.warning(f"login attempt while locked user={username}")
             inc_login_failed()
             return None
-        user = user_crud.find_one_by_fields(self.db, username=username)
+        user = self.uow.users.get_by_username(username)
         if not user or not user.active:
             self._register_failure(username)
             logger.info(f"login failed user={username} reason=not_found_or_inactive")
@@ -70,13 +66,12 @@ class AuthService:
             logger.info(f"login failed user={username} reason=bad_password")
             inc_login_failed()
             return None
-        # transparent rehash if needed (e.g., rounds changed)
         if self.pwd_context.needs_update(user.password):
             try:
                 user.password = self.pwd_context.hash(password)
-                self.db.commit()
+                self.uow.commit()
             except Exception:
-                self.db.rollback()
+                self.uow.rollback()
         self._register_success(username)
         ver = user.refresh_token_version or 0
         payload = {"id": user.id, "username": user.username, "role": user.role}
@@ -87,16 +82,15 @@ class AuthService:
         return access, refresh, user
 
     def refresh(self, user_id: int, token_version: int):
-        user = user_crud.find_one_by_fields(self.db, id=user_id)
+        user = self.uow.users.get(user_id)
         if not user or not user.active:
             return None
         current_ver = user.refresh_token_version or 0
         if current_ver != (token_version or 0):
             return None
-        # rotate
         user.refresh_token_version = current_ver + 1
-        self.db.commit()
-        self.db.refresh(user)
+        self.uow.commit()
+        self.uow.refresh(user)
         ver = user.refresh_token_version
         payload = {"id": user.id, "username": user.username, "role": user.role}
         access = create_access_token(payload, ver)
@@ -105,11 +99,11 @@ class AuthService:
         return access, refresh, user
 
     def logout(self, user_id: int):
-        user = user_crud.find_one_by_fields(self.db, id=user_id)
+        user = self.uow.users.get(user_id)
         if not user:
             return False
         user.refresh_token_version = (user.refresh_token_version or 0) + 1
-        self.db.commit()
+        self.uow.commit()
         logger.info(f"logout user_id={user_id}")
         return True
 

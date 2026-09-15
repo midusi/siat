@@ -5,18 +5,17 @@ import base64
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy.orm import Session
-
 from app.config import SECRET_KEY, RESET_TOKEN_EXPIRES_MIN
-from app.crud import user as user_crud
+from app.ports.uow import UnitOfWork
 from app.services.user_service import UserService
 
 UTC = timezone.utc
 
+
 class PasswordResetService:
-    def __init__(self, db: Session):
-        self.db = db
-        self.user_service = UserService(db)
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+        self.user_service = UserService(uow)
 
     def _sign(self, data: str) -> str:
         digest = hmac.new(SECRET_KEY.encode(), data.encode(), hashlib.sha256).digest()
@@ -34,7 +33,7 @@ class PasswordResetService:
             parts: dict[str, str] = {}
             for kv in raw.split("&"):
                 if "=" in kv:
-                    k, v = kv.split("=", 1)  # only split on first '='
+                    k, v = kv.split("=", 1)
                     parts[k] = v
             uid = int(parts.get("uid", "0"))
             email = parts.get("email")
@@ -58,7 +57,7 @@ class PasswordResetService:
         return token
 
     def request_reset_with_email(self, identifier: str) -> tuple[Optional[str], Optional[str]]:
-        user = user_crud.find_one_by_fields(self.db, username=identifier) or user_crud.find_one_by_fields(self.db, email=identifier)
+        user = self.uow.users.find_by_identifier(identifier)
         if not user:
             return None, None
         iat = datetime.now(UTC)
@@ -69,13 +68,11 @@ class PasswordResetService:
         data = self._parse_and_verify(token)
         if not data:
             return False
-        user = user_crud.find_one_by_fields(self.db, id=data["uid"])
+        user = self.uow.users.get(data["uid"])
         if not user or user.email != data["email"]:
             return False
-        # Use underlying password policy and hashing
         self.user_service._validate_passwords(new_password, confirm_password)
         user.password = self.user_service.hash_password(new_password)
-        # Invalidate existing sessions
         user.refresh_token_version = (user.refresh_token_version or 0) + 1
-        self.db.commit()
+        self.uow.commit()
         return True

@@ -1,49 +1,68 @@
 from fastapi import Depends
+from sqlalchemy.orm import Session
+
 from app.db import get_db_session
-from sqlalchemy.orm import sessionmaker, Session
+from app.adapters.wiring import build_object_storage, build_uow
+from app.ports.uow import UnitOfWork
+from app.ports.storage import ObjectStorage
 
-def get_auth_service(db: sessionmaker = Depends(get_db_session)):
+
+def get_uow(db: Session = Depends(get_db_session)) -> UnitOfWork:
+    return build_uow(db)
+
+
+def get_object_storage() -> ObjectStorage:
+    return build_object_storage()
+
+
+def get_auth_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.auth_service import AuthService
-    return AuthService(db)
+    return AuthService(uow)
 
-def get_user_service(db: sessionmaker = Depends(get_db_session)):
+
+def get_user_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.user_service import UserService
-    return UserService(db)
+    return UserService(uow)
 
-def get_locality_service(db: sessionmaker = Depends(get_db_session)):
+
+def get_locality_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.locality_service import LocalityService
-    return LocalityService(db)
+    return LocalityService(uow)
 
-def get_district_service(db: sessionmaker = Depends(get_db_session)):
+
+def get_district_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.district_service import DistrictService
-    return DistrictService(db)
+    return DistrictService(uow)
 
-def get_province_service(db: sessionmaker = Depends(get_db_session)):
+
+def get_province_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.province_service import ProvinceService
-    return ProvinceService(db)
+    return ProvinceService(uow)
 
-def get_object_storage():
-    from app.adapters.storage.minio import MinioObjectStorage
-    return MinioObjectStorage.from_env()
 
-def get_task_service(db: sessionmaker = Depends(get_db_session)):
+def get_task_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.task_service import TaskService
-    return TaskService(db, get_object_storage())
+    return TaskService(uow, get_object_storage())
 
-def get_video_service(db: sessionmaker = Depends(get_db_session)):
+
+def get_video_service():
     from app.services.video_service import VideoService
-    return VideoService(db, get_object_storage())
+    return VideoService(get_object_storage())
+
 
 def get_bucket_service():
     return get_object_storage()
 
-def get_password_reset_service(db: Session = Depends(get_db_session)):
-    from app.services.password_reset_service import PasswordResetService
-    return PasswordResetService(db)
 
-def get_inference_service(db: sessionmaker = Depends(get_db_session)):
+def get_password_reset_service(uow: UnitOfWork = Depends(get_uow)):
+    from app.services.password_reset_service import PasswordResetService
+    return PasswordResetService(uow)
+
+
+def get_inference_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.inference_service import InferenceService
-    return InferenceService(db)
+    return InferenceService(uow)
+
 
 def get_email_service():
     from app.services.email_service import EmailService

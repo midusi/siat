@@ -1,12 +1,10 @@
-# services/task_status_service.py
-from sqlalchemy.orm import sessionmaker
+from app.domain.entities import TaskStatus
+from app.ports.uow import UnitOfWork
 
-from app.crud import task_status as task_status_crud
-from app.models import TaskStatus
 
 class TaskStatusService:
-    def __init__(self, db: sessionmaker):
-        self.db = db
-        
-    def get_by_id(self, task_status_id: str) -> TaskStatus:
-        return task_status_crud.find_one_by_fields(self.db, id=task_status_id)
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+
+    def get_by_id(self, task_status_id: str) -> TaskStatus | None:
+        return self.uow.task_statuses.get(task_status_id)
