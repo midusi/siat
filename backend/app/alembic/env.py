@@ -13,7 +13,7 @@ alembic_config = context.config
 if DATABASE_URL:
     alembic_config.set_main_option(
         "sqlalchemy.url",
-        DATABASE_URL.render_as_string(hide_password=False),
+        DATABASE_URL.render_as_string(hide_password=False).replace("%", "%%"),
     )
 
 # Logs
