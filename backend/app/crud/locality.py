@@ -12,10 +12,3 @@ def get_localities_by_district(db: Session, district_id: int) -> list[Locality]:
 def find_one_by_fields(db: Session, **filters) -> Locality:
     return db.query(Locality).filter_by(**filters).first()
 
-def get_localities_by_district2(db: Session, district_id: int) -> list:
-    return (
-        db.query(Locality)
-        .options(joinedload(Locality.district))
-        .filter(Locality.district_id == district_id)
-        .all()
-    )

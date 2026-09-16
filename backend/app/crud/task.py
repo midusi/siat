@@ -6,26 +6,6 @@ import datetime
 
 ARCHIVED_STATUS_ID = "ARCHIVED"
 
-def find_all(db: Session) -> list[Task]:
-    now = datetime.datetime.now()
-    tasks = (
-        db.query(Task)
-        .join(Task.status_history)
-        .filter(
-            and_(
-                TaskStatusHistory.from_date <= now,
-                or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
-            )
-        )
-        .options(
-            joinedload(Task.locality).joinedload(Locality.district),
-            joinedload(Task.video),
-            joinedload(Task.status_history).joinedload(TaskStatusHistory.task_status),
-        )
-        .all()
-    )
-    return tasks
-
 def find_all_active(db: Session) -> list[Task]:
     """Return tasks whose current status is not ARCHIVED."""
     now = datetime.datetime.now()
@@ -94,23 +74,3 @@ def find_by_fields(db: Session, status_id: str = None) -> list[Task] | None:
         )
         .all()
     )
-
-def find_one_by_fields(db: Session, **filters) -> list[Task] | None:
-    return db.query(Task).filter_by(**filters).first()
-
-
-def find_all_by_status(db: Session, status_id: str) -> list[Task]:
-    now = datetime.datetime.now()
-    tasks = (
-        db.query(Task)
-        .join(Task.status_history)
-        .filter(
-            and_(
-                TaskStatusHistory.status_id == status_id,
-                TaskStatusHistory.from_date <= now,
-                or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
-            )
-        )
-        .all()
-    )
-    return tasks
