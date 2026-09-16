@@ -2,5 +2,5 @@
 from sqlalchemy.orm import Session
 from app.models import District
 
-def find_by_fields(db: Session, **filters) -> list[District] | None:
+def find_by_fields(db: Session, **filters) -> list[District]:
     return db.query(District).filter_by(**filters).all()

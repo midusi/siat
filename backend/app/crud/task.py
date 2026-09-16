@@ -50,7 +50,7 @@ def find_all_archived(db: Session) -> list[Task]:
     )
     return tasks
 
-def find_by_fields(db: Session, status_id: str = None) -> list[Task] | None:
+def find_by_fields(db: Session, status_id: str = None) -> list[Task]:
     now = datetime.datetime.now()
     
     # Construir las condiciones de filtro dinámicamente
