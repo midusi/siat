@@ -39,11 +39,11 @@ class _Repo:
 
 class SqlUserRepository(_Repo):
     def get(self, user_id: int) -> User | None:
-        orm = user_crud.find_one_by_fields(self.session, id=user_id)
+        orm = user_crud.get(self.session, user_id)
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def get_by_username(self, username: str) -> User | None:
-        orm = user_crud.find_one_by_fields(self.session, username=username)
+        orm = user_crud.get_by_username(self.session, username)
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def get_by_username_or_email(self, username: str, email: str) -> User | None:
@@ -51,8 +51,8 @@ class SqlUserRepository(_Repo):
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def find_by_identifier(self, identifier: str) -> User | None:
-        orm = user_crud.find_one_by_fields(self.session, username=identifier) or user_crud.find_one_by_fields(
-            self.session, email=identifier
+        orm = user_crud.get_by_username(self.session, identifier) or user_crud.get_by_email(
+            self.session, identifier
         )
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
@@ -206,7 +206,7 @@ class SqlTaskStatusRepository(_Repo):
 
 class SqlStatusHistoryRepository(_Repo):
     def get_current(self, task_id: int) -> TaskStatusHistory | None:
-        orm = history_crud.get_current_by_task(self.session, task_id)
+        orm = history_crud.get_current(self.session, task_id)
         return self._track(map_.history_to_domain(orm), orm) if orm else None
 
     def previous_non_archived(self, task_id: int, archived_id: str) -> TaskStatusHistory | None:

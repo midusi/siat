@@ -4,7 +4,7 @@ from sqlalchemy.sql import and_, or_
 import datetime
 from app.models import TaskStatusHistory
 
-def get_current_by_task(db: Session, task_id: int) -> TaskStatusHistory | None:
+def get_current(db: Session, task_id: int) -> TaskStatusHistory | None:
     now = datetime.datetime.now()
     return db.query(TaskStatusHistory).filter(
         TaskStatusHistory.task_id == task_id,
