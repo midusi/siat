@@ -6,17 +6,23 @@ import datetime
 
 ARCHIVED_STATUS_ID = "ARCHIVED"
 
-def find_all_active(db: Session) -> list[Task]:
+def _valid_at(now: datetime.datetime):
+    return and_(
+        TaskStatusHistory.from_date <= now,
+        or_(
+            TaskStatusHistory.to_date.is_(None),
+            TaskStatusHistory.to_date > now,
+        ),
+    )
+
+def list_active(db: Session) -> list[Task]:
     """Return tasks whose current status is not ARCHIVED."""
     now = datetime.datetime.now()
     tasks = (
         db.query(Task)
         .join(Task.status_history)
         .filter(
-            and_(
-                TaskStatusHistory.from_date <= now,
-                or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
-            ),
+            _valid_at(now),
         )
         .filter(TaskStatusHistory.status_id != ARCHIVED_STATUS_ID)
         .options(
@@ -28,17 +34,14 @@ def find_all_active(db: Session) -> list[Task]:
     )
     return tasks
 
-def find_all_archived(db: Session) -> list[Task]:
+def list_archived(db: Session) -> list[Task]:
     """Return tasks whose current status is ARCHIVED."""
     now = datetime.datetime.now()
     tasks = (
         db.query(Task)
         .join(Task.status_history)
         .filter(
-            and_(
-                TaskStatusHistory.from_date <= now,
-                or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
-            ),
+            _valid_at(now),
             TaskStatusHistory.status_id == ARCHIVED_STATUS_ID,
         )
         .options(
@@ -50,14 +53,11 @@ def find_all_archived(db: Session) -> list[Task]:
     )
     return tasks
 
-def find_by_fields(db: Session, status_id: str = None) -> list[Task]:
+def list_by_status(db: Session, status_id: str) -> list[Task]:
     now = datetime.datetime.now()
     
     # Construir las condiciones de filtro dinámicamente
-    filter_conditions = [
-        TaskStatusHistory.from_date <= now,
-        or_(TaskStatusHistory.to_date == None, TaskStatusHistory.to_date > now)
-    ]
+    filter_conditions = [_valid_at(now)]
     
     if status_id:
         filter_conditions.append(TaskStatusHistory.status_id == status_id)
