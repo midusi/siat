@@ -39,25 +39,25 @@ class _Repo:
 
 class SqlUserRepository(_Repo):
     def get(self, user_id: int) -> User | None:
-        orm = user_crud.find_one_by_fields(self.session, id=user_id)
+        orm = user_crud.get(self.session, user_id)
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def get_by_username(self, username: str) -> User | None:
-        orm = user_crud.find_one_by_fields(self.session, username=username)
+        orm = user_crud.get_by_username(self.session, username)
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def get_by_username_or_email(self, username: str, email: str) -> User | None:
-        orm = user_crud.get_by_username_email(self.session, username, email)
+        orm = user_crud.get_by_username_or_email(self.session, username, email)
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def find_by_identifier(self, identifier: str) -> User | None:
-        orm = user_crud.find_one_by_fields(self.session, username=identifier) or user_crud.find_one_by_fields(
-            self.session, email=identifier
+        orm = user_crud.get_by_username(self.session, identifier) or user_crud.get_by_email(
+            self.session, identifier
         )
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
     def list_all(self, **filters) -> list[User]:
-        orms = user_crud.find_by_fields(self.session, **filters)
+        orms = user_crud.list_all(self.session, **filters)
         return [self._track(map_.user_to_domain(o), o) for o in orms]
 
     def add(self, user: User) -> User:
@@ -83,28 +83,28 @@ class SqlUserRepository(_Repo):
 
 class SqlProvinceRepository(_Repo):
     def list_all(self, **filters) -> list[Province]:
-        orms = province_crud.find_by_fields(self.session, **filters) or []
+        orms = province_crud.list_all(self.session, **filters) or []
         return [map_.province_to_domain(o) for o in orms]
 
 
 class SqlDistrictRepository(_Repo):
     def list_all(self, **filters) -> list[District]:
-        orms = district_crud.find_by_fields(self.session, **filters) or []
+        orms = district_crud.list_all(self.session, **filters) or []
         return [map_.district_to_domain(o) for o in orms]
 
 
 class SqlLocalityRepository(_Repo):
     def get(self, locality_id: int) -> Locality | None:
-        orm = locality_crud.find_one_by_fields(self.session, id=locality_id)
+        orm = locality_crud.get(self.session, locality_id=locality_id)
         return map_.locality_to_domain(orm) if orm else None
 
     def list_all(self) -> list[Locality]:
-        return [map_.locality_to_domain(o) for o in locality_crud.find_all(self.session)]
+        return [map_.locality_to_domain(o) for o in locality_crud.list_all(self.session)]
 
     def list_by_district(self, district_id: int) -> list[Locality]:
         return [
             map_.locality_to_domain(o)
-            for o in locality_crud.get_localities_by_district(self.session, district_id)
+            for o in locality_crud.list_by_district(self.session, district_id)
         ]
 
 
@@ -160,13 +160,13 @@ class SqlTaskRepository(_Repo):
         return self._load(orm)
 
     def list_active(self) -> list[Task]:
-        return [self._load(o) for o in task_crud.find_all_active(self.session)]
+        return [self._load(o) for o in task_crud.list_active(self.session)]
 
     def list_archived(self) -> list[Task]:
-        return [self._load(o) for o in task_crud.find_all_archived(self.session)]
+        return [self._load(o) for o in task_crud.list_archived(self.session)]
 
     def list_by_status(self, status_id: str) -> list[Task]:
-        return [self._load(o) for o in (task_crud.find_by_fields(self.session, status_id=status_id) or [])]
+        return [self._load(o) for o in (task_crud.list_by_status(self.session, status_id=status_id) or [])]
 
     def add(self, task: Task) -> Task:
         orm = m.Task(
@@ -198,7 +198,7 @@ class SqlTaskRepository(_Repo):
 
 class SqlTaskStatusRepository(_Repo):
     def get(self, status_id: str) -> TaskStatus | None:
-        orm = task_status_crud.find_one_by_fields(self.session, id=status_id)
+        orm = task_status_crud.get(self.session, status_id=status_id)
         if not orm:
             return None
         return TaskStatus(id=orm.id, name=orm.name)
@@ -206,7 +206,7 @@ class SqlTaskStatusRepository(_Repo):
 
 class SqlStatusHistoryRepository(_Repo):
     def get_current(self, task_id: int) -> TaskStatusHistory | None:
-        orm = history_crud.get_current_by_task(self.session, task_id)
+        orm = history_crud.get_current(self.session, task_id)
         return self._track(map_.history_to_domain(orm), orm) if orm else None
 
     def previous_non_archived(self, task_id: int, archived_id: str) -> TaskStatusHistory | None:
@@ -236,7 +236,7 @@ class SqlStatusHistoryRepository(_Repo):
 
 class SqlRoadRepository(_Repo):
     def list_by_video(self, video_id: int) -> list[Road]:
-        orms = road_crud.find_by_fields(self.session, video_id=video_id) or []
+        orms = road_crud.list_by_video(self.session, video_id=video_id) or []
         return [self._track(map_.road_to_domain(o), o) for o in orms]
 
     def add(self, road: Road) -> Road:

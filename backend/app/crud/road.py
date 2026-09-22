@@ -2,8 +2,5 @@
 from sqlalchemy.orm import Session
 from app.models import Road
 
-def find_by_fields(db: Session, **filters) -> list[Road] | None:
-    return db.query(Road).filter_by(**filters).all()
-
-def find_one_by_fields(db: Session, **filters) -> list[Road] | None:
-    return db.query(Road).filter_by(**filters).first()
+def list_by_video(db: Session, video_id: int) -> list[Road]:
+    return db.query(Road).filter(Road.video_id == video_id).all()
