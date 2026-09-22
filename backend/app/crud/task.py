@@ -15,62 +15,39 @@ def _valid_at(now: datetime.datetime):
         ),
     )
 
-def list_active(db: Session) -> list[Task]:
-    """Return tasks whose current status is not ARCHIVED."""
-    now = datetime.datetime.now()
-    tasks = (
+def _valid_tasks_query(db: Session, now: datetime.datetime):
+    return (
         db.query(Task)
         .join(Task.status_history)
-        .filter(
-            _valid_at(now),
-        )
-        .filter(TaskStatusHistory.status_id != ARCHIVED_STATUS_ID)
+        .filter(_valid_at(now))
         .options(
             joinedload(Task.locality).joinedload(Locality.district),
             joinedload(Task.video),
             joinedload(Task.status_history).joinedload(TaskStatusHistory.task_status),
         )
+    )
+
+def list_active(db: Session) -> list[Task]:
+    """Return tasks whose current status is not ARCHIVED."""
+    now = datetime.datetime.now()
+    return (
+        _valid_tasks_query(db, now)
+        .filter(TaskStatusHistory.status_id != ARCHIVED_STATUS_ID)
         .all()
     )
-    return tasks
 
 def list_archived(db: Session) -> list[Task]:
     """Return tasks whose current status is ARCHIVED."""
     now = datetime.datetime.now()
-    tasks = (
-        db.query(Task)
-        .join(Task.status_history)
-        .filter(
-            _valid_at(now),
-            TaskStatusHistory.status_id == ARCHIVED_STATUS_ID,
-        )
-        .options(
-            joinedload(Task.locality).joinedload(Locality.district),
-            joinedload(Task.video),
-            joinedload(Task.status_history).joinedload(TaskStatusHistory.task_status),
-        )
+    return (
+        _valid_tasks_query(db, now)
+        .filter(TaskStatusHistory.status_id == ARCHIVED_STATUS_ID)
         .all()
     )
-    return tasks
 
 def list_by_status(db: Session, status_id: str) -> list[Task]:
     now = datetime.datetime.now()
-    
-    # Construir las condiciones de filtro dinámicamente
-    filter_conditions = [_valid_at(now)]
-    
+    query = _valid_tasks_query(db, now)
     if status_id:
-        filter_conditions.append(TaskStatusHistory.status_id == status_id)
-    
-    return (
-        db.query(Task)
-        .join(Task.status_history)
-        .filter(and_(*filter_conditions))
-        .order_by(asc(TaskStatusHistory.from_date))
-        .options(
-            joinedload(Task.locality).joinedload(Locality.district),
-            joinedload(Task.video),
-            joinedload(Task.status_history).joinedload(TaskStatusHistory.task_status),
-        )
-        .all()
-    )
+        query = query.filter(TaskStatusHistory.status_id == status_id)
+    return query.order_by(asc(TaskStatusHistory.from_date)).all()
