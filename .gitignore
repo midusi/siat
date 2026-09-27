@@ -137,3 +137,10 @@ videos/
 minio/
 *.mp4
 .vscode
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/

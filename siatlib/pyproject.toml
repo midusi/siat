@@ -1,11 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "train"
+name = "siatlib"
 version = "0.1.0"
-description = "Add your description here"
+description = "Librería de visión por computadora para detección, seguimiento y análisis de tráfico vehicular"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Equipo SIAT" }
+]
 dependencies = [
-    "ruff>=0.11.10",
-    "ultralytics>=8.3.0",
+    "ultralytics>=8.0.0",
+    "opencv-python-headless>=4.8.0",
+    "numpy>=1.24.0",
+    "supervision>=0.18.0",
+    "imageio-ffmpeg",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11.0",
+    "pytest>=7.0.0",
     "jupytext>=1.16.0",
 ]
+
+# ── Punto de entrada CLI ───────────────────────────────────────────────────────
+# Después de `pip install -e .` se puede invocar directamente desde la terminal:
+#
+#   siat-process -i video.mp4 -m model.pt -t botsort.yaml \
+#                -pi '[[816,922],[905,869]]' -po '[[100,200],[300,400]]' \
+#                -ni '["Entrada Norte"]' -no '["Salida Sur"]'
+#
+[project.scripts]
+siat-process = "siatlib.process:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
