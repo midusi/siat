@@ -356,7 +356,6 @@
 			// Resetear estados dependientes del tiempo/frames
 			lastProcessedFrame = -1;
 			playbackBoundingBoxes = [];
-			console.log('Video looped: reset de estados de animación');
 		}
 
 		// --- Actualizar bboxes generales ---

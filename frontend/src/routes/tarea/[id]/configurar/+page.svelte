@@ -370,7 +370,6 @@
 				.map((p) => p.vertices.map(toAbs))
 		};
 
-		console.log('Enviando datos:', payload);
 
 		try {
 			const response = await apiFetch(`/task/${taskId}/config`, {
@@ -380,7 +379,6 @@
 			});
 			if (!response.ok) throw new Error('Error en el servidor');
 			const result = await response.json();
-			console.log('Respuesta del servidor:', result);
 			await showAlert({ message: 'Vías guardadas correctamente.', variant: 'success' });
 			goto('/');
 			// Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.

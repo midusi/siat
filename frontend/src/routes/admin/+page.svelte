@@ -1,11 +1,11 @@
 <script lang="ts">
+
 	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
 	import { showAlert, showConfirm } from '$lib/dialog';
 	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 
-	// Tipos para los usuarios y roles
 	type Role = 'Admin' | 'Operador';
 
 	interface User {
@@ -17,10 +17,9 @@
 		username: string;
 	}
 
-	// Estado para los usuarios (se cargan desde backend)
 	let users = $state<User[]>([]);
+	let loadError = $state('');
 
-	// Cargar usuarios reales desde la API al montar
 	type BackendUser = {
 		id: number;
 		username: string;
@@ -31,28 +30,31 @@
 		active: boolean;
 	};
 
+	const transformUser = (user: BackendUser): User => ({
+		id: user.id,
+		nombre: `${user.first_name} ${user.last_name}`.trim(),
+		email: user.email,
+		rol: user.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
+		estado: user.active ? 'Activo' : 'Inactivo',
+		username: user.username
+	});
+
 	onMount(async () => {
 		try {
 			const res = await apiFetch('/admin/user');
 			if (!res.ok) {
 				console.error('Error al cargar usuarios:', await res.text());
+				loadError = 'No se pudieron cargar los usuarios';
 				return;
 			}
 			const data = (await res.json()) as { users: BackendUser[] };
-			users = data.users.map((u) => ({
-				id: u.id,
-				nombre: `${u.first_name} ${u.last_name}`.trim(),
-				email: u.email,
-				rol: u.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
-				estado: u.active ? 'Activo' : 'Inactivo',
-				username: u.username
-			}));
+			users = data.users.map((u) => transformUser(u));
 		} catch (e) {
 			console.error('Error de red al cargar usuarios', e);
+			loadError = 'No se pudieron cargar los usuarios';
 		}
 	});
 
-	// Items para selects
 	const roleItems = [
 		{ value: 'Admin' as Role, label: 'Admin' },
 		{ value: 'Operador' as Role, label: 'Operador' }
@@ -62,10 +64,16 @@
 		{ value: 'Inactivo' as const, label: 'Inactivo' }
 	];
 
-	// Estado para el filtro de búsqueda
 	let searchQuery = $state('');
 
-	// Estado para el modal de edición/creación
+	const filteredUsers = $derived.by(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q) return users;
+		return users.filter(
+			(u) => u.nombre.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+		);
+	});
+
 	let showModal = $state(false);
 	let editingUser = $state<User | null>(null);
 	let newUser = $state<{
@@ -86,7 +94,6 @@
 		confirm_password: ''
 	});
 
-	// Estado para mensajes de error en el formulario
 	let formErrors = $state({
 		nombre: '',
 		email: '',
@@ -96,13 +103,10 @@
 		general: ''
 	});
 	let submitting = $state(false);
-	// Estado de carga por usuario al cambiar estado
 	let toggling = $state<Record<number, boolean>>({});
-	// Estado de eliminación por usuario
 	let deleting = $state<Record<number, boolean>>({});
 
-	// Función para abrir el modal de creación de usuario
-	function openCreateModal(): void {
+	const openCreateModal = (): void => {
 		editingUser = null;
 		newUser = {
 			nombre: '',
@@ -124,10 +128,8 @@
 		showModal = true;
 	}
 
-	// Función para abrir el modal de edición de usuario (solo UI local por ahora)
-	function openEditModal(user: User): void {
+	const openEditModal = (user: User): void => {
 		editingUser = user;
-		// Para edición real habría que mapear a campos completos; mantenemos valores de muestra
 		newUser = {
 			nombre: user.nombre,
 			email: user.email,
@@ -148,12 +150,20 @@
 		showModal = true;
 	}
 
-	function closeModal(): void {
-		if (submitting) return;
+	const escapeClosesModal = (e: KeyboardEvent): void => {
+		if (showModal && e.key === 'Escape') {
+			closeModal();
+		}
+	};
+
+	const closeModal = (): void => {
+		if (submitting) {
+			return;
+		}
 		showModal = false;
 	}
 
-	function validate(): boolean {
+	const validate = (): boolean => {
 		formErrors = {
 			nombre: '',
 			email: '',
@@ -175,9 +185,10 @@
 			formErrors.username = 'Requerido';
 			ok = false;
 		}
-		if (!editingUser) {
-			// Validaciones de creación (requerido + políticas básicas)
-			if (!newUser.password) {
+		const shouldValidatePassword = !editingUser || newUser.password || newUser.confirm_password;
+		if (shouldValidatePassword) {
+			const pwd = newUser.password;
+			if (!pwd) {
 				formErrors.password = 'Requerido';
 				ok = false;
 			}
@@ -185,81 +196,42 @@
 				formErrors.confirm_password = 'Requerido';
 				ok = false;
 			}
-			if (newUser.password && newUser.password.length < 6) {
-				formErrors.password = 'La contraseña debe tener al menos 6 caracteres';
+			if (pwd && (pwd.length < 6 || !/[A-Za-z]/.test(pwd) || !/\d/.test(pwd))) {
+				formErrors.password =
+					'La contraseña debe incluir letras y números y tener al menos 6 caracteres';
 				ok = false;
 			}
-			if (
-				newUser.password &&
-				(!/[A-Za-z]/.test(newUser.password) || !/\d/.test(newUser.password))
-			) {
-				formErrors.password = 'Debe incluir letras y números';
+			if (pwd && newUser.confirm_password && pwd !== newUser.confirm_password) {
+				formErrors.confirm_password = 'Las contraseñas no coinciden';
 				ok = false;
-			}
-			if (
-				newUser.password &&
-				newUser.confirm_password &&
-				newUser.password !== newUser.confirm_password
-			) {
-				formErrors.confirm_password = 'No coincide';
-				ok = false;
-			}
-		} else {
-			// En edición, validar contraseña solo si se quiere cambiar
-			if (newUser.password || newUser.confirm_password) {
-				if (!newUser.password) {
-					formErrors.password = 'Requerido';
-					ok = false;
-				}
-				if (!newUser.confirm_password) {
-					formErrors.confirm_password = 'Requerido';
-					ok = false;
-				}
-				if (newUser.password && newUser.password.length < 6) {
-					formErrors.password = 'La contraseña debe tener al menos 6 caracteres';
-					ok = false;
-				}
-				if (
-					newUser.password &&
-					(!/[A-Za-z]/.test(newUser.password) || !/\d/.test(newUser.password))
-				) {
-					formErrors.password = 'Debe incluir letras y números';
-					ok = false;
-				}
-				if (
-					newUser.password &&
-					newUser.confirm_password &&
-					newUser.password !== newUser.confirm_password
-				) {
-					formErrors.confirm_password = 'No coincide';
-					ok = false;
-				}
 			}
 		}
 		return ok;
-	}
+	};
 
 	async function handleSubmit(event?: SubmitEvent) {
-		// Prevent default submit in new event syntax
-		if (event?.preventDefault) event.preventDefault();
-		if (!validate()) return;
+		if (event?.preventDefault) {
+			event.preventDefault();
+		}
+		if (!validate()) {
+			return;
+		}
 		submitting = true;
 		try {
-			// Separar nombre en first/last
 			const parts = (newUser.nombre ?? '').trim().split(/\s+/);
 			const first_name = parts.shift() ?? '';
 			const last_name = parts.join(' ');
 
 			if (editingUser) {
-				// Actualización de datos del usuario
 				const updates: Record<string, unknown> = {};
-				// Enviar siempre nombres por simplicidad
 				updates.first_name = first_name;
 				updates.last_name = last_name;
-				if (newUser.email !== editingUser.email) updates.email = newUser.email;
-				if (newUser.rol !== editingUser.rol)
+				if (newUser.email !== editingUser.email) {
+					updates.email = newUser.email;
+				}
+				if (newUser.rol !== editingUser.rol) {
 					updates.role = newUser.rol === 'Admin' ? 'ROLE_ADMIN' : 'ROLE_OPERADOR';
-
+				}
 				if (Object.keys(updates).length > 0) {
 					const resUpdate = await apiFetch(`/admin/user/${editingUser.id}`, {
 						method: 'PATCH',
@@ -280,21 +252,22 @@
 						last_name: string;
 						active: boolean;
 					};
-					users = users.map((u) =>
-						u.id === updated.id
-							? {
-									id: updated.id,
-									nombre: `${updated.first_name} ${updated.last_name}`.trim(),
-									email: updated.email,
-									rol: updated.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
-									estado: updated.active ? 'Activo' : 'Inactivo',
-									username: updated.username
-								}
-							: u
-					);
+					users = users.map((u) => (u.id === updated.id ? transformUser(updated) : u));
 				}
 
-				// Cambio de contraseña (opcional en edición)
+				if (newUser.estado !== editingUser.estado) {
+					const id = editingUser.id;
+					const estado = newUser.estado;
+					const action = estado === 'Activo' ? 'enable' : 'disable';
+					const resEstado = await apiFetch(`/admin/user/${id}/${action}`, { method: 'PATCH' });
+					if (!resEstado.ok) {
+						const err = await resEstado.json().catch(() => ({}));
+						formErrors.general = err?.detail ?? 'Error al cambiar el estado';
+						return;
+					}
+					users = users.map((u) => (u.id === id ? { ...u, estado } : u));
+				}
+
 				if (newUser.password) {
 					const resPwd = await apiFetch(`/admin/user/${editingUser.id}/reset-password`, {
 						method: 'POST',
@@ -308,14 +281,12 @@
 						formErrors.general = err?.detail ?? 'Error al cambiar contraseña';
 						return;
 					}
-					// 204 sin contenido esperado
 				}
 
 				showModal = false;
 				return;
 			}
 
-			// Creación de usuario
 			const payload = {
 				username: newUser.username,
 				password: newUser.password,
@@ -336,27 +307,8 @@
 				return;
 			}
 			const data = await res.json();
-			const created = data.user as {
-				id: number;
-				email: string;
-				role: string;
-				first_name: string;
-				last_name: string;
-				active: boolean;
-				username: string;
-			};
-			// Actualizar lista local
-			users = [
-				...users,
-				{
-					id: created.id,
-					nombre: `${created.first_name} ${created.last_name}`.trim(),
-					email: created.email,
-					rol: created.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
-					estado: created.active ? 'Activo' : 'Inactivo',
-					username: created.username
-				}
-			];
+			const created = data.user as BackendUser;
+			users = [...users, transformUser(created)];
 			showModal = false;
 		} catch (e) {
 			formErrors.general = 'Error de red';
@@ -365,17 +317,12 @@
 		}
 	}
 
-	// Funciones locales de UI
-	function changeRole(user: User): void {
-		const newRole: Role = user.rol === 'Admin' ? 'Operador' : 'Admin';
-		users = users.map((u) => (u.id === user.id ? { ...u, rol: newRole } : u));
-	}
-
 	async function toggleStatus(user: User): Promise<void> {
-		if (toggling[user.id]) return;
+		if (toggling[user.id]) {
+			return;
+		}
 		const prev = user.estado;
 		const targetActive = prev !== 'Activo';
-		// Optimistic update
 		toggling[user.id] = true;
 		users = users.map((u) =>
 			u.id === user.id ? { ...u, estado: targetActive ? 'Activo' : 'Inactivo' } : u
@@ -386,7 +333,6 @@
 				: `/admin/user/${user.id}/disable`;
 			const res = await apiFetch(path, { method: 'PATCH' });
 			if (!res.ok) {
-				// revert on error
 				users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
 				const err = await res.json().catch(() => ({}) as any);
 				await showAlert({
@@ -411,7 +357,9 @@
 	}
 
 	async function deleteUser(userId: number): Promise<void> {
-		if (deleting[userId]) return;
+		if (deleting[userId]) {
+			return;
+		}
 		const confirmed = await showConfirm({
 			message:
 				'¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.',
@@ -422,7 +370,6 @@
 		if (!confirmed) return;
 		deleting[userId] = true;
 		const prev = users;
-		// Optimistic removal
 		users = users.filter((u) => u.id !== userId);
 		try {
 			const res = await apiFetch(`/admin/user/${userId}`, { method: 'DELETE' });
@@ -435,7 +382,6 @@
 				});
 				return;
 			}
-			// 204 expected, nothing else
 		} catch (e) {
 			users = prev; // revert
 			await showAlert({ message: 'Error de red al eliminar usuario', variant: 'danger' });
@@ -445,8 +391,9 @@
 	}
 </script>
 
+<svelte:window onkeydown={escapeClosesModal}/>
+
 <div class="page-container">
-	<!-- Título + acción -->
 	<div class="mb-6 flex items-center justify-between">
 		<div class="flex items-center gap-2">
 			<svg
@@ -479,7 +426,6 @@
 		</button>
 	</div>
 
-	<!-- Filtro de búsqueda -->
 	<div class="mb-4 relative">
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
@@ -503,10 +449,8 @@
 		/>
 	</div>
 
-	<!-- Tabla -->
 	<div class="glass-card overflow-hidden">
 		<table class="w-full border-collapse">
-			<!-- Encabezados de tabla -->
 			<thead>
 				<tr class="glass-surface text-white/90">
 					<th class="p-3 text-left font-medium">ID</th>
@@ -517,13 +461,8 @@
 					<th class="p-3 text-left font-medium">Acciones</th>
 				</tr>
 			</thead>
-			<!-- Cuerpo de la tabla -->
 			<tbody>
-				{#each users.filter((u) => u.nombre
-							.toLowerCase()
-							.includes(searchQuery.toLowerCase()) || u.email
-							.toLowerCase()
-							.includes(searchQuery.toLowerCase())) as user}
+				{#each filteredUsers as user (user.id)}
 					<tr class="border-b glass-divider hover:bg-white/5 transition-colors">
 						<td class="p-3">
 							<span class="font-medium">#{user.id}</span>
@@ -575,18 +514,23 @@
 					</tr>
 				{/each}
 
-				{#if users.length === 0}
+				{#if filteredUsers.length === 0}
 					<tr>
-						<td colspan="7" class="p-4 text-center text-white/70"
-							>No se encontraron usuarios que coincidan con la búsqueda.</td
-						>
+						<td colspan="6" class="p-4 text-center text-white/70">
+							{#if loadError}
+								<span class="text-red-400">{loadError}</span>
+							{:else if searchQuery.trim()}
+								No se encontraron usuarios que coincidan con la búsqueda.
+							{:else}
+								No se encontraron usuarios.
+							{/if}
+						</td>
 					</tr>
 				{/if}
 			</tbody>
 		</table>
 	</div>
 
-	<!-- Modal para crear/editar usuario -->
 	{#if showModal}
 		<div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
 			<button
@@ -661,7 +605,8 @@
 							type="text"
 							id="username"
 							bind:value={newUser.username}
-							class="glass-input"
+							disabled={!!editingUser}
+							class="glass-input disabled:opacity-60 hover:cursor-not-allowed"
 							class:border-red-500={formErrors.username}
 						/>
 						{#if formErrors.username}

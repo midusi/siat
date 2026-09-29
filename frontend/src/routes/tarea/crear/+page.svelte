@@ -156,7 +156,6 @@
 			}
 
 			const data = await response.json();
-			console.log('Tarea creada:', data);
 
 			// Mostrar mensaje de éxito y redirigir
 			await showAlert({
@@ -190,13 +189,7 @@
 	});
 
 	$effect(() => {
-		console.log('provinceItems', $state.snapshot(provinceItems));
-		console.log('districtItems', $state.snapshot(districtItems));
-	});
-
-	$effect(() => {
 		isFormValid = TaskFormSchema.safeParse(form).success;
-		// console.log(isFormValid, form);
 	});
 
 	onMount(() => {

@@ -11,8 +11,9 @@ async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
 	const headers = new Headers(request.headers);
 	// Ensure cookies are forwarded
 	const cookie = request.headers.get('cookie');
-	if (cookie) headers.set('cookie', cookie);
-
+	if (cookie) {
+		headers.set('cookie', cookie);
+	}
 	const body = ['GET', 'HEAD'].includes(request.method) ? undefined : request.body;
 
 	const res = await globalThis.fetch(url, {
