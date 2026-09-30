@@ -7,6 +7,10 @@ class ZoneType(str, Enum):
     EXIT = "exit"
     EXCLUDED = "excluded"
 
+    # Aliases de compatibilidad
+    IN = "entry"
+    OUT = "exit"
+
 @dataclass
 class ZoneDefinition:
     name: str
@@ -30,3 +34,36 @@ class AnalysisResult:
     trajectories: Dict[int, VehicleTrajectory]
     total_frames_processed: int
     output_video_path: Optional[str] = None
+
+    def __getitem__(self, item: str) -> Any:
+        if item == "total_frames":
+            return self.total_frames_processed
+        if item == "data_obj_history":
+            return {k: v.history for k, v in self.trajectories.items()}
+        if hasattr(self, item):
+            return getattr(self, item)
+        data = self.to_dict()
+        if item in data:
+            return data[item]
+        raise KeyError(item)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "transition_counts": self.transition_counts,
+            "transition_determined_object": self.determined_transitions,
+            "transition_undetermined_object": self.undetermined_transitions,
+            "trajectories": {
+                k: {
+                    "track_id": v.track_id,
+                    "vehicle_class": v.vehicle_class,
+                    "confidence": v.confidence,
+                    "first_entry_zone": v.first_entry_zone,
+                    "first_exit_zone": v.first_exit_zone,
+                    "history": v.history,
+                }
+                for k, v in self.trajectories.items()
+            },
+            "total_frames_processed": self.total_frames_processed,
+            "output_video_path": self.output_video_path,
+        }
+

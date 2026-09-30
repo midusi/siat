@@ -8,5 +8,13 @@ Uso básico:
 """
 
 from .process import ObjectTracker, main
+from .models import ZoneDefinition, ZoneType, VehicleTrajectory, AnalysisResult
 
-__all__ = ["ObjectTracker", "main"]
+__all__ = [
+    "ObjectTracker",
+    "main",
+    "ZoneDefinition",
+    "ZoneType",
+    "VehicleTrajectory",
+    "AnalysisResult",
+]
