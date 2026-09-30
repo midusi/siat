@@ -1,101 +1,36 @@
 <script lang="ts">
-
-	import { onMount } from 'svelte';
-	import { apiFetch } from '$lib/api';
-	import { showAlert, showConfirm } from '$lib/dialog';
-	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
-
-	type Role = 'Admin' | 'Operador';
-
-	interface User {
-		id: number;
-		nombre: string;
-		email: string;
-		rol: Role;
-		estado: 'Activo' | 'Inactivo';
-		username: string;
-	}
+	import { onMount } from 'svelte';
+	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
+	import { showAlert, showConfirm } from '$lib/dialog';
+	import type { User, Role } from '$lib/types/user';
+	import {
+		changeUserStatus,
+		createUser,
+		deleteUser,
+		fetchUsers,
+		resetUserPassword,
+		updateUser
+	} from '$lib/services/users';
 
 	let users = $state<User[]>([]);
 	let loadError = $state('');
-
-	type BackendUser = {
-		id: number;
-		username: string;
-		email: string;
-		role: 'ROLE_ADMIN' | 'ROLE_OPERADOR';
-		first_name: string;
-		last_name: string;
-		active: boolean;
-	};
-
-	const transformUser = (user: BackendUser): User => ({
-		id: user.id,
-		nombre: `${user.first_name} ${user.last_name}`.trim(),
-		email: user.email,
-		rol: user.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador',
-		estado: user.active ? 'Activo' : 'Inactivo',
-		username: user.username
-	});
-
-	onMount(async () => {
-		try {
-			const res = await apiFetch('/admin/user');
-			if (!res.ok) {
-				console.error('Error al cargar usuarios:', await res.text());
-				loadError = 'No se pudieron cargar los usuarios';
-				return;
-			}
-			const data = (await res.json()) as { users: BackendUser[] };
-			users = data.users.map((u) => transformUser(u));
-		} catch (e) {
-			console.error('Error de red al cargar usuarios', e);
-			loadError = 'No se pudieron cargar los usuarios';
-		}
-	});
-
-	const roleItems = [
-		{ value: 'Admin' as Role, label: 'Admin' },
-		{ value: 'Operador' as Role, label: 'Operador' }
-	];
-	const estadoItems = [
-		{ value: 'Activo' as const, label: 'Activo' },
-		{ value: 'Inactivo' as const, label: 'Inactivo' }
-	];
-
 	let searchQuery = $state('');
-
-	const filteredUsers = $derived.by(() => {
-		const q = searchQuery.trim().toLowerCase();
-		if (!q) return users;
-		return users.filter(
-			(u) => u.nombre.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-		);
-	});
-
 	let showModal = $state(false);
 	let editingUser = $state<User | null>(null);
-	let newUser = $state<{
-		nombre: string;
-		email: string;
-		rol: Role;
-		estado: 'Activo' | 'Inactivo';
-		username: string;
-		password: string;
-		confirm_password: string;
-	}>({
-		nombre: '',
-		email: '',
-		rol: 'Operador',
-		estado: 'Activo',
+	let newUser = $state<Omit<User, 'id'> & { password: string; confirm_password: string }>({
 		username: '',
+		email: '',
+		role: 'ROLE_OPERADOR',
+		first_name: '',
+		last_name: '',
+		active: true,
 		password: '',
 		confirm_password: ''
 	});
-
 	let formErrors = $state({
-		nombre: '',
+		first_name: '',
+		last_name: '',
 		email: '',
 		username: '',
 		password: '',
@@ -106,19 +41,51 @@
 	let toggling = $state<Record<number, boolean>>({});
 	let deleting = $state<Record<number, boolean>>({});
 
+	onMount(async () => {
+		try {
+			users = await fetchUsers();
+		} catch (e) {
+			console.error('Error de red al cargar usuarios', e);
+			loadError = 'No se pudieron cargar los usuarios';
+		}
+	});
+
+	const roleItems: { value: Role; label: string }[] = [
+		{ value: 'ROLE_ADMIN', label: 'Admin' },
+		{ value: 'ROLE_OPERADOR', label: 'Operador' }
+	];
+	const estadoItems = [
+		{ value: 'Activo', label: 'Activo' },
+		{ value: 'Inactivo', label: 'Inactivo' }
+	];
+
+	const filteredUsers = $derived.by(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q) {
+			return users;
+		}
+		return users.filter(
+			(u) =>
+				`${u.first_name} ${u.last_name}`.toLowerCase().includes(q) ||
+				u.email.toLowerCase().includes(q)
+		);
+	});
+
 	const openCreateModal = (): void => {
 		editingUser = null;
 		newUser = {
-			nombre: '',
+			first_name: '',
+			last_name: '',
 			email: '',
-			rol: 'Operador',
-			estado: 'Activo',
+			role: 'ROLE_OPERADOR',
+			active: true,
 			username: '',
 			password: '',
 			confirm_password: ''
 		};
 		formErrors = {
-			nombre: '',
+			first_name: '',
+			last_name: '',
 			email: '',
 			username: '',
 			password: '',
@@ -126,21 +93,23 @@
 			general: ''
 		};
 		showModal = true;
-	}
+	};
 
 	const openEditModal = (user: User): void => {
 		editingUser = user;
 		newUser = {
-			nombre: user.nombre,
+			first_name: user.first_name,
+			last_name: user.last_name,
 			email: user.email,
-			rol: user.rol,
-			estado: user.estado,
+			role: user.role,
+			active: user.active,
 			username: user.username,
 			password: '',
 			confirm_password: ''
 		};
 		formErrors = {
-			nombre: '',
+			first_name: '',
+			last_name: '',
 			email: '',
 			username: '',
 			password: '',
@@ -148,7 +117,7 @@
 			general: ''
 		};
 		showModal = true;
-	}
+	};
 
 	const escapeClosesModal = (e: KeyboardEvent): void => {
 		if (showModal && e.key === 'Escape') {
@@ -161,11 +130,12 @@
 			return;
 		}
 		showModal = false;
-	}
+	};
 
 	const validate = (): boolean => {
 		formErrors = {
-			nombre: '',
+			first_name: '',
+			last_name: '',
 			email: '',
 			username: '',
 			password: '',
@@ -173,8 +143,12 @@
 			general: ''
 		};
 		let ok = true;
-		if (!newUser.nombre?.trim()) {
-			formErrors.nombre = 'Requerido';
+		if (!newUser.first_name?.trim()) {
+			formErrors.first_name = 'Requerido';
+			ok = false;
+		}
+		if (!newUser.last_name?.trim()) {
+			formErrors.last_name = 'Requerido';
 			ok = false;
 		}
 		if (!newUser.email?.trim()) {
@@ -209,7 +183,7 @@
 		return ok;
 	};
 
-	async function handleSubmit(event?: SubmitEvent) {
+	const handleSubmit = async (event?: SubmitEvent) => {
 		if (event?.preventDefault) {
 			event.preventDefault();
 		}
@@ -218,145 +192,80 @@
 		}
 		submitting = true;
 		try {
-			const parts = (newUser.nombre ?? '').trim().split(/\s+/);
-			const first_name = parts.shift() ?? '';
-			const last_name = parts.join(' ');
-
 			if (editingUser) {
+				const current = editingUser;
 				const updates: Record<string, unknown> = {};
-				updates.first_name = first_name;
-				updates.last_name = last_name;
-				if (newUser.email !== editingUser.email) {
-					updates.email = newUser.email;
-				}
-				if (newUser.rol !== editingUser.rol) {
-					updates.role = newUser.rol === 'Admin' ? 'ROLE_ADMIN' : 'ROLE_OPERADOR';
-				}
-				if (Object.keys(updates).length > 0) {
-					const resUpdate = await apiFetch(`/admin/user/${editingUser.id}`, {
-						method: 'PATCH',
-						body: JSON.stringify(updates)
-					});
-					if (!resUpdate.ok) {
-						const err = await resUpdate.json().catch(() => ({}));
-						formErrors.general = err?.detail ?? 'Error al actualizar usuario';
-						return;
+				const fields = ['first_name', 'last_name', 'email', 'role'] as const;
+				for (const field of fields) {
+					if (newUser[field] !== current[field]) {
+						updates[field] = newUser[field];
 					}
-					const data = await resUpdate.json();
-					const updated = data.user as {
-						id: number;
-						username: string;
-						email: string;
-						role: 'ROLE_ADMIN' | 'ROLE_OPERADOR';
-						first_name: string;
-						last_name: string;
-						active: boolean;
-					};
-					users = users.map((u) => (u.id === updated.id ? transformUser(updated) : u));
 				}
 
-				if (newUser.estado !== editingUser.estado) {
-					const id = editingUser.id;
-					const estado = newUser.estado;
-					const action = estado === 'Activo' ? 'enable' : 'disable';
-					const resEstado = await apiFetch(`/admin/user/${id}/${action}`, { method: 'PATCH' });
-					if (!resEstado.ok) {
-						const err = await resEstado.json().catch(() => ({}));
-						formErrors.general = err?.detail ?? 'Error al cambiar el estado';
-						return;
+				if (Object.keys(updates).length > 0) {
+					const updated = await updateUser(current.id, updates);
+					users = users.map((u) => (u.id === updated.id ? updated : u));
+				}
+
+				if (newUser.active !== current.active) {
+					const updated = await changeUserStatus(current.id, newUser.active);
+					if (updated) {
+						users = users.map((u) => (u.id === current.id ? updated : u));
 					}
-					users = users.map((u) => (u.id === id ? { ...u, estado } : u));
 				}
 
 				if (newUser.password) {
-					const resPwd = await apiFetch(`/admin/user/${editingUser.id}/reset-password`, {
-						method: 'POST',
-						body: JSON.stringify({
-							new_password: newUser.password,
-							confirm_password: newUser.confirm_password
-						})
-					});
-					if (!resPwd.ok) {
-						const err = await resPwd.json().catch(() => ({}));
-						formErrors.general = err?.detail ?? 'Error al cambiar contraseña';
-						return;
-					}
+					await resetUserPassword(current.id, newUser.password, newUser.confirm_password);
 				}
 
 				showModal = false;
 				return;
 			}
 
-			const payload = {
+			const created = await createUser({
 				username: newUser.username,
 				password: newUser.password,
 				confirm_password: newUser.confirm_password,
 				email: newUser.email,
-				role: newUser.rol === 'Admin' ? 'ROLE_ADMIN' : 'ROLE_OPERADOR',
-				first_name,
-				last_name,
-				active: newUser.estado === 'Activo'
-			};
-			const res = await apiFetch('/admin/user-register', {
-				method: 'POST',
-				body: JSON.stringify(payload)
+				role: newUser.role,
+				first_name: newUser.first_name,
+				last_name: newUser.last_name,
+				active: newUser.active
 			});
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({}));
-				formErrors.general = err?.detail ?? 'Error al crear usuario';
-				return;
-			}
-			const data = await res.json();
-			const created = data.user as BackendUser;
-			users = [...users, transformUser(created)];
+			users = [...users, created];
 			showModal = false;
 		} catch (e) {
-			formErrors.general = 'Error de red';
+			formErrors.general = e instanceof Error ? e.message : 'Error de red';
 		} finally {
 			submitting = false;
 		}
-	}
+	};
 
-	async function toggleStatus(user: User): Promise<void> {
+	const toggleStatus = async (user: User): Promise<void> => {
 		if (toggling[user.id]) {
 			return;
 		}
-		const prev = user.estado;
-		const targetActive = prev !== 'Activo';
+		const prev = user.active;
+		const targetActive = !prev;
 		toggling[user.id] = true;
-		users = users.map((u) =>
-			u.id === user.id ? { ...u, estado: targetActive ? 'Activo' : 'Inactivo' } : u
-		);
+		users = users.map((u) => (u.id === user.id ? { ...u, active: targetActive } : u));
 		try {
-			const path = targetActive
-				? `/admin/user/${user.id}/enable`
-				: `/admin/user/${user.id}/disable`;
-			const res = await apiFetch(path, { method: 'PATCH' });
-			if (!res.ok) {
-				users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
-				const err = await res.json().catch(() => ({}) as any);
-				await showAlert({
-					message: err?.detail ?? 'No se pudo actualizar el estado',
-					variant: 'danger'
-				});
-				return;
-			}
-			const data = await res.json().catch(() => null as any);
-			const active = data?.user?.active;
-			if (typeof active === 'boolean') {
-				users = users.map((u) =>
-					u.id === user.id ? { ...u, estado: active ? 'Activo' : 'Inactivo' } : u
-				);
+			const updated = await changeUserStatus(user.id, targetActive);
+			if (updated) {
+				users = users.map((u) => (u.id === user.id ? updated : u));
 			}
 		} catch (e) {
-			users = users.map((u) => (u.id === user.id ? { ...u, estado: prev } : u));
-			await showAlert({ message: 'Error de red al actualizar estado', variant: 'danger' });
+			users = users.map((u) => (u.id === user.id ? { ...u, active: prev } : u));
+			await showAlert({
+				message: e instanceof Error ? e.message : 'No se pudo actualizar el estado',
+				variant: 'danger'
+			});
 		} finally {
 			toggling[user.id] = false;
 		}
-	}
+	};
 
-	async function deleteUser(userId: number): Promise<void> {
+	const removeUser = async (userId: number): Promise<void> => {
 		if (deleting[userId]) {
 			return;
 		}
@@ -367,31 +276,24 @@
 			confirmText: 'Eliminar',
 			cancelText: 'Cancelar'
 		});
-		if (!confirmed) return;
+		if (!confirmed) {
+			return;
+		}
 		deleting[userId] = true;
 		const prev = users;
 		users = users.filter((u) => u.id !== userId);
 		try {
-			const res = await apiFetch(`/admin/user/${userId}`, { method: 'DELETE' });
-			if (!res.ok) {
-				users = prev; // revert
-				const err = await res.json().catch(() => ({}));
-				await showAlert({
-					message: err?.detail ?? 'No se pudo eliminar el usuario',
-					variant: 'danger'
-				});
-				return;
-			}
+			await deleteUser(userId);
 		} catch (e) {
-			users = prev; // revert
+			users = prev;
 			await showAlert({ message: 'Error de red al eliminar usuario', variant: 'danger' });
 		} finally {
 			deleting[userId] = false;
 		}
-	}
+	};
 </script>
 
-<svelte:window onkeydown={escapeClosesModal}/>
+<svelte:window onkeydown={escapeClosesModal} />
 
 <div class="page-container">
 	<div class="mb-6 flex items-center justify-between">
@@ -468,7 +370,8 @@
 							<span class="font-medium">#{user.id}</span>
 						</td>
 						<td class="p-3">
-							{user.nombre}
+							{user.first_name}
+							{user.last_name}
 						</td>
 						<td class="p-3">
 							{user.email}
@@ -476,9 +379,9 @@
 						<td class="p-3">
 							<div class="flex items-center">
 								<span
-									class={`px-2 py-1 rounded text-xs font-medium border ${user.rol === 'Admin' ? 'text-purple-200 bg-purple-400/15 border-purple-300/30' : 'text-sky-200 bg-sky-400/15 border-sky-300/30'}`}
+									class={`px-2 py-1 rounded text-xs font-medium border ${user.role === 'ROLE_ADMIN' ? 'text-purple-200 bg-purple-400/15 border-purple-300/30' : 'text-sky-200 bg-sky-400/15 border-sky-300/30'}`}
 								>
-									{user.rol}
+									{user.role === 'ROLE_ADMIN' ? 'Admin' : 'Operador'}
 								</span>
 							</div>
 						</td>
@@ -487,9 +390,9 @@
 								onclick={() => toggleStatus(user)}
 								aria-busy={toggling[user.id]}
 								disabled={toggling[user.id]}
-								class={`glass-button px-2 py-1 text-xs ${user.estado === 'Activo' ? 'btn-success' : 'btn-danger'} ${toggling[user.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
+								class={`glass-button px-2 py-1 text-xs ${user.active ? 'btn-success' : 'btn-danger'} ${toggling[user.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
 							>
-								{user.estado}
+								{user.active ? 'Activo' : 'Inactivo'}
 							</button>
 						</td>
 						<td class="p-3">
@@ -502,7 +405,7 @@
 									Editar
 								</button>
 								<button
-									onclick={() => deleteUser(user.id)}
+									onclick={() => removeUser(user.id)}
 									class="glass-button btn-danger text-sm px-3 py-1 disabled:opacity-50"
 									title="Eliminar usuario"
 									disabled={deleting[user.id]}
@@ -571,18 +474,33 @@
 				</h3>
 
 				<form class="space-y-4" onsubmit={handleSubmit}>
-					<div>
-						<label for="nombre" class="block text-sm mb-1 text-white/80">Nombre completo</label>
-						<input
-							type="text"
-							id="nombre"
-							bind:value={newUser.nombre}
-							class="glass-input"
-							class:border-red-500={formErrors.nombre}
-						/>
-						{#if formErrors.nombre}
-							<p class="text-red-400 text-xs mt-1">{formErrors.nombre}</p>
-						{/if}
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label for="first_name" class="block text-sm mb-1 text-white/80">Nombre</label>
+							<input
+								type="text"
+								id="first_name"
+								bind:value={newUser.first_name}
+								class="glass-input"
+								class:border-red-500={formErrors.first_name}
+							/>
+							{#if formErrors.first_name}
+								<p class="text-red-400 text-xs mt-1">{formErrors.first_name}</p>
+							{/if}
+						</div>
+						<div>
+							<label for="last_name" class="block text-sm mb-1 text-white/80">Apellido</label>
+							<input
+								type="text"
+								id="last_name"
+								bind:value={newUser.last_name}
+								class="glass-input"
+								class:border-red-500={formErrors.last_name}
+							/>
+							{#if formErrors.last_name}
+								<p class="text-red-400 text-xs mt-1">{formErrors.last_name}</p>
+							{/if}
+						</div>
 					</div>
 
 					<div>
@@ -628,8 +546,8 @@
 							ariaLabel="Seleccionar rol"
 							ariaLabelledby="label-rol"
 							items={roleItems}
-							value={newUser.rol}
-							onChange={(v) => (newUser.rol = v as Role)}
+							value={newUser.role}
+							onChange={(v) => (newUser.role = v as Role)}
 						/>
 					</div>
 
@@ -642,8 +560,8 @@
 							ariaLabel="Seleccionar estado"
 							ariaLabelledby="label-estado"
 							items={estadoItems}
-							value={newUser.estado}
-							onChange={(v) => (newUser.estado = v as 'Activo' | 'Inactivo')}
+							value={newUser.active ? 'Activo' : 'Inactivo'}
+							onChange={(v) => (newUser.active = v === 'Activo')}
 						/>
 					</div>
 
