@@ -17,7 +17,13 @@ from app.enums.road_direction import RoadDirection
 from app.ports.storage import ObjectStorage
 from app.ports.uow import UnitOfWork
 from app.adapters.wiring import build_object_storage
-from app.services.task_upload import presign_upload as build_presigned_upload
+from app.services.task_upload import (
+    cancel_multipart_upload,
+    finish_multipart_upload,
+    presign_upload as build_presigned_upload,
+    presign_upload_part,
+    start_multipart_upload,
+)
 from app.domain.exceptions import NotFoundError, ValidationError, InternalError
 
 ARCHIVED_STATUS_ID = "ARCHIVED"
@@ -35,6 +41,18 @@ class TaskService:
 
     def presign_upload(self, filename: str, content_type: str, expiration: int = 3600) -> dict:
         return build_presigned_upload(self.storage, filename, content_type, expiration)
+
+    def start_multipart_upload(self, filename: str, content_type: str, file_size: int) -> dict:
+        return start_multipart_upload(self.storage, filename, content_type, file_size)
+
+    def presign_upload_part(self, object_key: str, upload_id: str, part_number: int) -> dict:
+        return presign_upload_part(self.storage, object_key, upload_id, part_number)
+
+    def finish_multipart_upload(self, object_key: str, upload_id: str, part_count: int) -> str:
+        return finish_multipart_upload(self.storage, object_key, upload_id, part_count)
+
+    def cancel_multipart_upload(self, object_key: str, upload_id: str) -> None:
+        cancel_multipart_upload(self.storage, object_key, upload_id)
 
     def _to_response(self, task: Task) -> TaskResponse:
         history = task.status_history[0]
@@ -56,7 +74,8 @@ class TaskService:
                 "name": history.status_name or task.current_status_name
             },
             "date": task.date,
-            "created_at": task.created_at.isoformat()
+            "created_at": task.created_at.isoformat(),
+            "progress": task.progress,
         })
 
     def _require_task(self, task_id: int) -> Task:
@@ -619,6 +638,16 @@ class TaskService:
 
     def get_roads_by_task(self, task: Task) -> list[Road]:
         return self.road_service.find_by_fields(video_id=task.video_id)
+
+    def set_progress(self, task_id: int, progress: int, commit: bool = False) -> int:
+        task = self._require_task(task_id)
+        value = max(0, min(100, int(progress)))
+        task.progress = value
+        if commit:
+            self.uow.commit()
+        else:
+            self.uow.flush()
+        return value
 
     def update_task_status(self, task_id: int, status_id: str, commit: bool = False):
         task = self._require_task(task_id)

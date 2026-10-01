@@ -175,6 +175,7 @@ class SqlTaskRepository(_Repo):
             created_at=task.created_at,
             video_id=task.video_id,
             locality_id=task.locality_id,
+            progress=task.progress,
         )
         self.session.add(orm)
         return self._track(task, orm)

@@ -8,15 +8,20 @@ import httpx
 import typer
 
 from app.services.dependencies import get_task_service, get_bucket_service, get_inference_service
+from app.services.process_progress import tail_progress
 from app.db import get_db_session
 from app.adapters.wiring import build_uow
 
-def notify_backend(task_id: int, status: str):
+def notify_backend(task_id: int, status: str, progress: int | None = None):
     try:
         # La URL del backend-api dentro de la red de Docker
         url = "http://backend-api:8000/internal/notify"
-        httpx.post(url, json={"task_id": task_id, "status": status}, timeout=10.0)
-        typer.echo(f"Notificación enviada al backend: Tarea {task_id} -> {status}")
+        payload = {"task_id": task_id, "status": status}
+        if progress is not None:
+            payload["progress"] = progress
+        httpx.post(url, json=payload, timeout=10.0)
+        detail = f" {progress}%" if progress is not None else ""
+        typer.echo(f"Notificación enviada al backend: Tarea {task_id} -> {status}{detail}")
     except Exception as e:
         typer.echo(f"Error notificando al backend: {e}")
 
@@ -85,7 +90,9 @@ def process_next_task() -> bool:
         try:
             typer.echo("Cambiando estado de tarea a PROCESSING...")
             task_service.update_task_status(task_to_process.id, "PROCESSING", commit=True)
-            notify_backend(task_to_process.id, "PROCESSING")
+            task_service.set_progress(task_to_process.id, 0, commit=True)
+            notify_backend(task_to_process.id, "PROCESSING", progress=0)
+            last_progress = 0
             
             # Paso 5: Construir y ejecutar el comando
             path_modelo = Path(__file__).resolve().parent.parent / "modelo"
@@ -154,6 +161,12 @@ def process_next_task() -> bool:
                             process.kill()
                         cancelled = True
                         break
+
+                    current_progress = tail_progress(stdout_path)
+                    if current_progress is not None and current_progress != last_progress:
+                        task_service.set_progress(task_to_process.id, current_progress, commit=True)
+                        notify_backend(task_to_process.id, "PROCESSING", progress=current_progress)
+                        last_progress = current_progress
                     
                     time.sleep(2)
                 
@@ -238,10 +251,11 @@ def process_next_task() -> bool:
             )
             
             # Paso 8: Cambiar estado de tarea a PROCESSED
+            task_service.set_progress(task_to_process.id, 100)
             task_service.update_task_status(task_to_process.id, "PROCESSED")
             
             uow.commit()
-            notify_backend(task_to_process.id, "PROCESSED")
+            notify_backend(task_to_process.id, "PROCESSED", progress=100)
             
             # Mostrar resultados
             typer.echo("\n--- Salida del script process.py ---")
@@ -259,6 +273,7 @@ def process_next_task() -> bool:
             try:
                 typer.echo("Revirtiendo estado de tarea a READY_TO_PROCESS...")
                 task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
+                task_service.set_progress(task_to_process.id, 0, commit=True)
             except Exception as ex:
                 typer.echo(f"Error al revertir estado: {ex}")
 
@@ -279,6 +294,7 @@ def process_next_task() -> bool:
             try:
                 typer.echo("Revirtiendo estado de tarea a READY_TO_PROCESS...")
                 task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
+                task_service.set_progress(task_to_process.id, 0, commit=True)
             except Exception as ex:
                 typer.echo(f"Error al revertir estado: {ex}")
 
@@ -294,6 +310,7 @@ def process_next_task() -> bool:
             try:
                 typer.echo("Revirtiendo estado de tarea a READY_TO_PROCESS...")
                 task_service.update_task_status(task_to_process.id, "READY_TO_PROCESS", commit=True)
+                task_service.set_progress(task_to_process.id, 0, commit=True)
             except Exception as ex:
                 typer.echo(f"Error al revertir estado: {ex}")
             return False
