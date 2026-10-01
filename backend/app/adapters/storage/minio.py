@@ -215,6 +215,105 @@ class MinioObjectStorage:
             print(f"Error generating presigned URL: {e}")
             raise
 
+    def create_multipart_upload(self, object_name: str, content_type: Optional[str] = None) -> str:
+        try:
+            response = self._s3_client.create_multipart_upload(
+                Bucket=self.BUCKET_NAME,
+                Key=object_name,
+                ContentType=content_type or self._infer_content_type(object_name),
+            )
+            upload_id = response["UploadId"]
+            print(f"Multipart iniciado para '{self.BUCKET_NAME}/{object_name}' ({upload_id})")
+            return upload_id
+        except Exception as e:
+            print(f"Error al iniciar multipart upload: {e}")
+            raise
+
+    def generate_presigned_part_url(
+        self,
+        object_name: str,
+        upload_id: str,
+        part_number: int,
+        expiration: int = 3600,
+    ) -> str:
+        try:
+            return self._s3_client_public.generate_presigned_url(
+                "upload_part",
+                Params={
+                    "Bucket": self.BUCKET_NAME,
+                    "Key": object_name,
+                    "UploadId": upload_id,
+                    "PartNumber": part_number,
+                },
+                ExpiresIn=expiration,
+                HttpMethod="PUT",
+            )
+        except Exception as e:
+            print(f"Error generating presigned part URL: {e}")
+            raise
+
+    def list_uploaded_parts(self, object_name: str, upload_id: str) -> list[dict]:
+        try:
+            parts: list[dict] = []
+            marker = 0
+            while True:
+                kwargs = {
+                    "Bucket": self.BUCKET_NAME,
+                    "Key": object_name,
+                    "UploadId": upload_id,
+                }
+                if marker:
+                    kwargs["PartNumberMarker"] = marker
+                response = self._s3_client.list_parts(**kwargs)
+                for part in response.get("Parts") or []:
+                    parts.append({"PartNumber": part["PartNumber"], "ETag": part["ETag"]})
+                if not response.get("IsTruncated"):
+                    break
+                marker = response.get("NextPartNumberMarker") or 0
+                if not marker:
+                    break
+            return parts
+        except self._s3_client.exceptions.NoSuchUpload:
+            raise StorageNotFound(f"Upload no encontrado: {upload_id}")
+        except Exception as e:
+            response = getattr(e, "response", None)
+            code = ""
+            if isinstance(response, dict):
+                code = (response.get("Error") or {}).get("Code", "")
+            if code in {"NoSuchUpload", "NoSuchKey"}:
+                raise StorageNotFound(f"Upload no encontrado: {upload_id}") from e
+            print(f"Error al listar partes: {e}")
+            raise
+
+    def complete_multipart_upload(self, object_name: str, upload_id: str, parts: list[dict]) -> None:
+        try:
+            self._s3_client.complete_multipart_upload(
+                Bucket=self.BUCKET_NAME,
+                Key=object_name,
+                UploadId=upload_id,
+                MultipartUpload={
+                    "Parts": [
+                        {"PartNumber": part["PartNumber"], "ETag": part["ETag"]} for part in parts
+                    ]
+                },
+            )
+            print(f"Multipart completado '{self.BUCKET_NAME}/{object_name}'")
+        except Exception as e:
+            print(f"Error al completar multipart upload: {e}")
+            raise
+
+    def abort_multipart_upload(self, object_name: str, upload_id: str) -> None:
+        try:
+            self._s3_client.abort_multipart_upload(
+                Bucket=self.BUCKET_NAME,
+                Key=object_name,
+                UploadId=upload_id,
+            )
+            print(f"Multipart cancelado '{self.BUCKET_NAME}/{object_name}'")
+        except Exception as e:
+            print(f"Error al cancelar multipart upload: {e}")
+            raise
+
     def exists(self, object_name: str) -> bool:
         try:
             self._s3_client.head_object(Bucket=self.BUCKET_NAME, Key=object_name)

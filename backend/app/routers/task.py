@@ -19,6 +19,37 @@ class PresignedUploadResponse(BaseModel):
     object_key: str
     expires_in: int
 
+class MultipartInitRequest(BaseModel):
+    filename: str
+    content_type: str = "video/mp4"
+    file_size: int
+
+class MultipartInitResponse(BaseModel):
+    object_key: str
+    upload_id: str
+    part_size: int
+    part_count: int
+    expires_in: int
+
+class MultipartPartRequest(BaseModel):
+    object_key: str
+    upload_id: str
+    part_number: int
+
+class MultipartPartResponse(BaseModel):
+    upload_url: str
+    part_number: int
+    expires_in: int
+
+class MultipartCompleteRequest(BaseModel):
+    object_key: str
+    upload_id: str
+    part_count: int
+
+class MultipartAbortRequest(BaseModel):
+    object_key: str
+    upload_id: str
+
 @router.post("/upload/presigned-url", response_model=PresignedUploadResponse)
 async def get_presigned_upload_url(
     request: PresignedUploadRequest,
@@ -30,6 +61,41 @@ async def get_presigned_upload_url(
     """
     result = service.presign_upload(request.filename, request.content_type)
     return PresignedUploadResponse(**result)
+
+@router.post("/upload/multipart/init", response_model=MultipartInitResponse)
+async def init_multipart_upload(
+    request: MultipartInitRequest,
+    service: TaskService = Depends(get_task_service),
+):
+    """Inicia una subida por partes. El navegador envía cada parte directo al storage."""
+    result = service.start_multipart_upload(request.filename, request.content_type, request.file_size)
+    return MultipartInitResponse(**result)
+
+@router.post("/upload/multipart/part-url", response_model=MultipartPartResponse)
+async def get_multipart_part_url(
+    request: MultipartPartRequest,
+    service: TaskService = Depends(get_task_service),
+):
+    result = service.presign_upload_part(request.object_key, request.upload_id, request.part_number)
+    return MultipartPartResponse(**result)
+
+@router.post("/upload/multipart/complete")
+async def complete_multipart_upload(
+    request: MultipartCompleteRequest,
+    service: TaskService = Depends(get_task_service),
+):
+    object_key = service.finish_multipart_upload(
+        request.object_key, request.upload_id, request.part_count
+    )
+    return {"object_key": object_key}
+
+@router.post("/upload/multipart/abort")
+async def abort_multipart_upload(
+    request: MultipartAbortRequest,
+    service: TaskService = Depends(get_task_service),
+):
+    service.cancel_multipart_upload(request.object_key, request.upload_id)
+    return {"status": "aborted"}
 
 @router.get("")
 def get_list(service: TaskService = Depends(get_task_service)):

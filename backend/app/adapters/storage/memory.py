@@ -10,6 +10,7 @@ class InMemoryObjectStorage:
     def __init__(self, bucket_name: str = "siat-bucket"):
         self._bucket_name = bucket_name
         self._objects: dict[str, tuple[bytes, str]] = {}
+        self._multiparts: dict[tuple[str, str], dict] = {}
 
     @property
     def bucket_name(self) -> str:
@@ -97,6 +98,55 @@ class InMemoryObjectStorage:
         content_type: Optional[str] = None,
     ) -> str:
         return f"memory://{self.bucket_name}/{object_name}?expires={expiration}"
+
+    def create_multipart_upload(self, object_name: str, content_type: Optional[str] = None) -> str:
+        upload_id = f"upload-{len(self._multiparts) + 1}"
+        self._multiparts[(object_name, upload_id)] = {
+            "content_type": content_type or self._infer_content_type(object_name),
+            "parts": {},
+        }
+        return upload_id
+
+    def generate_presigned_part_url(
+        self,
+        object_name: str,
+        upload_id: str,
+        part_number: int,
+        expiration: int = 3600,
+    ) -> str:
+        if (object_name, upload_id) not in self._multiparts:
+            raise StorageNotFound(f"Upload no encontrado: {upload_id}")
+        return (
+            f"memory://{self.bucket_name}/{object_name}"
+            f"?uploadId={upload_id}&partNumber={part_number}&expires={expiration}"
+        )
+
+    def put_part(self, object_name: str, upload_id: str, part_number: int, body: bytes) -> None:
+        session = self._multiparts.get((object_name, upload_id))
+        if session is None:
+            raise StorageNotFound(f"Upload no encontrado: {upload_id}")
+        session["parts"][part_number] = bytes(body)
+
+    def list_uploaded_parts(self, object_name: str, upload_id: str) -> list[dict]:
+        session = self._multiparts.get((object_name, upload_id))
+        if session is None:
+            raise StorageNotFound(f"Upload no encontrado: {upload_id}")
+        return [
+            {"PartNumber": number, "ETag": f'"{number}"'}
+            for number in sorted(session["parts"])
+        ]
+
+    def complete_multipart_upload(self, object_name: str, upload_id: str, parts: list[dict]) -> None:
+        session = self._multiparts.get((object_name, upload_id))
+        if session is None:
+            raise StorageNotFound(f"Upload no encontrado: {upload_id}")
+        ordered = sorted(parts, key=lambda part: part["PartNumber"])
+        body = b"".join(session["parts"][part["PartNumber"]] for part in ordered)
+        self._objects[object_name] = (body, session["content_type"])
+        del self._multiparts[(object_name, upload_id)]
+
+    def abort_multipart_upload(self, object_name: str, upload_id: str) -> None:
+        self._multiparts.pop((object_name, upload_id), None)
 
     def exists(self, object_name: str) -> bool:
         return object_name in self._objects

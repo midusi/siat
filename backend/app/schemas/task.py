@@ -19,6 +19,7 @@ class TaskResponse(BaseModel):
     status: TaskStatusResponse
     date: datetime
     created_at: datetime
+    progress: int = 0
     model_config = ConfigDict(from_attributes=True)
     
 class RoadPolygon(BaseModel):

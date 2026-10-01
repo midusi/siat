@@ -102,3 +102,4 @@ class Task:
     status_history: list[TaskStatusHistory] = field(default_factory=list)
     current_status_id: str | None = None
     current_status_name: str | None = None
+    progress: int = 0

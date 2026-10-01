@@ -149,6 +149,7 @@ def task_to_domain(orm: m.Task) -> d.Task:
         status_history=[history_to_domain(h) for h in history],
         current_status_id=current.status_id if current else None,
         current_status_name=current.task_status.name if current and getattr(current, "task_status", None) else None,
+        progress=orm.progress or 0,
     )
 
 
@@ -158,3 +159,4 @@ def apply_task(orm: m.Task, domain: d.Task) -> None:
     orm.created_at = domain.created_at
     orm.video_id = domain.video_id
     orm.locality_id = domain.locality_id
+    orm.progress = domain.progress
