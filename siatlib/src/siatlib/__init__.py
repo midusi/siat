@@ -7,10 +7,12 @@ Uso básico:
     tracker.run(video_path=..., output_video_path=...)
 """
 
+from .analyzer import TrafficAnalyzer
+from .models import AnalysisResult, VehicleTrajectory, ZoneDefinition, ZoneType
 from .process import ObjectTracker, main
-from .models import ZoneDefinition, ZoneType, VehicleTrajectory, AnalysisResult
 
 __all__ = [
+    "TrafficAnalyzer",
     "ObjectTracker",
     "main",
     "ZoneDefinition",

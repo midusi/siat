@@ -6,7 +6,8 @@ import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import imageio_ffmpeg
@@ -43,7 +44,7 @@ class ObjectTracker:
 
     def __init__(
         self,
-        model_path: str,
+        model_path: Union[str, YOLO],
         tracker_path: str,
         zone_in_polygons: Optional[List[np.ndarray]] = None,
         zone_out_polygons: Optional[List[np.ndarray]] = None,
@@ -55,9 +56,12 @@ class ObjectTracker:
     ):
         self.device = get_torch_device(device)
 
-        # Cargar el modelo YOLO
-        self.model = YOLO(model_path)
-        self.model.to(str(self.device))
+        # Cargar el modelo YOLO o reutilizar instancia existente
+        if isinstance(model_path, (str, Path)):
+            self.model = YOLO(str(model_path))
+            self.model.to(str(self.device))
+        else:
+            self.model = model_path
 
         self.tracker_path = tracker_path
         self.class_names = SIMPLIFIED_CLASS_DISPLAY_NAMES
