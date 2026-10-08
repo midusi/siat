@@ -8,6 +8,7 @@ router = APIRouter(tags=["notifications"])
 class NotificationRequest(BaseModel):
     task_id: int
     status: str
+    progress: int | None = None
 
 @router.get("/events")
 async def events(request: Request):

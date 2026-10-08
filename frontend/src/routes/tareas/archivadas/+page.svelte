@@ -35,8 +35,10 @@
 				nombre: task.name,
 				localidad: task.locality.name,
 				estadoNombre: 'Archivada',
+				estadoId: 'ARCHIVED',
 				estadoBadgeClass: 'bg-gray-800 text-gray-300',
 				detalle: formatDuration(task.duration),
+				progreso: 0,
 				acciones: ['desarchivar', 'eliminar'] as ActionType[]
 			}));
 		} catch (e) {

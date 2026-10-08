@@ -17,6 +17,7 @@
 		status: { id: string; name: string };
 		date: string | Date;
 		created_at: string;
+		progress?: number;
 	}
 
 	// Centralized status metadata to keep UI logic in one place
@@ -77,8 +78,10 @@
 			nombre: task.name,
 			localidad: task.locality.name,
 			estadoNombre: task.status.name,
+			estadoId: task.status.id,
 			estadoBadgeClass: meta.badgeClass,
 			detalle: formatDuration(task.duration),
+			progreso: task.progress ?? 0,
 			acciones: meta.actions
 		};
 	}
@@ -106,16 +109,18 @@
 		eventSource.onmessage = (event) => {
 			try {
 				const data = JSON.parse(event.data);
-				if (data.task_id && data.status) {
-					// Update the specific row
-					rows = rows.map((row) => {
-						if (row.id === data.task_id) {
-							const meta = STATUS_META[data.status] ?? { badgeClass: '', actions: [] };
-							fetchActiveTasks();
-							return row;
-						}
-						return row;
-					});
+				if (!data.task_id) return;
+
+				const row = rows.find((item) => item.id === data.task_id);
+				const statusChanged = Boolean(data.status) && row?.estadoId !== data.status;
+				if (typeof data.progress === 'number' && row && !statusChanged) {
+					rows = rows.map((item) =>
+						item.id === data.task_id ? { ...item, progreso: data.progress } : item
+					);
+					return;
+				}
+				if (data.status) {
+					fetchActiveTasks();
 				}
 			} catch (e) {
 				console.error('Error parsing SSE event:', e);

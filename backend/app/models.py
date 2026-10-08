@@ -64,6 +64,7 @@ class Task(Base):
     created_at = Column(DateTime, nullable=False)
     video_id = Column(Integer, ForeignKey("video.id"), nullable=False)
     locality_id = Column(Integer, ForeignKey("locality.id"), nullable=False)
+    progress = Column(Integer, nullable=False, default=0, server_default="0")
     
     video = relationship("Video")
     locality = relationship("Locality")

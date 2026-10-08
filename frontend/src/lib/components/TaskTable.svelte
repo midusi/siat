@@ -14,8 +14,10 @@
 		nombre: string;
 		localidad: string;
 		estadoNombre: string;
+		estadoId: string;
 		estadoBadgeClass: string;
 		detalle: string;
+		progreso: number;
 		acciones: ActionType[];
 	}
 </script>
@@ -150,11 +152,27 @@
 								<td class="p-3">{task.nombre}</td>
 								<td class="p-3">{task.localidad}</td>
 								<td class="p-3">
-									<div class="flex items-center">
+									<div class="flex min-w-[9rem] flex-col gap-1.5">
 										<span
-											class={`px-2 py-1 rounded-md text-xs font-medium border ${task.estadoBadgeClass}`}
+											class={`w-fit px-2 py-1 rounded-md text-xs font-medium border ${task.estadoBadgeClass}`}
 											>{task.estadoNombre}</span
 										>
+										{#if task.estadoId === 'PROCESSING'}
+											<div
+												class="h-1.5 w-full overflow-hidden rounded-full bg-white/10"
+												role="progressbar"
+												aria-valuemin={0}
+												aria-valuemax={100}
+												aria-valuenow={task.progreso}
+												aria-label={`Avance de ${task.nombre}`}
+											>
+												<div
+													class="h-full rounded-full bg-blue-400/80 transition-[width] duration-300"
+													style="width: {task.progreso}%"
+												></div>
+											</div>
+											<span class="text-[11px] text-blue-100/80">{task.progreso}%</span>
+										{/if}
 									</div>
 								</td>
 								<td class="p-3">{task.detalle}</td>
