@@ -20,6 +20,9 @@ class UserUpdateRequest(BaseModel):
     role: Role | None = None
     first_name: str | None = None
     last_name: str | None = None
+    active: bool | None = None
+    password: str | None = None
+    confirm_password: str | None = None
 
 class AdminResetPasswordRequest(BaseModel):
     new_password: str
