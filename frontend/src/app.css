@@ -208,6 +208,14 @@
 		pointer-events: none;
 	}
 
+	.btn-primary {
+		@apply border-sky-400/40 bg-sky-300/12 text-sky-100;
+	}
+
+	.btn-primary:hover {
+		@apply bg-sky-300/20;
+	}
+
 	.btn-danger {
 		color: #fecaca;
 		background-color: rgba(239, 68, 68, 0.18);
@@ -216,6 +224,13 @@
 
 	.btn-danger:hover {
 		background-color: rgba(239, 68, 68, 0.26);
+	}
+
+	.alert-danger {
+		color: #fecaca;
+		background-color: rgba(239, 68, 68, 0.18);
+		border: 1px solid rgba(239, 68, 68, 0.28);
+		border-radius: 10px;
 	}
 
 	.btn-success {

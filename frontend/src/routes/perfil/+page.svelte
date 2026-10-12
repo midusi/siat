@@ -36,7 +36,7 @@
 				body: JSON.stringify({ current_password, new_password, confirm_password })
 			});
 			if (res.status === 204 || res.ok) {
-				await apiFetch('/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': '1' } });
+				await apiFetch('/auth/logout', { method: 'POST' });
 				showSuccess('Contraseña cambiada con éxito. Vas a ser redirigido al inicio de sesión.');
 				setTimeout(() => goto('/login'), 900);
 				return;

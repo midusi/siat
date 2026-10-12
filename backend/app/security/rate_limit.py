@@ -39,5 +39,5 @@ async def rate_limit_login(request: Request) -> None:
     while dq and (now - dq[0]) > _WINDOW:
         dq.popleft()
     if len(dq) >= AUTH_RATE_LIMIT_PER_MIN:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts. Try again later.")
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Demasiados intentos. Probá de nuevo en unos minutos")
     dq.append(now)

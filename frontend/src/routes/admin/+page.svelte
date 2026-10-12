@@ -1,14 +1,6 @@
 <script lang="ts">
-	import Icon from '$lib/components/Icon.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { onMount } from 'svelte';
-	import { showAlert, showConfirm } from '$lib/dialog';
-	import type { User } from '$lib/types/user';
-	import UserEditForm from './UserEditForm.svelte';
-	import UserTable from './UserTable.svelte';
+	import { ApiError } from '$lib/services/errors';
 	import {
-		ApiError,
 		changeUserStatus,
 		createUser,
 		deleteUser,
@@ -16,7 +8,6 @@
 		updateUser,
 		type UserUpdates
 	} from '$lib/services/users';
-
 	import {
 		emptyErrors,
 		hasErrors,
@@ -24,6 +15,14 @@
 		type FormErrors,
 		type UserForm
 	} from '$lib/validation/user';
+	import Icon from '$lib/components/Icon.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import { onMount } from 'svelte';
+	import SearchInput from '$lib/components/SearchInput.svelte';
+	import { showAlert, showConfirm } from '$lib/dialog';
+	import UserEditForm from './UserEditForm.svelte';
+	import UserTable from './UserTable.svelte';
+	import type { User } from '$lib/types/user';
 
 	const emptyForm = (): UserForm => ({
 		first_name: '',

@@ -1,65 +1,41 @@
-<!-- src/routes/login/+page.svelte -->
 <script lang="ts">
+	import { ApiError } from '$lib/services/errors';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
-	import { apiFetch } from '$lib/api';
+	import { login } from '$lib/services/auth';
+	import { page } from '$app/state';
+	import { safeNext } from '$lib/redirect';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import './login.css';
 
 	let username = $state('');
 	let password = $state('');
 	let error = $state<string | null>(null);
 	let isSubmitting = $state(false);
 
-	async function handleLogin(): Promise<void> {
+	const handleLogin = async (): Promise<void> => {
 		error = null;
+		isSubmitting = true;
 		try {
-			isSubmitting = true;
-			const res = await apiFetch('/auth/login', {
-				method: 'POST',
-				body: JSON.stringify({ username, password })
-			});
-			if (res.ok) {
-				const next = new URLSearchParams($page.url.search).get('next') ?? '/';
-				await goto(next);
-			} else if (res.status === 401) {
-				error = 'Credenciales inválidas';
-			} else {
-				error = 'Error de autenticación';
-			}
+			await login(username, password);
+			await goto(safeNext(page.url.searchParams.get('next')));
 		} catch (e) {
-			error = 'No se pudo conectar con el servidor';
+			error = e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor';
 		} finally {
 			isSubmitting = false;
 		}
-	}
+	};
 </script>
 
 <div class="min-h-screen flex items-center justify-center">
-	<!-- Formulario de login centrado -->
 	<div class="w-full max-w-md px-6">
-		<!-- Logo agrandado -->
-		<div class="mb-12 flex flex-col items-center justify-center">
-			<!-- Círculo del logo agrandado -->
-			<div
-				class="w-24 h-24 rounded-full flex items-center justify-center mb-4"
-				style="background:
-					radial-gradient(circle at 30% 30%, hsl(var(--accent1) / 0.35), transparent 60%),
-					radial-gradient(circle at 70% 70%, hsl(var(--accent2) / 0.35), transparent 60%);
-					box-shadow: inset 0 0 0 4px rgba(255,255,255,0.18);"
-			></div>
-			<!-- Texto del logo agrandado -->
-			<div class="text-center" style="color: hsl(var(--foreground));">
-				<div class="font-semibold text-xl opacity-90">ANÁLISIS DE</div>
-				<div
-					class="font-semibold text-3xl"
-					style="background: linear-gradient(90deg, hsl(var(--accent1)), hsl(var(--accent2))); -webkit-background-clip: text; background-clip: text; color: transparent;"
-				>
-					TRÁNSITO
-				</div>
-			</div>
+		<div class="mb-12 flex flex-col items-center">
+			<div class="logo-circle w-24 h-24 rounded-full mb-4"></div>
+			<h1 class="text-center font-semibold">
+				<span class="block text-xl opacity-90">ANÁLISIS DE</span>
+				<span class="logo-gradient-text block text-3xl">TRÁNSITO</span>
+			</h1>
 		</div>
 
-		<!-- Formulario -->
 		<form
 			class="space-y-4 glass-card p-6 border"
 			onsubmit={(e) => {
@@ -68,34 +44,32 @@
 			}}
 		>
 			{#if error}
-				<div class="p-2 btn-danger rounded border">{error}</div>
+				<div class="alert-danger p-2" role="alert">{error}</div>
 			{/if}
-			<!-- Campo Usuario -->
-			<div>
-				<input
-					type="text"
-					id="username"
-					placeholder="Usuario"
-					bind:value={username}
-					class="glass-input"
-				/>
-			</div>
+			<input
+				type="text"
+				name="username"
+				autocomplete="username"
+				placeholder="Usuario"
+				aria-label="Usuario"
+				required
+				bind:value={username}
+				class="glass-input block"
+			/>
+			<input
+				type="password"
+				name="password"
+				autocomplete="current-password"
+				placeholder="Contraseña"
+				aria-label="Contraseña"
+				required
+				bind:value={password}
+				class="glass-input block"
+			/>
 
-			<!-- Campo Contraseña -->
-			<div>
-				<input
-					type="password"
-					id="password"
-					placeholder="Contraseña"
-					bind:value={password}
-					class="glass-input"
-				/>
-			</div>
-
-			<!-- Botón de inicio de sesión -->
 			<button
 				type="submit"
-				class="w-full glass-button border-sky-400/40 bg-sky-300/10 hover:bg-sky-300/20 text-sky-100 py-3 rounded-md font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+				class="glass-button btn-primary w-full justify-center gap-2 py-3 font-medium"
 				disabled={isSubmitting}
 			>
 				{#if isSubmitting}
@@ -108,3 +82,4 @@
 		</form>
 	</div>
 </div>
+

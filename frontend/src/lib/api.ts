@@ -1,20 +1,14 @@
-export const BACKEND_BASE = '/api';
+const BACKEND_BASE: string = '/api';
+const CSRF_HEADER: string = 'X-CSRF-Token';
 
-export type ApiInit = RequestInit & { rawUrl?: string };
-
-export async function apiFetch(path: string, init: ApiInit = {}): Promise<Response> {
-	const url = init.rawUrl === 'absolute' ? path : `${BACKEND_BASE}${path}`;
-	const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
-	const headers: Record<string, string> = {
-		...(init.headers as Record<string, string> | undefined)
-	};
-	if (!isFormData) {
-		headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
+export const apiFetch = (path: string, init: RequestInit = {}): Promise<Response> => {
+	const headers = new Headers(init.headers);
+	if (typeof init.body === 'string' && !headers.has('Content-Type')) {
+		headers.set('Content-Type', 'application/json');
 	}
-	const res = await fetch(url, {
-		credentials: 'include',
-		...init,
-		headers
-	} as RequestInit);
-	return res;
-}
+	const method = (init.method ?? 'GET').toUpperCase();
+	if (method !== 'GET' && method !== 'HEAD' && !headers.has(CSRF_HEADER)) {
+		headers.set(CSRF_HEADER, '1');
+	}
+	return fetch(`${BACKEND_BASE}${path}`, { ...init, headers });
+};

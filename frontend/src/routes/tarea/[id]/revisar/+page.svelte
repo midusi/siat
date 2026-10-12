@@ -851,7 +851,6 @@
 		try {
 			const res = await apiFetch(`/task/${data.id}/update-data`, {
 				method: 'POST',
-				headers: { 'X-CSRF-Token': '1' },
 				body: JSON.stringify({
 					rutas: rutas,
 					indeterminados: indeterminados,

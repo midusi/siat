@@ -374,7 +374,6 @@
 		try {
 			const response = await apiFetch(`/task/${taskId}/config`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
 			});
 			if (!response.ok) throw new Error('Error en el servidor');

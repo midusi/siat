@@ -55,10 +55,7 @@
 
 	async function handleLogout(): Promise<void> {
 		isLoggingOut = true;
-		const res = await apiFetch('/auth/logout', {
-			method: 'POST',
-			headers: { 'X-CSRF-Token': '1' }
-		});
+		const res = await apiFetch('/auth/logout', { method: 'POST' });
 		if (res.ok || res.status === 204) await goto('/login');
 		isLoggingOut = false;
 	}

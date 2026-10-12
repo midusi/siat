@@ -1,6 +1,6 @@
-import type { RequestHandler, RequestEvent } from './$types';
-import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { error } from '@sveltejs/kit';
+import type { RequestHandler, RequestEvent } from './$types';
 
 const proxy = async ({ request, params }: RequestEvent): Promise<Response> => {
 	if (!env.BACKEND_URL) {
