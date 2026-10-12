@@ -1,19 +1,27 @@
 import type { Handle } from '@sveltejs/kit';
 
+const SKIP_AUTH_PREFIXES = ['/api', '/bucket'];
+
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
-	if (event.url.pathname.startsWith('/api')) {
+	const pathname = event.url.pathname;
+
+	const excludeAuth: boolean = SKIP_AUTH_PREFIXES.some(
+		(exclude) => pathname.startsWith(exclude + '/') || pathname === exclude
+	);
+
+	if (excludeAuth) {
 		return resolve(event);
 	}
+
 	try {
-		const res = await event.fetch('/api/auth/me', {
-			credentials: 'include'
-		} as RequestInit);
+		const res = await event.fetch('/api/auth/me');
 		if (res.ok) {
 			const data = await res.json();
-			event.locals.user = (data.user ?? data) as App.Locals['user'];
+			event.locals.user = data as App.Locals['user'];
 		}
-	} catch {
+	} catch (e) {
+		console.error('No se pudo obtener el usuario actual', e);
 	}
 	return resolve(event);
 };
