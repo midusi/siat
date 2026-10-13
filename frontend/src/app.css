@@ -183,6 +183,10 @@
 		box-shadow: 0 0 0 3px hsl(var(--ring));
 	}
 
+	.input-error {
+		@apply border-red-500/70 ring-1 ring-red-500/30;
+	}
+
 	.glass-button {
 		display: inline-flex;
 		align-items: center;
