@@ -1,31 +1,6 @@
-<script module lang="ts">
-	export type ActionType =
-		| 'configurar'
-		| 'revisar'
-		| 'exportar'
-		| 'cancelar'
-		| 'archivar'
-		| 'eliminar'
-		| 'desarchivar';
-
-	export interface TaskRow {
-		id: number;
-		fecha: string;
-		nombre: string;
-		localidad: string;
-		estadoNombre: string;
-		estadoId: string;
-		estadoBadgeClass: string;
-		detalle: string;
-		progreso: number;
-		acciones: ActionType[];
-	}
-</script>
-
 <script lang="ts">
+	import type { ActionType, TaskRow } from '$lib/types/task';
 	import Spinner from '$lib/components/Spinner.svelte';
-	type ActionType = import('./TaskTable.svelte').ActionType;
-	type TaskRow = import('./TaskTable.svelte').TaskRow;
 	let {
 		title,
 		rows = [],

@@ -1,203 +1,55 @@
-<!-- src/routes/+page.svelte (refactor to use TaskTable) -->
 <script lang="ts">
+	import { actionDispatcher, createTaskList } from '$lib/task-list.svelte';
+	import { archiveTask, fetchTasks } from '$lib/services/tasks';
 	import { goto } from '$app/navigation';
-	import { onMount, onDestroy } from 'svelte';
-	import { apiFetch } from '$lib/api';
-	import { showConfirm } from '$lib/dialog';
+	import { onMount } from 'svelte';
+	import type { TaskEvent } from '$lib/types/task';
 	import TaskTable from '$lib/components/TaskTable.svelte';
-	import type { ActionType, TaskRow } from '$lib/components/TaskTable.svelte';
 
-	// Backend response types
-	interface TaskResponse {
-		id: number;
-		name: string;
-		locality: { id: number; name: string; district: { id: number; name: string } };
-		name_video: string;
-		duration: number; // seconds
-		status: { id: string; name: string };
-		date: string | Date;
-		created_at: string;
-		progress?: number;
-	}
+	const tasks = createTaskList(fetchTasks);
 
-	// Centralized status metadata to keep UI logic in one place
-	const STATUS_META: Record<string, { badgeClass: string; actions: ActionType[] }> = {
-		VIDEO_UPLOADED: {
-			badgeClass: 'border border-white/20 bg-white/10',
-			actions: ['configurar', 'eliminar']
-		},
-		CONFIGURED: {
-			badgeClass: 'border border-indigo-300/30 bg-indigo-300/10 text-indigo-100',
-			actions: ['configurar', 'eliminar']
-		},
-		READY_TO_PROCESS: {
-			badgeClass: 'border border-cyan-300/30 bg-cyan-300/10 text-cyan-100',
-			actions: ['eliminar']
-		},
-		PROCESSING: {
-			badgeClass: 'border border-blue-300/30 bg-blue-300/10 text-blue-100',
-			actions: ['eliminar']
-		},
-		PROCESSED: {
-			badgeClass: 'border border-yellow-300/30 bg-yellow-300/10 text-yellow-100',
-			actions: ['revisar', 'archivar', 'eliminar']
-		},
-		APPROVED: {
-			badgeClass: 'border border-green-300/30 bg-green-300/10 text-green-100',
-			actions: ['eliminar']
-		},
-		ARCHIVED: {
-			badgeClass: 'border border-white/10 bg-white/5 text-white/70',
-			actions: ['eliminar']
-		}
-	};
+	const handleAction = actionDispatcher({
+		configurar: (id) => goto(`/tarea/${id}/configurar`),
+		revisar: (id) => goto(`/tarea/${id}/revisar`),
+		archivar: (id) => tasks.run(id, 'archivar', () => archiveTask(id)),
+		eliminar: tasks.confirmDelete
+	});
 
-	let rows = $state<TaskRow[]>([]);
-	let loading = $state({ active: false });
-	let busy = $state<Record<number, import('$lib/components/TaskTable.svelte').ActionType | true>>(
-		{}
-	);
-	let eventSource: EventSource | undefined;
-
-	function formatDate(d: string | Date): string {
-		const date = typeof d === 'string' ? new Date(d) : d;
-		return date.toLocaleDateString('es-AR', { year: '2-digit', month: '2-digit', day: '2-digit' });
-	}
-
-	function formatDuration(seconds: number): string {
-		const m = Math.floor(seconds / 60);
-		const s = Math.floor(seconds % 60);
-		return `${m}m ${s}s`;
-	}
-
-	function mapToRow(task: TaskResponse): TaskRow {
-		const meta = STATUS_META[task.status.id] ?? { badgeClass: '', actions: [] };
-		return {
-			id: task.id,
-			fecha: formatDate(task.date),
-			nombre: task.name,
-			localidad: task.locality.name,
-			estadoNombre: task.status.name,
-			estadoId: task.status.id,
-			estadoBadgeClass: meta.badgeClass,
-			detalle: formatDuration(task.duration),
-			progreso: task.progress ?? 0,
-			acciones: meta.actions
-		};
-	}
-
-	async function fetchActiveTasks() {
-		loading.active = true;
-		try {
-			const response = await apiFetch('/task');
-			if (!response.ok)
-				throw new Error(`Error fetching tasks: ${response.status} ${response.statusText}`);
-			const fetched: TaskResponse[] = await response.json();
-			rows = fetched.map(mapToRow);
-		} catch (error) {
-			console.error('Error fetching tasks:', error);
-		} finally {
-			loading.active = false;
-		}
-	}
-
-	onMount(async () => {
-		await fetchActiveTasks();
-
-		// Setup SSE
-		eventSource = new EventSource('/api/events');
+	onMount(() => {
+		tasks.load();
+		const eventSource = new EventSource('/api/events');
 		eventSource.onmessage = (event) => {
 			try {
-				const data = JSON.parse(event.data);
-				if (!data.task_id) return;
-
-				const row = rows.find((item) => item.id === data.task_id);
+				const data: TaskEvent = JSON.parse(event.data);
+				if (!data.task_id) {
+					return;
+				}
+				const row = tasks.rows.find((item) => item.id === data.task_id);
 				const statusChanged = Boolean(data.status) && row?.estadoId !== data.status;
 				if (typeof data.progress === 'number' && row && !statusChanged) {
-					rows = rows.map((item) =>
-						item.id === data.task_id ? { ...item, progreso: data.progress } : item
-					);
+					row.progreso = data.progress;
 					return;
 				}
 				if (data.status) {
-					fetchActiveTasks();
+					tasks.load();
 				}
 			} catch (e) {
 				console.error('Error parsing SSE event:', e);
 			}
 		};
+
+		return () => eventSource.close();
 	});
-
-	onDestroy(() => {
-		if (eventSource) {
-			eventSource.close();
-		}
-	});
-
-	async function archiveTask(taskId: number) {
-		busy[taskId] = 'archivar';
-		const res = await apiFetch(`/task/${taskId}/archive`, { method: 'POST' });
-		if (!res.ok) throw new Error('No se pudo archivar la tarea');
-		delete busy[taskId];
-		await fetchActiveTasks();
-	}
-
-	async function deleteTask(taskId: number) {
-		const confirmed = await showConfirm({
-			message:
-				'¿Seguro que querés eliminar esta tarea? Esta acción es permanente y no se puede deshacer.\nSe eliminarán todos los datos asociados (historiales, configuraciones) y los archivos del bucket.',
-			variant: 'danger',
-			confirmText: 'Eliminar',
-			cancelText: 'Cancelar'
-		});
-		if (!confirmed) return;
-		busy[taskId] = 'eliminar';
-		const res = await apiFetch(`/task/${taskId}`, { method: 'DELETE' });
-		if (!res.ok) throw new Error('No se pudo eliminar la tarea');
-		delete busy[taskId];
-		await fetchActiveTasks();
-	}
-
-	function handleAction(action: ActionType, taskId: number): void {
-		switch (action) {
-			case 'configurar':
-				goto(`/tarea/${taskId}/configurar`);
-				break;
-			case 'revisar':
-				goto(`/tarea/${taskId}/revisar`);
-				break;
-			case 'exportar':
-				console.log(`Exportando tarea ${taskId}`);
-				break;
-			case 'cancelar':
-				console.log(`Cancelando tarea ${taskId}`);
-				break;
-			case 'archivar':
-				archiveTask(taskId).catch((e) => console.error(e));
-				break;
-			case 'eliminar':
-				deleteTask(taskId).catch((e) => console.error(e));
-				break;
-			default:
-				break;
-		}
-	}
-
-	function goToCreateTask(): void {
-		goto('/tarea/crear');
-	}
-
-	let { data } = $props();
 </script>
 
 <div class="page-container">
 	<TaskTable
 		title="Tareas"
-		{rows}
-		loading={loading.active}
+		rows={tasks.rows}
+		loading={tasks.loading}
+		busy={tasks.busy}
 		onAction={handleAction}
-		{busy}
 		rightButtonLabel="Crear Tarea"
-		onRightButtonClick={goToCreateTask}
+		onRightButtonClick={() => goto('/tarea/crear')}
 	/>
 </div>

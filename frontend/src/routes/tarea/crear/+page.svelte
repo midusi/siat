@@ -1,39 +1,48 @@
-<!-- src/routes/crear/+page.svelte -->
 <script lang="ts">
+	import {
+		ALLOWED_VIDEO_EXTENSIONS,
+		INVALID_VIDEO_MESSAGE,
+		isAllowedVideo,
+		localDateString,
+		type TaskForm,
+		TaskFormSchema
+	} from '$lib/types/task';
+	import { createTask } from '$lib/services/tasks';
+	import { errorMessage } from '$lib/services/errors';
+	import {
+		fetchDistricts,
+		fetchLocalities,
+		fetchProvinces,
+		type Option
+	} from '$lib/services/locations';
+	import FormRow from '$lib/components/FormRow.svelte';
+	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
+	import Icon from '$lib/components/Icon.svelte';
 	import { onMount } from 'svelte';
-	import type { TaskForm } from '$lib/types/task';
-	import { BACKEND_URL } from '$lib/constants';
-	import { TaskFormSchema } from '$lib/types/task';
-	import { z } from 'zod';
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { uploadVideoToMinio } from '$lib/services/upload';
 
-	// Estado agrupado en un objeto form
+	let districts = $state<Option[]>([]);
 	let form = $state<TaskForm>({
 		name: '',
-		date: new Date().toISOString().split('T')[0],
+		date: localDateString(),
 		selectedProvince: 1,
-		selectedDistrict: null as number | null,
-		selectedLocality: null as number | null,
-		file: null as File | null
+		selectedDistrict: null,
+		selectedLocality: null,
+		file: null
 	});
-
-	let isFormValid = $state(false);
-	let errors = $state<Record<string, string>>({});
-	let submitted = $state(false);
+	let isProcessing = $state(false);
 	let isUploading = $state(false);
-	let uploadProgress = $state(0); // 0-100
-	let isProcessing = $state(false); // true cuando ya se subió y el backend está creando la tarea
+	let localities = $state<Option[]>([]);
+	let provinces = $state<Option[]>([]);
+	let submitted = $state(false);
+	let uploadProgress = $state(0);
 
-	// Datos de localidades y distritos
-	let localities = $state<{ id: number; name: string }[]>([]);
-	let districts = $state<{ id: number; name: string }[]>([]);
-	let provinces = $state<{ id: number; name: string }[]>([]);
-
-	type Option = { id: number; name: string };
+	const acceptedFormats = ALLOWED_VIDEO_EXTENSIONS.map((ext) => ext.slice(1).toUpperCase()).join(
+		', '
+	);
 
 	const toItems = (arr: Option[]) =>
 		arr
@@ -41,132 +50,78 @@
 			.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
 			.map((x) => ({ value: x.id, label: x.name }));
 
-	const provinceItems = $derived(toItems(provinces));
+	const validation = $derived(TaskFormSchema.safeParse(form));
+	const isFormValid = $derived(validation.success);
+	const errors = $derived<Record<string, string>>(
+		submitted && !validation.success
+			? Object.fromEntries(
+					validation.error.issues.map((i) => [String(i.path[0]), i.message] as const)
+				)
+			: {}
+	);
 	const districtItems = $derived(toItems(districts));
 	const localityItems = $derived(toItems(localities));
+	const provinceItems = $derived(toItems(provinces));
 
-	async function fetchProvinces() {
+	const loadOptions = async (request: () => Promise<Option[]>): Promise<Option[]> => {
 		try {
-			const response = await fetch(`${BACKEND_URL}/province`, { credentials: 'include' });
-			if (!response.ok) {
-				throw new Error(`Error fetching provinces: ${response.statusText}`);
-			}
-			provinces = await response.json();
-		} catch (error) {
-			console.error(error);
-			await showAlert({ message: 'Error al cargar las provincias.', variant: 'danger' });
+			return await request();
+		} catch (e) {
+			await showAlert({ message: errorMessage(e), variant: 'danger' });
+			return [];
 		}
-	}
+	};
 
-	async function fetchDistricts() {
-		try {
-			const response = await fetch(`${BACKEND_URL}/province/${form.selectedProvince}/district`, {
-				credentials: 'include'
-			});
-			if (!response.ok) {
-				throw new Error(`Error fetching districts: ${response.statusText}`);
-			}
-			districts = await response.json();
-		} catch (error) {
-			console.error(error);
-			await showAlert({ message: 'Error al cargar los distritos.', variant: 'danger' });
-		}
-	}
+	const getDistricts = async (): Promise<void> => {
+		districts = await loadOptions(() => fetchDistricts(form.selectedProvince!));
+	};
+	const getLocalities = async (): Promise<void> => {
+		localities = await loadOptions(() => fetchLocalities(form.selectedDistrict!));
+	};
+	const getProvinces = async (): Promise<void> => {
+		provinces = await loadOptions(fetchProvinces);
+	};
 
-	async function fetchLocalities() {
-		try {
-			const response = await fetch(`${BACKEND_URL}/district/${form.selectedDistrict}/locality`, {
-				credentials: 'include'
-			});
-			if (!response.ok) {
-				throw new Error(`Error fetching localities: ${response.statusText}`);
-			}
-			localities = await response.json();
-		} catch (error) {
-			console.error(error);
-			await showAlert({ message: 'Error al cargar las localidades.', variant: 'danger' });
-		}
-	}
-
-	// Función para manejar la selección de archivos
-	function handleFileSelect(event: Event): void {
+	const handleFileSelect = (event: Event): void => {
 		const input = event.target as HTMLInputElement;
-		if (input.files && input.files.length > 0) {
-			const file = input.files[0];
-			const allowedExtensions = ['.mp4', '.avi', '.mov'];
-			const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-			if (!allowedExtensions.includes(ext)) {
-				showAlert({ message: 'El archivo debe ser .mp4, .avi o .mov', variant: 'warning' });
-				form.file = null;
-				input.value = '';
-				return;
-			}
-			form.file = file;
+		const file = input.files?.[0];
+		if (!file) {
+			return;
 		}
-	}
+		if (!isAllowedVideo(file)) {
+			showAlert({ message: INVALID_VIDEO_MESSAGE, variant: 'warning' });
+			form.file = null;
+			input.value = '';
+			return;
+		}
+		form.file = file;
+	};
 
-	// Función para iniciar la subida con el nuevo método de presigned URLs
-	async function handleSubmit(): Promise<void> {
-		if (isUploading) return; // evitar envíos duplicados
+	const handleSubmit = async (event: SubmitEvent): Promise<void> => {
+		event.preventDefault();
+		if (isUploading) {
+			return;
+		}
 		submitted = true;
-		const result = TaskFormSchema.safeParse(form);
-		if (!result.success) {
-			errors = {};
-			for (const err of result.error.issues) {
-				errors[String(err.path[0])] = err.message;
-			}
+		if (!isFormValid || !form.file) {
 			return;
 		}
-		errors = {};
-
-		if (!form.file) {
-			await showAlert({ message: 'Debe seleccionar un archivo de video', variant: 'warning' });
-			return;
-		}
-
 		isUploading = true;
-		isProcessing = false;
-		uploadProgress = 0;
-
 		try {
-			// 1. Subir video directo a MinIO con seguimiento de progreso
-			const objectKey = await uploadVideoToMinio(form.file, (progress) => {
-				uploadProgress = progress.percentage;
-			});
-
-			// 2. Ahora que el video está subido, crear la tarea
-			uploadProgress = 100;
+			const objectKey = await uploadVideoToMinio(form.file, (p) => (uploadProgress = p.percentage));
 			isProcessing = true;
-
-			const formData = new FormData();
-			formData.append('name', form.name);
-			formData.append('locality_id', form.selectedLocality?.toString() ?? '');
-			formData.append('date', form.date);
-			formData.append('object_key', objectKey);
-
-			const response = await fetch(`${BACKEND_URL}/task`, {
-				method: 'POST',
-				credentials: 'include',
-				body: formData
+			await createTask({
+				name: form.name,
+				localityId: form.selectedLocality!,
+				date: form.date,
+				objectKey
 			});
-
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Error al crear la tarea: ${errorText}`);
-			}
-
-			const data = await response.json();
-
-			// Mostrar mensaje de éxito y redirigir
-			await showAlert({
-				message: 'Tarea creada exitosamente',
-				variant: 'success'
-			});
+			await showAlert({ message: 'Tarea creada exitosamente', variant: 'success' });
 			goto('/');
-		} catch (error) {
-			console.error('Error al crear la tarea:', error);
+		} catch (e) {
+			console.error('Error al crear la tarea:', e);
 			await showAlert({
-				message: error instanceof Error ? error.message : 'Hubo un error al crear la tarea.',
+				message: errorMessage(e, 'Hubo un error al crear la tarea.'),
 				variant: 'danger'
 			});
 		} finally {
@@ -174,68 +129,46 @@
 			isProcessing = false;
 			uploadProgress = 0;
 		}
-	}
+	};
 
 	$effect(() => {
 		if (form.selectedProvince) {
-			fetchDistricts();
+			getDistricts();
+		} else {
+			districts = [];
 		}
 	});
 
 	$effect(() => {
 		if (form.selectedDistrict) {
-			fetchLocalities();
+			getLocalities();
+		} else {
+			localities = [];
 		}
 	});
 
-	$effect(() => {
-		isFormValid = TaskFormSchema.safeParse(form).success;
-	});
-
 	onMount(() => {
-		fetchProvinces();
+		getProvinces();
 	});
-
-	// Función para volver a la página anterior
-	function goBack(): void {
-		goto('/');
-	}
 </script>
 
 <div class="page-container">
-	<!-- Header con título y botón de volver -->
 	<div class="max-w-3xl mx-auto mb-6 flex items-center gap-2">
-		<button
+		<a
+			href="/"
 			class="glass-button p-2 text-white/90 hover:text-white border border-white/20 bg-white/10 hover:bg-white/20"
-			onclick={goBack}
 			aria-label="Volver"
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				class="h-5 w-5"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke="currentColor"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M10 19l-7-7m0 0l7-7m-7 7h18"
-				/>
-			</svg>
-		</button>
+			<Icon name="arrow-left" />
+		</a>
 		<h1 class="heading-1">Crear Tarea</h1>
 	</div>
 
-	<!-- Formulario -->
 	<div class="max-w-3xl mx-auto glass-card p-6 sm:p-8">
 		<h2 class="heading-2 text-center mb-8">Datos</h2>
 
-		<form class="space-y-8">
-			<!-- Campo Nombre -->
-			<div class="flex flex-col space-y-2">
-				<label for="nombre" class="text-lg">Nombre *</label>
+		<form class="space-y-8" onsubmit={handleSubmit}>
+			<FormRow label="Nombre *" for="nombre" error={errors.name}>
 				<input
 					type="text"
 					id="nombre"
@@ -243,51 +176,34 @@
 					bind:value={form.name}
 					placeholder="Ingrese el nombre de la tarea"
 				/>
-				{#if submitted && errors.name}
-					<span class="text-red-300/90 text-xs">{errors.name}</span>
-				{/if}
-				<div class="border-t glass-divider mt-2"></div>
-			</div>
-			<!-- Campo Fecha simple -->
-			<div class="flex flex-col space-y-2">
-				<label for="fecha" class="text-lg">Fecha *</label>
+			</FormRow>
+
+			<FormRow label="Fecha *" for="fecha" error={errors.date}>
 				<input
 					type="date"
 					id="fecha"
 					class="glass-input"
 					bind:value={form.date}
-					max={new Date().toISOString().split('T')[0]}
+					max={localDateString()}
 				/>
-				{#if submitted && errors.date}
-					<span class="text-red-300/90 text-xs">{errors.date}</span>
-				{/if}
-				<div class="border-t glass-divider mt-2"></div>
-			</div>
+			</FormRow>
 
-			<!-- Campos Localidad y Distrito (como selects independientes) -->
 			<div class="flex flex-col space-y-6">
-				<!-- Select de Provincia -->
-				<div class="flex flex-col space-y-2">
-					<label for="provincia" class="text-lg">Provincia *</label>
+				<FormRow label="Provincia *" for="provincia" error={errors.selectedProvince}>
 					<GlassSelect
 						id="provincia"
 						ariaLabel="Provincia"
 						items={provinceItems}
 						value={form.selectedProvince}
 						onChange={(v) => {
-							form.selectedProvince = Number(v);
+							form.selectedProvince = v === null ? null : Number(v);
 							form.selectedDistrict = null;
 							form.selectedLocality = null;
 						}}
 					/>
-					{#if submitted && errors.selectedProvince}
-						<span class="text-red-300/90 text-xs">{errors.selectedProvince}</span>
-					{/if}
-					<div class="border-t glass-divider mt-2"></div>
-				</div>
-				<!-- Select de Distrito -->
-				<div class="flex flex-col space-y-2">
-					<label for="distrito" class="text-lg">Distrito *</label>
+				</FormRow>
+
+				<FormRow label="Distrito *" for="distrito" error={errors.selectedDistrict}>
 					<GlassSelect
 						id="distrito"
 						ariaLabel="Distrito"
@@ -298,14 +214,9 @@
 							form.selectedLocality = null;
 						}}
 					/>
-					{#if submitted && errors.selectedDistrict}
-						<span class="text-red-300/90 text-xs">{errors.selectedDistrict}</span>
-					{/if}
-					<div class="border-t glass-divider mt-2"></div>
-				</div>
-				<!-- Select de Localidad -->
-				<div class="flex flex-col space-y-2">
-					<label for="localidad" class="text-lg">Localidad *</label>
+				</FormRow>
+
+				<FormRow label="Localidad *" for="localidad" error={errors.selectedLocality}>
 					<GlassSelect
 						id="localidad"
 						ariaLabel="Localidad"
@@ -315,78 +226,53 @@
 							form.selectedLocality = v === null ? null : Number(v);
 						}}
 					/>
-					{#if submitted && errors.selectedLocality}
-						<span class="text-red-300/90 text-xs">{errors.selectedLocality}</span>
-					{/if}
-					<div class="border-t glass-divider mt-2"></div>
-				</div>
+				</FormRow>
 			</div>
 
-			<!-- Campo Archivo de video -->
-			<div class="flex flex-col space-y-2">
-				<label for="video" class="text-lg">Archivo de video *</label>
+			<FormRow label="Archivo de video *" for="video-upload" error={errors.file}>
 				<div class="flex items-center space-x-4">
 					<label
 						for="video-upload"
 						class="glass-button cursor-pointer px-4 py-2 border-sky-400/40 bg-sky-300/12 hover:bg-sky-300/20 text-sky-100 flex items-center"
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5 mr-2"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-							/>
-						</svg>
+						<Icon name="upload" class="h-5 w-5 mr-2" />
 						Seleccionar...
 					</label>
 					<input
 						type="file"
 						id="video-upload"
-						accept=".mp4,.avi,.mov"
+						accept={ALLOWED_VIDEO_EXTENSIONS.join(',')}
 						class="hidden"
 						onchange={handleFileSelect}
 					/>
 					<span class="text-white/80">
 						{form.file ? form.file.name : 'Ningún archivo seleccionado'}
 					</span>
-					{#if submitted && errors.file}
-						<span class="text-red-300/90 text-xs">{errors.file}</span>
-					{/if}
 				</div>
-				<p class="text-xs text-white/70 mt-1">Formatos aceptados: MP4, AVI, MOV.</p>
-				<div class="border-t glass-divider mt-2"></div>
-			</div>
+				<p class="text-xs text-white/70 mt-1">Formatos aceptados: {acceptedFormats}.</p>
+			</FormRow>
 
-			<!-- Botón de envío -->
 			<div class="flex justify-center mt-8">
 				<button
-					type="button"
-					onclick={handleSubmit}
-					class="relative overflow-hidden glass-button px-6 py-3 w-56 justify-center text-center
-						{!isUploading && isFormValid
-						? 'border-indigo-300/30 bg-indigo-300/12 hover:bg-indigo-300/20 text-indigo-100'
-						: ''}
-						{isUploading ? 'cursor-not-allowed' : ''}"
+					type="submit"
+					class={[
+						'relative overflow-hidden glass-button px-6 py-3 w-56 justify-center text-center',
+						!isUploading &&
+							isFormValid &&
+							'border-indigo-300/30 bg-indigo-300/12 hover:bg-indigo-300/20 text-indigo-100'
+					]}
 					aria-busy={isUploading}
-					aria-disabled={isUploading || !isFormValid}
-					role={isUploading && !isProcessing ? 'progressbar' : undefined}
-					aria-valuemin={isUploading && !isProcessing ? 0 : undefined}
-					aria-valuemax={isUploading && !isProcessing ? 100 : undefined}
-					aria-valuenow={isUploading && !isProcessing ? uploadProgress : undefined}
-					disabled={!isFormValid || isUploading}
+					disabled={isUploading}
 				>
 					{#if isUploading}
-						<!-- Barra de progreso como background -->
 						<div class="absolute inset-0 bg-white/5"></div>
 						<div
 							class="absolute inset-y-0 left-0 transition-[width] duration-150"
+							role={isProcessing ? undefined : 'progressbar'}
+							aria-label={isProcessing ? undefined : 'Progreso de subida'}
+							aria-valuemin={isProcessing ? undefined : 0}
+							aria-valuemax={isProcessing ? undefined : 100}
+							aria-valuenow={isProcessing ? undefined : uploadProgress}
 							style="width: {isProcessing
 								? 100
 								: uploadProgress}%; background: linear-gradient(to right, rgba(129,140,248,0.25), rgba(226,232,240,0.15));"

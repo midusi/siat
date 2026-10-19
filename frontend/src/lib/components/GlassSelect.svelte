@@ -5,7 +5,19 @@
 
 	type Item = { value: string | number; label: string };
 
-	// Props
+	interface Props {
+		items?: Item[];
+		placeholder?: string;
+		disabled?: boolean;
+		id?: string;
+		name?: string;
+		ariaLabel?: string;
+		ariaLabelledby?: string;
+		value?: string | number | null;
+		onChange?: (val: string | number | null) => void;
+		stopClickPropagation?: boolean;
+	}
+
 	let {
 		items = [],
 		placeholder = 'Seleccione...',
@@ -17,18 +29,7 @@
 		value: propValue = null,
 		onChange,
 		stopClickPropagation = false
-	} = $props<{
-		items?: Item[];
-		placeholder?: string;
-		disabled?: boolean;
-		id?: string;
-		name?: string;
-		ariaLabel?: string;
-		ariaLabelledby?: string;
-		value?: string | number | null;
-		onChange?: (val: string | number | null) => void;
-		stopClickPropagation?: boolean;
-	}>();
+	}: Props = $props();
 	let value = $state<string | number | null>(propValue);
 
 	let open = $state(false);
@@ -87,8 +88,7 @@
 				normalizeText(item.label).startsWith(normalizedKey)
 			)
 			.map(({ index }: { item: Item; index: number }) => index);
-		const matchIndex =
-			matches.find((index: number) => index >= startIndex) ?? matches[0] ?? -1;
+		const matchIndex = matches.find((index: number) => index >= startIndex) ?? matches[0] ?? -1;
 
 		if (matchIndex >= 0) {
 			highlighted = matchIndex;

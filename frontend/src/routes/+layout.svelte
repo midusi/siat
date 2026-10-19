@@ -1,23 +1,20 @@
 <script lang="ts">
-	let { children, data } = $props();
 	import '../app.css';
-	import Header from '$lib/components/Header.svelte';
-	import Sidebar from '$lib/components/Sidebar.svelte';
-	import { page } from '$app/stores';
 	import DialogHost from '$lib/components/DialogHost.svelte';
+	import Header from '$lib/components/Header.svelte';
+	import type { LayoutProps } from './$types';
+	import Sidebar from '$lib/components/Sidebar.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
 
-	const user = $derived(data.user);
-	let isLoginPage = $derived($page.url.pathname === '/login');
+	let { children, data }: LayoutProps = $props();
 </script>
 
 <div class="flex flex-col min-h-screen app-background">
-	{#if !isLoginPage && user}
-		<Header {user} />
+	{#if data.user}
+		<Header user={data.user} />
 		<div
-			class="flex flex-1 gap-[var(--layout-gap)] px-[var(--layout-gap)] pb-[var(--layout-bottom-gap)] mt-[var(--layout-gap)] overflow-y-auto"
-		>
-			<Sidebar {user} />
+			class="flex flex-1 gap-[var(--layout-gap)] px-[var(--layout-gap)] pb-[var(--layout-bottom-gap)] mt-[var(--layout-gap)] overflow-y-auto">
+			<Sidebar user={data.user} />
 			<main class="flex-1 overflow-auto pt-[var(--layout-gap)]">
 				{@render children()}
 			</main>
