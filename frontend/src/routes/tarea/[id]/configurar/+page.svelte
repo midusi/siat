@@ -53,11 +53,15 @@
 	let modoZonaExcluida = false; // página inicia en modo Entradas/Salidas
 
 	function setModoZonaExcluida(flag: boolean) {
-		if (modoZonaExcluida === flag) return;
+		if (modoZonaExcluida === flag) {
+			return;
+		}
 		modoZonaExcluida = flag;
 		// Al cambiar de modo, limpiar puntos actuales y cualquier polígono pendiente
 		currentPoints = [];
-		if (pendingPolygon) cancelPendingPolygon();
+		if (pendingPolygon) {
+			cancelPendingPolygon();
+		}
 		requestAnimationFrame(redrawCanvas);
 	}
 
@@ -95,7 +99,9 @@
 
 		// Función para obtener el primer frame del video desde el backend
 		const fetchFirstFrame = async () => {
-			if (!taskId) return;
+			if (!taskId) {
+				return;
+			}
 			try {
 				isLoading = true;
 				errorMessage = null;
@@ -160,7 +166,9 @@
 	): Array<{ x: number; y: number }> {
 		// Ordena los puntos alrededor del centro por ángulo polar.
 		// Funciona para N>=3 y evita polígonos auto-intersectados por orden incorrecto de clics.
-		if (points.length < 3) return points;
+		if (points.length < 3) {
+			return points;
+		}
 		const n = points.length;
 		const centro = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
 		centro.x /= n;
@@ -215,7 +223,9 @@
 	}
 
 	async function handleCanvasClick(event: MouseEvent) {
-		if (pendingPolygon) return;
+		if (pendingPolygon) {
+			return;
+		}
 		const rect = canvas.getBoundingClientRect();
 		// Convertir a coordenadas relativas al frame original
 		const xCanvas = event.clientX - rect.left;
@@ -278,7 +288,9 @@
 					confirmPendingPolygon();
 				}
 			}
-			if (event.key === 'Escape') cancelPendingPolygon();
+			if (event.key === 'Escape') {
+				cancelPendingPolygon();
+			}
 			return;
 		}
 
@@ -305,17 +317,25 @@
 			if (event.key === 'Escape') {
 				currentPoints = [];
 			}
-			if (event.key === 'Backspace') currentPoints.pop();
+			if (event.key === 'Backspace') {
+				currentPoints.pop();
+			}
 			requestAnimationFrame(redrawCanvas);
 			return;
 		}
-		if (event.key === 'Escape') currentPoints = [];
-		if (event.key === 'Backspace') currentPoints.pop();
+		if (event.key === 'Escape') {
+			currentPoints = [];
+		}
+		if (event.key === 'Backspace') {
+			currentPoints.pop();
+		}
 		requestAnimationFrame(redrawCanvas);
 	}
 
 	function confirmPendingPolygon() {
-		if (!pendingPolygon) return;
+		if (!pendingPolygon) {
+			return;
+		}
 		// Guardar el último sentido elegido para usarlo por defecto en el próximo polígono
 		lastSentido = pendingPolygon.sentido;
 		poligonos = [
@@ -343,7 +363,9 @@
 
 	// --- NUEVA FUNCIÓN ---
 	async function finalizarProceso() {
-		if (isSubmitting) return;
+		if (isSubmitting) {
+			return;
+		}
 		if (entradasCount === 0 || salidasCount === 0) {
 			await showAlert({
 				message: 'Debes configurar al menos una entrada y una salida antes de continuar.',
@@ -370,13 +392,14 @@
 				.map((p) => p.vertices.map(toAbs))
 		};
 
-
 		try {
 			const response = await apiFetch(`/task/${taskId}/config`, {
 				method: 'POST',
 				body: JSON.stringify(payload)
 			});
-			if (!response.ok) throw new Error('Error en el servidor');
+			if (!response.ok) {
+				throw new Error('Error en el servidor');
+			}
 			const result = await response.json();
 			await showAlert({ message: 'Vías guardadas correctamente.', variant: 'success' });
 			goto('/');
@@ -395,7 +418,9 @@
 
 	// --- Función Central de Dibujo ---
 	function redrawCanvas() {
-		if (!ctx) return;
+		if (!ctx) {
+			return;
+		}
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		// Dibujar polígonos confirmados: primero vías normales, luego excluidas para que queden por encima
@@ -418,7 +443,9 @@
 				y: (p.y * frameHeight * canvas.height) / frameHeight
 			}));
 			ctx.moveTo(absPoints[0].x, absPoints[0].y);
-			for (const p of absPoints.slice(1)) ctx.lineTo(p.x, p.y);
+			for (const p of absPoints.slice(1)) {
+				ctx.lineTo(p.x, p.y);
+			}
 			ctx.strokeStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 0.8)';
 			ctx.lineWidth = 2;
 			ctx.setLineDash([6, 6]);
@@ -437,7 +464,9 @@
 
 	// Reposiciona el popover según el tamaño actual del canvas y del popover
 	function updatePopoverPositionForCurrentPending() {
-		if (!pendingPolygon || !canvas) return;
+		if (!pendingPolygon || !canvas) {
+			return;
+		}
 		const rect = canvas.getBoundingClientRect();
 		// Convertir vértices relativos a px del canvas
 		const absVerticesCanvas = pendingPolygon.vertices.map((v) => ({
@@ -474,7 +503,9 @@
 			: color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
 		ctx.beginPath();
 		ctx.moveTo(absVertices[0].x, absVertices[0].y);
-		for (const v of absVertices.slice(1)) ctx.lineTo(v.x, v.y);
+		for (const v of absVertices.slice(1)) {
+			ctx.lineTo(v.x, v.y);
+		}
 		ctx.closePath();
 		ctx.fill();
 		ctx.strokeStyle = isExcluded ? 'rgba(0,0,0,1)' : color;
@@ -512,13 +543,17 @@
 		ctx.fillStyle = 'rgba(0,0,0,1)';
 		ctx.beginPath();
 		ctx.moveTo(absVertices[0].x, absVertices[0].y);
-		for (const v of absVertices.slice(1)) ctx.lineTo(v.x, v.y);
+		for (const v of absVertices.slice(1)) {
+			ctx.lineTo(v.x, v.y);
+		}
 		ctx.closePath();
 		ctx.fill();
 		ctx.restore();
 	}
 
-	$: if (pendingPolygon) requestAnimationFrame(redrawCanvas);
+	$: if (pendingPolygon) {
+		requestAnimationFrame(redrawCanvas);
+	}
 	function goBack() {
 		goto('/');
 	}

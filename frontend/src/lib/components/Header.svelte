@@ -15,7 +15,9 @@
 	function toggleDropdown(event: MouseEvent): void {
 		event.stopPropagation();
 		isDropdownOpen = !isDropdownOpen;
-		if (isDropdownOpen) positionDropdown();
+		if (isDropdownOpen) {
+			positionDropdown();
+		}
 	}
 
 	function closeDropdown(event: MouseEvent): void {
@@ -26,7 +28,9 @@
 	}
 
 	function positionDropdown() {
-		if (!btnEl) return;
+		if (!btnEl) {
+			return;
+		}
 		const rect = btnEl.getBoundingClientRect();
 		dropdownTop = Math.round(rect.bottom + 8);
 		dropdownRight = Math.round(window.innerWidth - rect.right);
@@ -56,7 +60,9 @@
 	async function handleLogout(): Promise<void> {
 		isLoggingOut = true;
 		const res = await apiFetch('/auth/logout', { method: 'POST' });
-		if (res.ok || res.status === 204) await goto('/login');
+		if (res.ok || res.status === 204) {
+			await goto('/login');
+		}
 		isLoggingOut = false;
 	}
 

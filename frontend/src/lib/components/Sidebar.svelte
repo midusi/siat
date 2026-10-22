@@ -44,7 +44,9 @@
 	}
 
 	function updateRail() {
-		if (!containerEl) return;
+		if (!containerEl) {
+			return;
+		}
 		const idx = menuItems.findIndex((it) => it.path === currentPath && isAllowed(it.id));
 		if (idx === -1) {
 			railVisible = false;
@@ -78,7 +80,9 @@
 
 	// Manage window resize listener with cleanup
 	$effect(() => {
-		if (typeof window === 'undefined') return;
+		if (typeof window === 'undefined') {
+			return;
+		}
 		window.addEventListener('resize', updateRail);
 		return () => window.removeEventListener('resize', updateRail);
 	});

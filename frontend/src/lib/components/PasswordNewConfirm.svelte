@@ -31,10 +31,18 @@
 
 	const getStrengthScore = (pwd: string): number => {
 		let score = 0;
-		if (pwd.length >= 8) score++;
-		if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
-		if (/\d/.test(pwd)) score++;
-		if (/[^A-Za-z0-9]/.test(pwd)) score++;
+		if (pwd.length >= 8) {
+			score++;
+		}
+		if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) {
+			score++;
+		}
+		if (/\d/.test(pwd)) {
+			score++;
+		}
+		if (/[^A-Za-z0-9]/.test(pwd)) {
+			score++;
+		}
 		return score;
 	};
 
@@ -51,7 +59,9 @@
 		<div class="mt-2">
 			<div class="flex gap-1">
 				{#each segments as i (i)}
-					<div class="h-1.5 flex-1 rounded {i < score ? strengthColors[score] : 'bg-white/12'}"></div>
+					<div
+						class="h-1.5 flex-1 rounded {i < score ? strengthColors[score] : 'bg-white/12'}"
+					></div>
 				{/each}
 			</div>
 			<p class="mt-1 text-xs text-white/70">

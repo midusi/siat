@@ -109,7 +109,9 @@ function report(
 	loaded: number,
 	total: number
 ) {
-	if (!onProgress || total <= 0) return;
+	if (!onProgress || total <= 0) {
+		return;
+	}
 	onProgress({
 		loaded,
 		total,
@@ -167,7 +169,9 @@ function putOnce(
 			xhr.setRequestHeader('Content-Type', contentType);
 		}
 		xhr.upload.addEventListener('progress', (event: ProgressEvent) => {
-			if (event.lengthComputable) onLoaded(event.loaded);
+			if (event.lengthComputable) {
+				onLoaded(event.loaded);
+			}
 		});
 		xhr.addEventListener('load', () => {
 			if (xhr.status >= 200 && xhr.status < 300) {

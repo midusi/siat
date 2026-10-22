@@ -1,5 +1,37 @@
 @import 'tailwindcss';
 
+@theme {
+	--shadow-glow:
+		0 0 5px rgba(255, 255, 255, 0.8), 0 0 10px rgba(255, 255, 255, 0.6),
+		0 0 20px rgba(255, 255, 255, 0.4);
+	--animate-draw-in: draw-in 220ms ease-out forwards;
+	--animate-glow-pulse: glow-pulse 2.2s ease-in-out infinite alternate;
+
+	@keyframes draw-in {
+		from {
+			stroke-dashoffset: 1;
+		}
+		to {
+			stroke-dashoffset: 0;
+		}
+	}
+
+	@keyframes glow-pulse {
+		0% {
+			box-shadow:
+				0 0 0 2px rgba(255, 255, 255, 0.2),
+				0 0 8px rgba(255, 255, 255, 0.12),
+				0 0 16px rgba(255, 255, 255, 0.08);
+		}
+		100% {
+			box-shadow:
+				0 0 0 3px rgba(255, 255, 255, 0.25),
+				0 0 14px rgba(255, 255, 255, 0.18),
+				0 0 28px rgba(255, 255, 255, 0.12);
+		}
+	}
+}
+
 @layer base {
 	:root {
 		--background: 0 0% 6%;
@@ -255,5 +287,15 @@
 
 	.btn-disabled:hover {
 		background-color: rgba(156, 163, 175, 0.22);
+	}
+
+	.color-dot {
+		display: inline-block;
+		width: 10px;
+		height: 10px;
+		border-radius: 9999px;
+		margin-right: 6px;
+		vertical-align: middle;
+		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
 	}
 }

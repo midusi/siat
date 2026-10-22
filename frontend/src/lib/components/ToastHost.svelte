@@ -22,10 +22,18 @@
 	}
 
 	function getIcon(variant: Toast['variant']) {
-		if (variant === 'success') return '✔';
-		if (variant === 'danger') return '⛔';
-		if (variant === 'warning') return '⚠️';
-		if (variant === 'info') return 'ℹ️';
+		if (variant === 'success') {
+			return '✔';
+		}
+		if (variant === 'danger') {
+			return '⛔';
+		}
+		if (variant === 'warning') {
+			return '⚠️';
+		}
+		if (variant === 'info') {
+			return 'ℹ️';
+		}
 		return '•';
 	}
 

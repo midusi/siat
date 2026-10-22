@@ -47,7 +47,9 @@
 	const selectedLabel = $derived(selectedIndex >= 0 ? items[selectedIndex]?.label : '');
 
 	function updatePosition() {
-		if (!browser || !buttonEl) return;
+		if (!browser || !buttonEl) {
+			return;
+		}
 		const r = buttonEl.getBoundingClientRect();
 		rect = {
 			top: Math.round(r.bottom + 4),
@@ -58,7 +60,9 @@
 	}
 
 	function toggle() {
-		if (disabled) return;
+		if (disabled) {
+			return;
+		}
 		if (!open) {
 			updatePosition();
 			open = true;
@@ -99,14 +103,22 @@
 
 	function selectIndex(idx: number, closeMenu = true) {
 		const it = items[idx] as Item | undefined;
-		if (!it) return;
+		if (!it) {
+			return;
+		}
 		value = it.value;
-		if (typeof onChange === 'function') onChange(value);
-		if (closeMenu) close();
+		if (typeof onChange === 'function') {
+			onChange(value);
+		}
+		if (closeMenu) {
+			close();
+		}
 	}
 
 	function onKeydown(e: KeyboardEvent) {
-		if (disabled) return;
+		if (disabled) {
+			return;
+		}
 		if (e.key.length === 1 && /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(e.key)) {
 			e.preventDefault();
 			if (!open) {
@@ -120,7 +132,9 @@
 			toggle();
 			return;
 		}
-		if (!open) return;
+		if (!open) {
+			return;
+		}
 		if (e.key === 'Escape') {
 			e.preventDefault();
 			close();
@@ -135,7 +149,9 @@
 			scrollHighlightedIntoView();
 		} else if (e.key === 'Enter') {
 			e.preventDefault();
-			if (highlighted >= 0) selectIndex(highlighted);
+			if (highlighted >= 0) {
+				selectIndex(highlighted);
+			}
 		} else if (e.key === 'Home') {
 			e.preventDefault();
 			highlighted = 0;
@@ -148,18 +164,26 @@
 	}
 
 	function scrollHighlightedIntoView() {
-		if (!menuEl) return;
+		if (!menuEl) {
+			return;
+		}
 		const el = menuEl.querySelector('[data-highlighted="true"]') as HTMLElement | null;
-		if (el) el.scrollIntoView({ block: 'nearest' });
+		if (el) {
+			el.scrollIntoView({ block: 'nearest' });
+		}
 	}
 
 	function onWindow() {
-		if (!open) return;
+		if (!open) {
+			return;
+		}
 		updatePosition();
 	}
 
 	function onDocumentPointerDown(event: PointerEvent): void {
-		if (!open) return;
+		if (!open) {
+			return;
+		}
 		const target = event.target as Node | null;
 		if (target && !buttonEl?.contains(target) && !menuEl?.contains(target)) {
 			close();
@@ -167,7 +191,9 @@
 	}
 
 	onMount(() => {
-		if (!browser) return;
+		if (!browser) {
+			return;
+		}
 		window.addEventListener('scroll', onWindow, true);
 		window.addEventListener('resize', onWindow, true);
 		document.addEventListener('pointerdown', onDocumentPointerDown, true);
@@ -192,7 +218,9 @@
 	aria-haspopup="listbox"
 	{disabled}
 	onclick={(e) => {
-		if (stopClickPropagation) e.stopPropagation();
+		if (stopClickPropagation) {
+			e.stopPropagation();
+		}
 		toggle();
 	}}
 	onkeydown={onKeydown}

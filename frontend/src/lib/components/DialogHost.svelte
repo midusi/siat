@@ -6,21 +6,27 @@
 	import { browser } from '$app/environment';
 
 	function variantClass(variant: DialogState['variant']): string {
-		if (variant === 'danger')
+		if (variant === 'danger') {
 			return 'border-red-600/50 bg-red-600/15 hover:bg-red-600/25 text-red-100';
-		if (variant === 'success')
+		}
+		if (variant === 'success') {
 			return 'border-green-500/40 bg-green-400/12 hover:bg-green-400/20 text-green-100';
-		if (variant === 'warning')
+		}
+		if (variant === 'warning') {
 			return 'border-amber-400/40 bg-amber-300/12 hover:bg-amber-300/20 text-amber-100';
-		if (variant === 'info')
+		}
+		if (variant === 'info') {
 			return 'border-sky-400/40 bg-sky-300/12 hover:bg-sky-300/20 text-sky-100';
+		}
 		return 'border-white/20 bg-white/10 hover:bg-white/20 text-white/90';
 	}
 
 	let dialog: DialogState | null = null;
 
 	function onKeydown(e: KeyboardEvent) {
-		if (!dialog) return;
+		if (!dialog) {
+			return;
+		}
 		if (e.key === 'Escape') {
 			if (dialog.type === 'alert') {
 				dialog.resolve();
@@ -32,7 +38,9 @@
 	}
 
 	function handleConfirm() {
-		if (!dialog) return;
+		if (!dialog) {
+			return;
+		}
 		if (dialog.type === 'alert') {
 			dialog.resolve();
 		} else {
@@ -42,7 +50,9 @@
 	}
 
 	function handleCancel() {
-		if (!dialog) return;
+		if (!dialog) {
+			return;
+		}
 		if (dialog.type === 'confirm') {
 			dialog.resolve(false);
 		}
@@ -65,7 +75,9 @@
 		});
 		return () => {
 			unsub();
-			if (browser) document.body.style.overflow = '';
+			if (browser) {
+				document.body.style.overflow = '';
+			}
 		};
 	});
 </script>

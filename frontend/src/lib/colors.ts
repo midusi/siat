@@ -69,7 +69,9 @@ function generateAdditionalColors(count: number, existing: string[] = []): strin
 	while (colors.length < count && i < count * 20) {
 		hue = (hue + golden) % 360;
 		const inForbidden = forbidden.some(([a, b]) => {
-			if (a <= b) return hue >= a && hue <= b;
+			if (a <= b) {
+				return hue >= a && hue <= b;
+			}
 			// wrapped interval
 			return hue >= a || hue <= b;
 		});
@@ -97,14 +99,18 @@ function generateAdditionalColors(count: number, existing: string[] = []): strin
 
 function hexToHue(hex: string): number | null {
 	const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);
-	if (!m) return null;
+	if (!m) {
+		return null;
+	}
 	const r = parseInt(m[1], 16) / 255;
 	const g = parseInt(m[2], 16) / 255;
 	const b = parseInt(m[3], 16) / 255;
 	const max = Math.max(r, g, b),
 		min = Math.min(r, g, b);
 	const d = max - min;
-	if (d === 0) return 0;
+	if (d === 0) {
+		return 0;
+	}
 	let h = 0;
 	switch (max) {
 		case r:
@@ -118,12 +124,16 @@ function hexToHue(hex: string): number | null {
 			break;
 	}
 	h = Math.round(h * 60);
-	if (h < 0) h += 360;
+	if (h < 0) {
+		h += 360;
+	}
 	return h;
 }
 
 export function getCategoryPalette(n: number): string[] {
-	if (n <= ANCHOR_COLORS.length) return ANCHOR_COLORS.slice(0, n);
+	if (n <= ANCHOR_COLORS.length) {
+		return ANCHOR_COLORS.slice(0, n);
+	}
 	const extra = generateAdditionalColors(n - ANCHOR_COLORS.length, ANCHOR_COLORS);
 	return [...ANCHOR_COLORS, ...extra].slice(0, n);
 }
@@ -148,7 +158,9 @@ export function getCategoryColorMap(categories: string[]): Map<string, string> {
 }
 
 export function getCategoryColor(category: string, categories: string[]): string {
-	if (!category) return RESERVED_COLORS.black;
+	if (!category) {
+		return RESERVED_COLORS.black;
+	}
 	if (
 		category.toUpperCase() === 'IND' ||
 		category.toUpperCase() === 'UNKNOWN' ||
