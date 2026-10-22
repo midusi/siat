@@ -1,18 +1,16 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 
-	let {
-		open,
-		title,
-		onclose,
-		children
-	}: {
+	import type { Snippet } from 'svelte';
+
+	type Props = {
+		children: Snippet;
+		onclose: () => void;
 		open: boolean;
 		title?: string;
-		onclose: () => void;
-		children: Snippet;
-	} = $props();
+	};
+
+	let { children, onclose, open, title }: Props = $props();
 
 	const onKeydown = (e: KeyboardEvent): void => {
 		if (open && e.key === 'Escape') {

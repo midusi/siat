@@ -1,17 +1,14 @@
 <script lang="ts">
 	import * as review from './review';
 
-	let {
-		roadsIn,
-		roadsOut,
-		excludedZones,
-		scale
-	}: {
+	type Props = {
+		excludedZones: [number, number][][];
 		roadsIn: review.RoadPoly[];
 		roadsOut: review.RoadPoly[];
-		excludedZones: [number, number][][];
 		scale: review.Scale;
-	} = $props();
+	};
+
+	let { excludedZones, roadsIn, roadsOut, scale }: Props = $props();
 </script>
 
 {#snippet roadPolygons(

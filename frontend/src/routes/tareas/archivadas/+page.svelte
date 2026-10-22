@@ -5,9 +5,11 @@
 	import { onMount } from 'svelte';
 	import TaskTable from '$lib/components/TaskTable.svelte';
 
-	const tasks = createTaskList(fetchArchivedTasks);
+	import type { ActionDispatch, TaskList } from '$lib/task-list.svelte';
 
-	const handleAction = actionDispatcher({
+	const tasks: TaskList = createTaskList(fetchArchivedTasks);
+
+	const handleAction: ActionDispatch = actionDispatcher({
 		desarchivar: (id) => tasks.run(id, 'desarchivar', () => unarchiveTask(id)),
 		eliminar: tasks.confirmDelete
 	});

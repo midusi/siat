@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { Role } from '$lib/types/user';
 
-	let { role }: { role: Role } = $props();
+	type Props = {
+		role: Role;
+	};
+
+	let { role }: Props = $props();
 
 	const isAdmin = $derived(role === 'ROLE_ADMIN');
 </script>

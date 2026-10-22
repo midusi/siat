@@ -1,34 +1,33 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
 	import { portal } from '$lib/actions/portal';
 
 	type Item = { value: string | number; label: string };
-
-	interface Props {
-		items?: Item[];
-		placeholder?: string;
-		disabled?: boolean;
-		id?: string;
-		name?: string;
+	type Props = {
 		ariaLabel?: string;
 		ariaLabelledby?: string;
-		value?: string | number | null;
+		disabled?: boolean;
+		id?: string;
+		items?: Item[];
+		name?: string;
 		onChange?: (val: string | number | null) => void;
+		placeholder?: string;
 		stopClickPropagation?: boolean;
-	}
+		value?: string | number | null;
+	};
 
 	let {
-		items = [],
-		placeholder = 'Seleccione...',
-		disabled = false,
-		id,
-		name,
 		ariaLabel,
 		ariaLabelledby,
-		value: propValue = null,
+		disabled = false,
+		id,
+		items = [],
+		name,
 		onChange,
-		stopClickPropagation = false
+		placeholder = 'Seleccione...',
+		stopClickPropagation = false,
+		value: propValue = null
 	}: Props = $props();
 	let value = $state<string | number | null>(propValue);
 

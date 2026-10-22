@@ -1,17 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	let {
-		children,
-		error,
-		for: htmlFor,
-		label
-	}: {
+	type Props = {
 		children: Snippet;
 		error?: string;
 		for: string;
 		label: string;
-	} = $props();
+	};
+
+	let { children, error, for: htmlFor, label }: Props = $props();
 </script>
 
 <div class="flex flex-col space-y-2">

@@ -1,15 +1,13 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 
-	let {
-		value = $bindable(''),
-		ref = $bindable(null),
-		placeholder = 'Buscar...'
-	}: {
-		value: string;
-		ref?: HTMLInputElement | null;
+	type Props = {
 		placeholder?: string;
-	} = $props();
+		ref?: HTMLInputElement | null;
+		value: string;
+	};
+
+	let { placeholder = 'Buscar...', ref = $bindable(null), value = $bindable('') }: Props = $props();
 </script>
 
 <div class="relative">

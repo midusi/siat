@@ -1,22 +1,19 @@
 <script lang="ts">
 	import * as review from './review';
 
-	const SEGMENT_DELAY_MS = 35;
-
-	let {
-		pastSegments,
-		futureSegments,
-		animating,
-		fadingOut
-	}: {
-		pastSegments: review.Point[][];
-		futureSegments: review.Point[][];
+	type Props = {
 		animating: boolean;
 		fadingOut: boolean;
-	} = $props();
+		futureSegments: Array<Array<review.Point>>;
+		pastSegments: Array<Array<review.Point>>;
+	};
+
+	const SEGMENT_DELAY_MS: number = 35;
+
+	let { animating, fadingOut, futureSegments, pastSegments }: Props = $props();
 </script>
 
-{#snippet routeLine(seg: review.Point[], i: number, past: boolean)}
+{#snippet routeLine(seg: Array<review.Point>, i: number, past: boolean)}
 	{#if seg.length > 1}
 		<polyline
 			points={(past ? [...seg].reverse() : seg).map((p) => `${p.x},${p.y}`).join(' ')}

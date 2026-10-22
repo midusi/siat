@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
-	import Spinner from '$lib/components/Spinner.svelte';
+	import { goto } from '$app/navigation';
 	import { portal } from '$lib/actions/portal';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	let { user } = $props<{ user: App.Locals['user'] }>();
 

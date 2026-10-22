@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { dialogStore, closeDialog, type DialogState } from '$lib/dialog';
-	import { fade, scale } from 'svelte/transition';
-	import { cubicOut } from 'svelte/easing';
-	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { closeDialog, dialogStore } from '$lib/dialog';
+	import { cubicOut } from 'svelte/easing';
+	import { fade, scale } from 'svelte/transition';
+	import { onMount } from 'svelte';
+
+	import type { DialogState } from '$lib/dialog';
 
 	function variantClass(variant: DialogState['variant']): string {
 		if (variant === 'danger') {

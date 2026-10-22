@@ -1,176 +1,139 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { tick } from 'svelte';
-	import { quintOut } from 'svelte/easing';
-	import { fly, fade } from 'svelte/transition';
-	import { page } from '$app/stores';
-	import { BACKEND_URL } from '$lib/constants';
 	import { apiFetch } from '$lib/api';
+	import { fade, fly } from 'svelte/transition';
+	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
+	import { onMount, tick } from 'svelte';
+	import { page } from '$app/state';
+	import { quintOut } from 'svelte/easing';
+	import ScrollArea from '$lib/components/ScrollArea.svelte';
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import GlassSelect from '$lib/components/GlassSelect.svelte';
-	import ScrollArea from '$lib/components/ScrollArea.svelte';
 
-	// --- Estado de la Carga de Datos ---
-	let imageSrc: string = '';
-	let isLoading: boolean = true;
-	let errorMessage: string | null = null;
-	let taskId: string;
-	// Dimensiones originales del frame
-	let frameWidth: number = 1920;
-	let frameHeight: number = 1080;
-
-	// Variables para la información del primer frame
-	let videoWidth: number;
-	let videoHeight: number;
-	let imageB64: string;
-
-	// --- Estado del Canvas y Dibujo ---
-	let canvas: HTMLCanvasElement;
-	let ctx: CanvasRenderingContext2D;
-	let imageRef: HTMLImageElement;
-	// Los puntos se guardan como relativos (0-1)
-	let currentPoints: Array<{ x: number; y: number }> = [];
-
-	// --- Estado de Polígonos ---
-	// Los vértices ahora son relativos (0-1)
-	let poligonos: Array<{
+	type AbsolutePoint = [number, number];
+	type Coordinates = { x: number; y: number };
+	type FirstFrameInfo = { width: number; height: number; image_b64: string };
+	type Polygon = {
 		id: number;
 		via: string;
 		sentido: string;
-		vertices: Array<{ x: number; y: number }>;
-	}> = [];
+		vertices: Array<Coordinates>;
+	};
+	type PopoverPosition = { top: number; left: number; transform: string };
+	type Road = { name: string; polygon: Array<AbsolutePoint> };
+	type TaskConfigPayload = {
+		roads_in: Array<Road>;
+		roads_out: Array<Road>;
+		excluded_zones: Array<Array<AbsolutePoint>>;
+	};
 
-	// IDs únicos para claves estables en listas
-	let _idCounter = 0;
-	function newId() {
+	const OPCIONES_SENTIDO: Array<string> = ['Entrada', 'Salida'];
+
+	let _idCounter: number = 0;
+	let canvas: HTMLCanvasElement | null = $state(null);
+	let ctx: CanvasRenderingContext2D | null = $state.raw(null);
+	let currentPoints: Array<Coordinates> = $state([]);
+	let errorMessage: string | null = $state(null);
+	let frameHeight: number = $state(1080);
+	let frameWidth: number = $state(1920);
+	let imageRef: HTMLImageElement | null = $state(null);
+	let imageSrc: string = $state('');
+	let isLoading: boolean = $state(true);
+	let isSubmitting: boolean = $state(false);
+	let lastSentido: string = OPCIONES_SENTIDO[0];
+	let modoZonaExcluida: boolean = $state(false);
+	let pendingPolygon: Omit<Polygon, 'id'> | null = $state(null);
+	let polygons: Array<Polygon> = $state([]);
+	let popoverEl: HTMLDivElement | null = $state(null);
+	let popoverPosition: PopoverPosition = $state({
+		top: 0,
+		left: 0,
+		transform: 'translate(-50%, 15px)'
+	});
+	let viaInputEl: HTMLInputElement | null = $state(null);
+
+	const taskId: string = $derived(page.params.id);
+	let entradasCount: number = $derived(polygons.filter((p) => p.sentido === 'Entrada').length);
+	let salidasCount: number = $derived(polygons.filter((p) => p.sentido === 'Salida').length);
+	let canSubmit: boolean = $derived(entradasCount > 0 && salidasCount > 0 && !isSubmitting);
+
+	$effect(() => {
+		redrawCanvas();
+	});
+
+	onMount(() => {
+		fetchFirstFrame();
+	});
+
+	const fetchFirstFrame = async (): Promise<void> => {
+		if (!taskId) {
+			return;
+		}
+		try {
+			isLoading = true;
+			errorMessage = null;
+			const response: Response = await apiFetch(`/task/${taskId}/get-first-frame-info`);
+			if (!response.ok) {
+				throw new Error(`Error al obtener información del primer frame: ${response.statusText}`);
+			}
+			const info: FirstFrameInfo = await response.json();
+			if (!info.image_b64) {
+				throw new Error('Respuesta sin imagen base64');
+			}
+			frameWidth = info.width;
+			frameHeight = info.height;
+			imageSrc = `data:image/jpeg;base64,${info.image_b64}`;
+		} catch (error) {
+			console.error('No se pudo cargar el frame de la tarea:', error);
+			errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
+		} finally {
+			isLoading = false;
+		}
+	};
+
+	const onResize = (): void => {
+		setupCanvas();
+		updatePopoverPositionForCurrentPending();
+	};
+
+	const newId = (): number => {
 		_idCounter += 1;
 		return Date.now() + _idCounter;
-	}
+	};
 
-	// Modo para agregar zonas excluidas
-	let modoZonaExcluida = false; // página inicia en modo Entradas/Salidas
-
-	function setModoZonaExcluida(flag: boolean) {
+	const setModoZonaExcluida = (flag: boolean): void => {
 		if (modoZonaExcluida === flag) {
 			return;
 		}
 		modoZonaExcluida = flag;
-		// Al cambiar de modo, limpiar puntos actuales y cualquier polígono pendiente
 		currentPoints = [];
 		if (pendingPolygon) {
 			cancelPendingPolygon();
 		}
-		requestAnimationFrame(redrawCanvas);
-	}
+	};
 
-	// --- Estado del Popover Contextual ---
-	let pendingPolygon: {
-		via: string;
-		sentido: string;
-		vertices: Array<{ x: number; y: number }>;
-	} | null = null;
-	let popoverPosition = { top: 0, left: 0, transform: 'translate(-50%, 15px)' };
-	let popoverEl: HTMLDivElement | null = null;
-	let viaInputEl: HTMLInputElement | null = null;
-
-	// --- Estado de la Interfaz ---
-	let isSubmitting = false; // Para deshabilitar el botón "Finalizar" durante el envío
-
-	// Reglas de validación para finalizar: al menos 1 Entrada y 1 Salida
-	let entradasCount = 0;
-	let salidasCount = 0;
-	$: entradasCount = poligonos.filter((p) => p.sentido === 'Entrada').length;
-	$: salidasCount = poligonos.filter((p) => p.sentido === 'Salida').length;
-	$: canSubmit = entradasCount > 0 && salidasCount > 0 && !isSubmitting;
-
-	// --- Opciones ---
-	// Via ahora es texto libre; mantener únicamente los sentidos predefinidos
-	let opcionesSentido = ['Entrada', 'Salida'];
-	// Recordar el último "Sentido" elegido para preseleccionarlo en el siguiente polígono
-	let lastSentido: string = opcionesSentido[0];
-
-	// --- Ciclo de vida y Eventos ---
-	onMount(() => {
-		const unsubscribePage = page.subscribe((p) => {
-			taskId = p.params.id;
-		});
-
-		// Función para obtener el primer frame del video desde el backend
-		const fetchFirstFrame = async () => {
-			if (!taskId) {
-				return;
-			}
-			try {
-				isLoading = true;
-				errorMessage = null;
-				const response = await apiFetch(`/task/${taskId}/get-first-frame-info`);
-
-				if (!response.ok) {
-					throw new Error(`Error al obtener información del primer frame: ${response.statusText}`);
-				}
-
-				const info = await response.json();
-				videoWidth = info.width;
-				videoHeight = info.height;
-				imageB64 = info.image_b64;
-				// Actualizar dimensiones del frame usadas para las transformaciones
-				frameWidth = videoWidth;
-				frameHeight = videoHeight;
-				// Construir el src de la imagen desde el base64 recibido
-				if (imageB64) {
-					imageSrc = `data:image/jpeg;base64,${imageB64}`;
-				} else {
-					throw new Error('Respuesta sin imagen base64');
-				}
-			} catch (error) {
-				console.error('No se pudo cargar el frame de la tarea:', error);
-				errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
-			} finally {
-				isLoading = false;
-			}
-		};
-
-		fetchFirstFrame();
-
-		// Los listeners se mantienen, pero la inicialización del canvas ahora es más robusta.
-		window.addEventListener('keydown', handleKeyDown);
-		const onResize = () => {
-			setupCanvas();
-			updatePopoverPositionForCurrentPending();
-		};
-		window.addEventListener('resize', onResize);
-
-		onDestroy(() => {
-			unsubscribePage(); // Limpiar la suscripción
-			window.removeEventListener('keydown', handleKeyDown);
-			window.removeEventListener('resize', onResize);
-		});
-	});
-
-	function setupCanvas() {
-		if (imageRef && imageRef.complete && imageRef.naturalWidth > 0 && canvas) {
-			ctx = canvas.getContext('2d')!;
-			// Usamos clientWidth/clientHeight para que el canvas tenga el tamaño visual de la imagen
-			canvas.width = imageRef.clientWidth;
-			canvas.height = imageRef.clientHeight;
-			requestAnimationFrame(redrawCanvas); // Redibujar todo con las dimensiones correctas
+	const setupCanvas = (): void => {
+		if (!canvas || !imageRef?.complete || !imageRef.naturalWidth) {
+			return;
 		}
-	}
+		ctx = canvas.getContext('2d');
+		canvas.width = imageRef.clientWidth;
+		canvas.height = imageRef.clientHeight;
+		requestAnimationFrame(redrawCanvas);
+	};
 
-	// --- Lógica de Interacción ---
+	const toCanvasPx = (points: Array<Coordinates>, target: HTMLCanvasElement): Array<Coordinates> =>
+		points.map((p) => ({ x: p.x * target.width, y: p.y * target.height }));
 
-	function ordenarVertices(
-		points: Array<{ x: number; y: number }>
-	): Array<{ x: number; y: number }> {
-		// Ordena los puntos alrededor del centro por ángulo polar.
-		// Funciona para N>=3 y evita polígonos auto-intersectados por orden incorrecto de clics.
+	const ordenarVertices = (points: Array<Coordinates>): Array<Coordinates> => {
 		if (points.length < 3) {
 			return points;
 		}
-		const n = points.length;
-		const centro = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+		const n: number = points.length;
+		const centro: Coordinates = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), {
+			x: 0,
+			y: 0
+		});
 		centro.x /= n;
 		centro.y /= n;
 		return points
@@ -180,38 +143,38 @@
 			}))
 			.sort((a, b) => a.angle - b.angle)
 			.map(({ x, y }) => ({ x, y }));
-	}
+	};
 
-	function calculatePopoverPosition(
-		polyVerticesCanvasPx: Array<{ x: number; y: number }>,
+	const calculatePopoverPosition = (
+		polyVerticesCanvasPx: Array<Coordinates>,
 		canvasRect: DOMRect,
 		measuredWidth?: number,
 		measuredHeight?: number
-	) {
-		const centro = polyVerticesCanvasPx.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
-			x: 0,
-			y: 0
-		});
+	): PopoverPosition => {
+		const centro: Coordinates = polyVerticesCanvasPx.reduce(
+			(acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
+			{
+				x: 0,
+				y: 0
+			}
+		);
 		centro.x /= 4;
 		centro.y /= 4;
 
-		const margin = 16;
-		const offsetY = 15;
-		const width = measuredWidth ?? popoverEl?.offsetWidth ?? 288; // fallback to w-72
-		const height = measuredHeight ?? popoverEl?.offsetHeight ?? 230; // sensible default
+		const margin: number = 16;
+		const offsetY: number = 15;
+		const width: number = measuredWidth ?? popoverEl?.offsetWidth ?? 288;
+		const height: number = measuredHeight ?? popoverEl?.offsetHeight ?? 230;
 
-		// Default: show below
-		let top = centro.y + canvasRect.top + offsetY;
-		let transform = 'translate(-50%, 0)';
+		let top: number = centro.y + canvasRect.top + offsetY;
+		let transform: string = 'translate(-50%, 0)';
 
-		// If it would overflow bottom, flip above using measured height
 		if (top + height > window.innerHeight - margin) {
 			top = centro.y + canvasRect.top - offsetY - height;
 			transform = 'translate(-50%, 0)';
 		}
 
-		// Horizontal clamping
-		let left = centro.x + canvasRect.left;
+		let left: number = centro.x + canvasRect.left;
 		if (left + width / 2 > window.innerWidth - margin) {
 			left = window.innerWidth - width / 2 - margin;
 		}
@@ -220,68 +183,47 @@
 		}
 
 		return { top, left, transform };
-	}
+	};
 
-	async function handleCanvasClick(event: MouseEvent) {
-		if (pendingPolygon) {
+	const handleCanvasClick = async (event: MouseEvent): Promise<void> => {
+		if (pendingPolygon || !canvas) {
 			return;
 		}
-		const rect = canvas.getBoundingClientRect();
-		// Convertir a coordenadas relativas al frame original
-		const xCanvas = event.clientX - rect.left;
-		const yCanvas = event.clientY - rect.top;
-		// Relativo al tamaño actual del canvas
-		const xRel = (xCanvas * frameWidth) / canvas.width / frameWidth;
-		const yRel = (yCanvas * frameHeight) / canvas.height / frameHeight;
-		// Simplifica: xRel = xCanvas / canvas.width, pero guardamos la relación con frameWidth
-		currentPoints.push({ x: xCanvas / canvas.width, y: yCanvas / canvas.height });
+		const rect: DOMRect = canvas.getBoundingClientRect();
+		const xCanvas: number = event.clientX - rect.left;
+		const yCanvas: number = event.clientY - rect.top;
+		const xRel: number = xCanvas / canvas.width;
+		const yRel: number = yCanvas / canvas.height;
+		currentPoints.push({ x: xRel, y: yRel });
 
-		// En modo zona excluida, no mostramos popover, se confirma con Enter y permite N puntos
-		if (modoZonaExcluida) {
-			requestAnimationFrame(redrawCanvas);
+		if (modoZonaExcluida || currentPoints.length !== 4) {
 			return;
 		}
 
-		if (currentPoints.length === 4) {
-			const verticesOrdenados = ordenarVertices(currentPoints);
-			pendingPolygon = {
-				vertices: verticesOrdenados,
-				via: '',
-				sentido: lastSentido
-			};
-			currentPoints = [];
-			// Para el popover, convertir a absolutas para posicionar
-			const absVertices = verticesOrdenados.map((v) => ({
-				x: v.x * frameWidth,
-				y: v.y * frameHeight
-			}));
-			// Escalar a canvas actual para mostrar el popover
-			const absVerticesCanvas = absVertices.map((v) => ({
-				x: (v.x * canvas.width) / frameWidth,
-				y: (v.y * canvas.height) / frameHeight
-			}));
-			const { top, left, transform } = calculatePopoverPosition(absVerticesCanvas, rect);
-			popoverPosition = { top, left, transform };
+		const verticesOrdenados: Array<Coordinates> = ordenarVertices(currentPoints);
+		pendingPolygon = {
+			vertices: verticesOrdenados,
+			via: '',
+			sentido: lastSentido
+		};
+		currentPoints = [];
+		const verticesCanvas: Array<Coordinates> = toCanvasPx(verticesOrdenados, canvas);
+		popoverPosition = calculatePopoverPosition(verticesCanvas, rect);
 
-			// Recalcular usando el tamaño real del popover una vez renderizado
-			await tick();
-			const rect2 = canvas.getBoundingClientRect();
-			const measured = calculatePopoverPosition(
-				absVerticesCanvas,
-				rect2,
-				popoverEl?.offsetWidth ?? undefined,
-				popoverEl?.offsetHeight ?? undefined
-			);
-			popoverPosition = measured;
+		await tick();
+		const rect2: DOMRect = canvas.getBoundingClientRect();
+		popoverPosition = calculatePopoverPosition(
+			verticesCanvas,
+			rect2,
+			popoverEl?.offsetWidth,
+			popoverEl?.offsetHeight
+		);
 
-			// Enfocar el campo de texto al mostrar el popover
-			viaInputEl?.focus();
-			viaInputEl?.select();
-		}
-		requestAnimationFrame(redrawCanvas);
-	}
+		viaInputEl?.focus();
+		viaInputEl?.select();
+	};
 
-	async function handleKeyDown(event: KeyboardEvent) {
+	const handleKeyDown = async (event: KeyboardEvent): Promise<void> => {
 		if (pendingPolygon) {
 			if (event.key === 'Enter') {
 				if (pendingPolygon.via && pendingPolygon.via.trim().length > 0) {
@@ -294,15 +236,13 @@
 			return;
 		}
 
-		// Modo zona excluida: Enter confirma si hay al menos 3 puntos
 		if (modoZonaExcluida) {
 			if (event.key === 'Enter') {
 				if (currentPoints.length >= 3) {
-					// Ordenar los vértices y agregar como vía con sentido 'Excluida'
-					const verticesOrdenados = ordenarVertices(currentPoints);
-					const nextIdx = poligonos.filter((p) => p.sentido === 'Excluida').length + 1;
-					poligonos = [
-						...poligonos,
+					const verticesOrdenados: Array<Coordinates> = ordenarVertices(currentPoints);
+					const nextIdx: number = polygons.filter((p) => p.sentido === 'Excluida').length + 1;
+					polygons = [
+						...polygons,
 						{
 							id: newId(),
 							via: `Zona excluída ${nextIdx}`,
@@ -311,7 +251,6 @@
 						}
 					];
 					currentPoints = [];
-					await tick(); // forzar actualización inmediata si hay elementos dependientes
 				}
 			}
 			if (event.key === 'Escape') {
@@ -320,7 +259,6 @@
 			if (event.key === 'Backspace') {
 				currentPoints.pop();
 			}
-			requestAnimationFrame(redrawCanvas);
 			return;
 		}
 		if (event.key === 'Escape') {
@@ -329,17 +267,15 @@
 		if (event.key === 'Backspace') {
 			currentPoints.pop();
 		}
-		requestAnimationFrame(redrawCanvas);
-	}
+	};
 
-	function confirmPendingPolygon() {
+	const confirmPendingPolygon = (): void => {
 		if (!pendingPolygon) {
 			return;
 		}
-		// Guardar el último sentido elegido para usarlo por defecto en el próximo polígono
 		lastSentido = pendingPolygon.sentido;
-		poligonos = [
-			...poligonos,
+		polygons = [
+			...polygons,
 			{
 				id: newId(),
 				via: pendingPolygon.via.trim(),
@@ -348,21 +284,17 @@
 			}
 		];
 		pendingPolygon = null;
-		requestAnimationFrame(redrawCanvas);
-	}
+	};
 
-	function cancelPendingPolygon() {
+	const cancelPendingPolygon = (): void => {
 		pendingPolygon = null;
-		requestAnimationFrame(redrawCanvas);
-	}
+	};
 
-	function eliminarPoligono(id: number) {
-		poligonos = poligonos.filter((p) => p.id !== id);
-		requestAnimationFrame(redrawCanvas);
-	}
+	const eliminarPoligono = (id: number): void => {
+		polygons = polygons.filter((p) => p.id !== id);
+	};
 
-	// --- NUEVA FUNCIÓN ---
-	async function finalizarProceso() {
+	const finalizarProceso = async (): Promise<void> => {
 		if (isSubmitting) {
 			return;
 		}
@@ -375,36 +307,33 @@
 		}
 		isSubmitting = true;
 
-		// Construir el objeto de envío con las claves correctas para el backend
-		const toAbs = (v: { x: number; y: number }) => [
+		const toAbs = (v: Coordinates): AbsolutePoint => [
 			Math.round(v.x * frameWidth),
 			Math.round(v.y * frameHeight)
 		];
-		const payload = {
-			roads_in: poligonos
+		const payload: TaskConfigPayload = {
+			roads_in: polygons
 				.filter((p) => p.sentido === 'Entrada')
 				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
-			roads_out: poligonos
+			roads_out: polygons
 				.filter((p) => p.sentido === 'Salida')
 				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
-			excluded_zones: poligonos
+			excluded_zones: polygons
 				.filter((p) => p.sentido === 'Excluida')
 				.map((p) => p.vertices.map(toAbs))
 		};
 
 		try {
-			const response = await apiFetch(`/task/${taskId}/config`, {
+			const response: Response = await apiFetch(`/task/${taskId}/config`, {
 				method: 'POST',
 				body: JSON.stringify(payload)
 			});
 			if (!response.ok) {
 				throw new Error('Error en el servidor');
 			}
-			const result = await response.json();
+			await response.json();
 			await showAlert({ message: 'Vías guardadas correctamente.', variant: 'success' });
 			goto('/');
-			// Opcional: limpiar polígonos, redirigir, mostrar mensaje de éxito, etc.
-			// poligonos = [];
 		} catch (error) {
 			console.error('Fallo al enviar los datos:', error);
 			await showAlert({
@@ -414,34 +343,26 @@
 		} finally {
 			isSubmitting = false;
 		}
-	}
+	};
 
-	// --- Función Central de Dibujo ---
-	function redrawCanvas() {
-		if (!ctx) {
+	const redrawCanvas = (): void => {
+		if (!ctx || !canvas) {
 			return;
 		}
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-		// Dibujar polígonos confirmados: primero vías normales, luego excluidas para que queden por encima
-		poligonos
+		polygons
 			.filter((p) => p.sentido !== 'Excluida')
 			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
-		poligonos
+		polygons
 			.filter((p) => p.sentido === 'Excluida')
 			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
-		// Dibujar polígono pendiente
 		if (pendingPolygon) {
 			drawPolygonRel(pendingPolygon, { pending: true });
 		}
-		// Dibujar puntos actuales
 		if (currentPoints.length > 0) {
 			ctx.beginPath();
-			// Convertir a absolutas usando frame original y escalar a canvas
-			const absPoints = currentPoints.map((p) => ({
-				x: (p.x * frameWidth * canvas.width) / frameWidth,
-				y: (p.y * frameHeight * canvas.height) / frameHeight
-			}));
+			const absPoints: Array<Coordinates> = toCanvasPx(currentPoints, canvas);
 			ctx.moveTo(absPoints[0].x, absPoints[0].y);
 			for (const p of absPoints.slice(1)) {
 				ctx.lineTo(p.x, p.y);
@@ -451,49 +372,40 @@
 			ctx.setLineDash([6, 6]);
 			ctx.stroke();
 			ctx.setLineDash([]);
-			absPoints.forEach((p) => {
+			for (const p of absPoints) {
 				ctx.fillStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 1)';
 				ctx.beginPath();
 				ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
 				ctx.fill();
-			});
+			}
 		}
+	};
 
-		// Zonas excluidas ya se dibujan en el paso anterior con estilo especial
-	}
-
-	// Reposiciona el popover según el tamaño actual del canvas y del popover
-	function updatePopoverPositionForCurrentPending() {
+	const updatePopoverPositionForCurrentPending = (): void => {
 		if (!pendingPolygon || !canvas) {
 			return;
 		}
-		const rect = canvas.getBoundingClientRect();
-		// Convertir vértices relativos a px del canvas
-		const absVerticesCanvas = pendingPolygon.vertices.map((v) => ({
-			x: v.x * canvas.width,
-			y: v.y * canvas.height
-		}));
-		const measured = calculatePopoverPosition(
+		const rect: DOMRect = canvas.getBoundingClientRect();
+		const absVerticesCanvas: Array<Coordinates> = toCanvasPx(pendingPolygon.vertices, canvas);
+		const measured: PopoverPosition = calculatePopoverPosition(
 			absVerticesCanvas,
 			rect,
 			popoverEl?.offsetWidth ?? undefined,
 			popoverEl?.offsetHeight ?? undefined
 		);
 		popoverPosition = measured;
-	}
+	};
 
-	// Dibuja polígonos usando coordenadas relativas
-	function drawPolygonRel(
-		poly: { via: string; sentido: string; vertices: Array<{ x: number; y: number }> },
+	const drawPolygonRel = (
+		poly: Omit<Polygon, 'id'>,
 		options: { confirmed?: boolean; pending?: boolean }
-	) {
-		// Convertir vértices relativos a absolutos usando frame original y escalar a canvas
-		const absVertices = poly.vertices.map((v) => ({
-			x: (v.x * frameWidth * canvas.width) / frameWidth,
-			y: (v.y * frameHeight * canvas.height) / frameHeight
-		}));
-		const isExcluded = poly.sentido === 'Excluida';
-		const color = isExcluded
+	): void => {
+		if (!ctx || !canvas) {
+			return;
+		}
+		const absVertices: Array<Coordinates> = toCanvasPx(poly.vertices, canvas);
+		const isExcluded: boolean = poly.sentido === 'Excluida';
+		const color: string = isExcluded
 			? 'rgba(0,0,0,1)'
 			: poly.sentido === 'Entrada'
 				? 'rgba(74, 222, 128, 1)'
@@ -515,53 +427,38 @@
 		}
 		ctx.stroke();
 		ctx.setLineDash([]);
-		if (options.confirmed) {
-			const centro = absVertices.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }), {
+		if (!options.confirmed) {
+			return;
+		}
+		const centro: Coordinates = absVertices.reduce(
+			(acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
+			{
 				x: 0,
 				y: 0
-			});
-			const n = absVertices.length || 1;
-			centro.x /= n;
-			centro.y /= n;
-			ctx.font = 'bold 14px sans-serif';
-			ctx.fillStyle = 'white';
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'middle';
-			ctx.shadowColor = 'black';
-			ctx.shadowBlur = 5;
-			ctx.fillText(`${poly.via}`, centro.x, centro.y);
-			ctx.shadowBlur = 0;
-		}
-	}
+			}
+		);
+		const n: number = absVertices.length || 1;
+		centro.x /= n;
+		centro.y /= n;
+		ctx.font = 'bold 14px sans-serif';
+		ctx.fillStyle = 'white';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.shadowColor = 'black';
+		ctx.shadowBlur = 5;
+		ctx.fillText(`${poly.via}`, centro.x, centro.y);
+		ctx.shadowBlur = 0;
+	};
 
-	function drawExcludedRel(vertices: Array<{ x: number; y: number }>) {
-		const absVertices = vertices.map((v) => ({
-			x: (v.x * frameWidth * canvas.width) / frameWidth,
-			y: (v.y * frameHeight * canvas.height) / frameHeight
-		}));
-		ctx.save();
-		ctx.fillStyle = 'rgba(0,0,0,1)';
-		ctx.beginPath();
-		ctx.moveTo(absVertices[0].x, absVertices[0].y);
-		for (const v of absVertices.slice(1)) {
-			ctx.lineTo(v.x, v.y);
-		}
-		ctx.closePath();
-		ctx.fill();
-		ctx.restore();
-	}
-
-	$: if (pendingPolygon) {
-		requestAnimationFrame(redrawCanvas);
-	}
-	function goBack() {
+	const goBack = (): void => {
 		goto('/');
-	}
+	};
 </script>
+
+<svelte:window onkeydown={handleKeyDown} onresize={onResize} />
 
 <div class="page-container page-vertical">
 	<div class="mx-auto flex flex-col flex-1 min-h-0 h-full">
-		<!-- Título y descripción generales -->
 		<div class="mb-2">
 			<h1 class="heading-1">Asignar Vías</h1>
 			<div class="mt-2 flex items-center justify-between gap-4 flex-wrap">
@@ -596,7 +493,6 @@
 					</span>
 				</p>
 				<div class="flex items-center gap-2">
-					<!-- Toggle de modos: Entradas/Salidas vs Zonas Excluidas -->
 					<div class="mode-toggle" role="group" aria-label="Modo de dibujo">
 						<div
 							class={`mode-indicator ${modoZonaExcluida ? 'right bg-excluded' : 'left bg-inout'}`}
@@ -666,26 +562,23 @@
 			</div>
 		</div>
 
-		<!-- Contenedor Principal con Layout de Grid: sidebar fijo + imagen máxima -->
 		<div
 			class="lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 items-start flex-1 min-h-0 overflow-y-auto"
 		>
-			<!-- Columna Izquierda: Lista de Vías y Botón de Finalizar -->
 			<div
 				class="flex flex-col h-full max-h-full min-h-0 overflow-hidden glass-card p-4 lg:mr-4 mb-8 lg:mb-0"
 			>
 				<div class="flex items-center justify-between mb-4 gap-2">
-					<h2 class="heading-2">Vías Definidas ({poligonos.length})</h2>
+					<h2 class="heading-2">Vías Definidas ({polygons.length})</h2>
 				</div>
-				<!-- Área desplazable de la lista (con scrollbar custom) -->
 				<ScrollArea orientation="y" className="flex-1 min-h-0 pr-1" autoHide>
-					{#if poligonos.length === 0}
+					{#if polygons.length === 0}
 						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
 						</p>
 					{:else}
 						<div class="space-y-3">
-							{#each poligonos as poly (poly.id)}
+							{#each polygons as poly (poly.id)}
 								<div
 									class="glass-surface p-3 rounded-lg flex justify-between items-center transition-all border"
 									class:border-green-400={poly.sentido === 'Entrada'}
@@ -731,7 +624,6 @@
 						</div>
 					{/if}
 				</ScrollArea>
-				<!-- Botón Finalizar -->
 				<div class="mt-auto pt-8">
 					<button
 						onclick={finalizarProceso}
@@ -751,7 +643,6 @@
 				</div>
 			</div>
 
-			<!-- Columna Derecha: Imagen y Canvas (ocupa todo el ancho disponible) -->
 			<div class="mt-8 lg:mt-0 w-full min-h-0">
 				{#if isLoading}
 					<div
@@ -799,7 +690,6 @@
 		</div>
 	</div>
 
-	<!-- Popover Contextual para Confirmar Polígono -->
 	{#if pendingPolygon}
 		<div
 			class="popover glass-strong frost frost-polarized p-4 w-72 border shadow-2xl"
@@ -825,7 +715,7 @@
 					<label for="sentido-select" class="block mb-1 text-sm text-white/80">Sentido:</label>
 					<GlassSelect
 						id="sentido-select"
-						items={opcionesSentido.map((s) => ({ value: s, label: s }))}
+						items={OPCIONES_SENTIDO.map((s) => ({ value: s, label: s }))}
 						value={pendingPolygon.sentido}
 						onChange={(v) => (pendingPolygon!.sentido = String(v))}
 					/>
@@ -863,7 +753,6 @@
 	.page-vertical {
 		display: flex;
 		flex-direction: column;
-		/* Altura mínima disponible: viewport menos header + gaps superiores/inferiores del layout */
 		min-height: calc(
 			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
 				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
@@ -890,7 +779,6 @@
 		-webkit-user-drag: none;
 	}
 
-	/* Clases de utilidad para reducir duplicación en el HTML */
 	.key-kbd {
 		padding: 0.25rem 0.5rem;
 		font-size: 0.75rem;
@@ -901,7 +789,6 @@
 		border-radius: 0.5rem;
 	}
 
-	/* Utilidades para crossfade en el mismo lugar sin afectar layout */
 	.swap-container {
 		position: relative;
 		display: inline-block;
@@ -918,15 +805,12 @@
 		white-space: nowrap;
 	}
 
-	/* Efecto flow/glow del botón Excluir zona cuando está activo */
-	/* Toggle de modos */
 	.mode-toggle {
 		position: relative;
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 0;
 		align-items: center;
-		/* Fondo totalmente transparente para que el lado inactivo se vea "vacío" */
 		background: transparent;
 		border: 1px solid rgba(255, 255, 255, 0.25);
 		border-radius: 12px;
@@ -972,9 +856,7 @@
 	.mode-indicator.right {
 		transform: translateX(100%);
 	}
-	/* Fondos activos */
 	.bg-inout {
-		/* Gradiente con efecto glass */
 		background: linear-gradient(
 			90deg,
 			rgba(74, 222, 128, 0.35) 0%,
@@ -984,7 +866,6 @@
 		);
 		backdrop-filter: blur(8px) saturate(140%);
 		-webkit-backdrop-filter: blur(8px) saturate(140%);
-		/* Quitar borde/blanco del botón de entradas/salidas */
 		border-color: transparent;
 		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 	}
@@ -992,7 +873,6 @@
 		background: rgba(0, 0, 0, 0.9);
 	}
 
-	/* Responsive: reducir ancho mínimo en pantallas chicas */
 	@media (max-width: 640px) {
 		.mode-toggle {
 			min-width: 300px;

@@ -1,22 +1,18 @@
 <script lang="ts">
 	import RoleBadge from '$lib/components/RoleBadge.svelte';
+
 	import type { User } from '$lib/types/user';
 
-	let {
-		user,
-		toggling,
-		deleting,
-		onedit,
-		ontoggle,
-		ondelete
-	}: {
-		user: User;
-		toggling: boolean;
+	type Props = {
 		deleting: boolean;
+		ondelete: (userId: number) => void;
 		onedit: (user: User) => void;
 		ontoggle: (user: User) => void;
-		ondelete: (userId: number) => void;
-	} = $props();
+		toggling: boolean;
+		user: User;
+	};
+
+	let { deleting, ondelete, onedit, ontoggle, toggling, user }: Props = $props();
 </script>
 
 <tr class="border-b glass-divider hover:bg-white/5 transition-colors">

@@ -1,6 +1,7 @@
-import { apiFetch } from '$lib/api';
-import type { TaskResponse } from '$lib/types/task';
 import { apiError } from './errors';
+import { apiFetch } from '$lib/api';
+
+import type { TaskResponse } from '$lib/types/task';
 
 const TASK_API: string = '/task';
 

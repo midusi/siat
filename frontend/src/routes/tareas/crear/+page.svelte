@@ -4,7 +4,6 @@
 		INVALID_VIDEO_MESSAGE,
 		isAllowedVideo,
 		localDateString,
-		type TaskForm,
 		TaskFormSchema
 	} from '$lib/types/task';
 	import { createTask } from '$lib/services/tasks';
@@ -13,7 +12,7 @@
 		fetchDistricts,
 		fetchLocalities,
 		fetchProvinces,
-		type Option
+		toSelectItems
 	} from '$lib/services/locations';
 	import FormRow from '$lib/components/FormRow.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
@@ -24,8 +23,17 @@
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { uploadVideoToMinio } from '$lib/services/upload';
 
-	let districts = $state<Option[]>([]);
-	let form = $state<TaskForm>({
+	import type { Option, SelectItem } from '$lib/services/locations';
+	import type { TaskForm } from '$lib/types/task';
+
+	type TaskValidation = ReturnType<typeof TaskFormSchema.safeParse>;
+
+	const ACCEPTED_FORMATS: string = ALLOWED_VIDEO_EXTENSIONS.map((ext) =>
+		ext.slice(1).toUpperCase()
+	).join(', ');
+
+	let districts: Array<Option> = $state([]);
+	let form: TaskForm = $state({
 		name: '',
 		date: localDateString(),
 		selectedProvince: 1,
@@ -33,37 +41,47 @@
 		selectedLocality: null,
 		file: null
 	});
-	let isProcessing = $state(false);
-	let isUploading = $state(false);
-	let localities = $state<Option[]>([]);
-	let provinces = $state<Option[]>([]);
-	let submitted = $state(false);
-	let uploadProgress = $state(0);
+	let isProcessing: boolean = $state(false);
+	let isUploading: boolean = $state(false);
+	let localities: Array<Option> = $state([]);
+	let provinces: Array<Option> = $state([]);
+	let submitted: boolean = $state(false);
+	let uploadProgress: number = $state(0);
 
-	const acceptedFormats = ALLOWED_VIDEO_EXTENSIONS.map((ext) => ext.slice(1).toUpperCase()).join(
-		', '
-	);
-
-	const toItems = (arr: Option[]) =>
-		arr
-			.slice()
-			.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
-			.map((x) => ({ value: x.id, label: x.name }));
-
-	const validation = $derived(TaskFormSchema.safeParse(form));
-	const isFormValid = $derived(validation.success);
-	const errors = $derived<Record<string, string>>(
+	const validation: TaskValidation = $derived(TaskFormSchema.safeParse(form));
+	const districtItems: Array<SelectItem> = $derived(toSelectItems(districts));
+	const errors: Record<string, string> = $derived(
 		submitted && !validation.success
 			? Object.fromEntries(
 					validation.error.issues.map((i) => [String(i.path[0]), i.message] as const)
 				)
 			: {}
 	);
-	const districtItems = $derived(toItems(districts));
-	const localityItems = $derived(toItems(localities));
-	const provinceItems = $derived(toItems(provinces));
+	const isFormValid: boolean = $derived(validation.success);
+	const localityItems: Array<SelectItem> = $derived(toSelectItems(localities));
+	const provinceItems: Array<SelectItem> = $derived(toSelectItems(provinces));
 
-	const loadOptions = async (request: () => Promise<Option[]>): Promise<Option[]> => {
+	$effect(() => {
+		if (form.selectedProvince) {
+			getDistricts();
+		} else {
+			districts = [];
+		}
+	});
+
+	$effect(() => {
+		if (form.selectedDistrict) {
+			getLocalities();
+		} else {
+			localities = [];
+		}
+	});
+
+	onMount(() => {
+		getProvinces();
+	});
+
+	const loadOptions = async (request: () => Promise<Array<Option>>): Promise<Array<Option>> => {
 		try {
 			return await request();
 		} catch (e) {
@@ -75,16 +93,18 @@
 	const getDistricts = async (): Promise<void> => {
 		districts = await loadOptions(() => fetchDistricts(form.selectedProvince!));
 	};
+
 	const getLocalities = async (): Promise<void> => {
 		localities = await loadOptions(() => fetchLocalities(form.selectedDistrict!));
 	};
+
 	const getProvinces = async (): Promise<void> => {
 		provinces = await loadOptions(fetchProvinces);
 	};
 
 	const handleFileSelect = (event: Event): void => {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
+		const input: HTMLInputElement = event.target as HTMLInputElement;
+		const file: File | undefined = input.files?.[0];
 		if (!file) {
 			return;
 		}
@@ -108,7 +128,10 @@
 		}
 		isUploading = true;
 		try {
-			const objectKey = await uploadVideoToMinio(form.file, (p) => (uploadProgress = p.percentage));
+			const objectKey: string = await uploadVideoToMinio(
+				form.file,
+				(p) => (uploadProgress = p.percentage)
+			);
 			isProcessing = true;
 			await createTask({
 				name: form.name,
@@ -130,26 +153,6 @@
 			uploadProgress = 0;
 		}
 	};
-
-	$effect(() => {
-		if (form.selectedProvince) {
-			getDistricts();
-		} else {
-			districts = [];
-		}
-	});
-
-	$effect(() => {
-		if (form.selectedDistrict) {
-			getLocalities();
-		} else {
-			localities = [];
-		}
-	});
-
-	onMount(() => {
-		getProvinces();
-	});
 </script>
 
 <div class="page-container">
@@ -249,7 +252,7 @@
 						{form.file ? form.file.name : 'Ningún archivo seleccionado'}
 					</span>
 				</div>
-				<p class="text-xs text-white/70 mt-1">Formatos aceptados: {acceptedFormats}.</p>
+				<p class="text-xs text-white/70 mt-1">Formatos aceptados: {ACCEPTED_FORMATS}.</p>
 			</FormRow>
 
 			<div class="flex justify-center mt-8">

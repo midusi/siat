@@ -1,16 +1,16 @@
 <script lang="ts">
+	import './login.css';
 	import { ApiError } from '$lib/services/errors';
 	import { goto } from '$app/navigation';
 	import { login } from '$lib/services/auth';
 	import { page } from '$app/state';
 	import { safeNext } from '$lib/redirect';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import './login.css';
 
-	let username = $state('');
-	let password = $state('');
-	let error = $state<string | null>(null);
-	let isSubmitting = $state(false);
+	let error: string | null = $state(null);
+	let isSubmitting: boolean = $state(false);
+	let password: string = $state('');
+	let username: string = $state('');
 
 	const handleLogin = async (): Promise<void> => {
 		error = null;
@@ -82,4 +82,3 @@
 		</form>
 	</div>
 </div>
-

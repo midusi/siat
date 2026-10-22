@@ -5,101 +5,109 @@
 	import { videoClicks } from '$lib/actions/videoClicks';
 	import ZonesOverlay from './ZonesOverlay.svelte';
 
-	type Timer = ReturnType<typeof setTimeout>;
-
-	const ROUTE_ANIMATION_MS = 320;
-	const ROUTE_FADE_MS = 500;
-	const SEEK_BACK_TOLERANCE_S = 0.05;
-
-	let {
-		videoPath,
-		videoFps,
-		videoWidth,
-		videoHeight,
-		roadsIn,
-		roadsOut,
-		excludedZones,
-		trackHistory,
-		indeterminados,
-		trackColor,
-		activeTrackId = $bindable(null),
-		height = $bindable(0),
-		liveIds = $bindable(new Set()),
-		onbboxclick
-	}: {
-		videoPath: string;
-		videoFps: number;
-		videoWidth: number;
-		videoHeight: number;
-		roadsIn: review.RoadPoly[];
-		roadsOut: review.RoadPoly[];
-		excludedZones: [number, number][][];
-		trackHistory: Map<string, review.TrackPoint[]>;
-		indeterminados: review.Indeterminados;
-		trackColor: (trackId: string) => string;
+	type DataFrames = { first: number; last: number };
+	type Props = {
 		activeTrackId?: string | null;
+		excludedZones: Array<Array<review.Vertex>>;
 		height?: number;
+		indeterminados: review.Indeterminados;
 		liveIds?: Set<string>;
 		onbboxclick: (trackId: string) => void;
-	} = $props();
+		roadsIn: Array<review.RoadPoly>;
+		roadsOut: Array<review.RoadPoly>;
+		trackColor: (trackId: string) => string;
+		trackHistory: review.TrackHistory;
+		videoFps: number;
+		videoHeight: number;
+		videoPath: string;
+		videoWidth: number;
+	};
+	type Timer = ReturnType<typeof setTimeout>;
 
-	let generalDisplayBBoxes = $state<review.GeneralBBox[]>([]);
-	let hideOtherBBoxes = $state(false);
-	let isFullscreen = $state(false);
-	let isSelectionActive = $state(false);
-	let lastProcessedFrame = -1;
-	let lastVideoTime = 0;
+	const ROUTE_ANIMATION_MS: number = 320;
+	const ROUTE_FADE_MS: number = 500;
+	const SEEK_BACK_TOLERANCE_S: number = 0.05;
+
+	let {
+		activeTrackId = $bindable(null),
+		excludedZones,
+		height = $bindable(0),
+		indeterminados,
+		liveIds = $bindable(new Set()),
+		onbboxclick,
+		roadsIn,
+		roadsOut,
+		trackColor,
+		trackHistory,
+		videoFps,
+		videoHeight,
+		videoPath,
+		videoWidth
+	}: Props = $props();
+
+	let generalDisplayBBoxes: Array<review.GeneralBBox> = $state([]);
+	let hideOtherBBoxes: boolean = $state(false);
+	let isFullscreen: boolean = $state(false);
+	let isSelectionActive: boolean = $state(false);
+	let lastProcessedFrame: number = -1;
+	let lastVideoTime: number = 0;
 	let overlayFrameId: number | null = null;
-	let pausedAtMs = 0;
-	let pausedAtVideoTime = 0;
-	let playbackBoundingBoxes = $state<review.DisplayableBBox[]>([]);
-	let renderedWidth = $state(0);
-	let routeAnimateKey = $state(0);
-	let routeAnimating = $state(false);
+	let pausedAtMs: number = 0;
+	let pausedAtVideoTime: number = 0;
+	let playbackBoundingBoxes: Array<review.DisplayableBBox> = $state([]);
+	let renderedWidth: number = $state(0);
+	let routeAnimateKey: number = $state(0);
+	let routeAnimating: boolean = $state(false);
 	let routeAnimTimer: Timer | null = null;
 	let routeFadeTimer: Timer | null = null;
-	let routeFadingOut = $state(false);
-	let routeFutureSegments = $state<review.Point[][]>([]);
-	let routePastSegments = $state<review.Point[][]>([]);
-	let selectedBoxRect = $state<review.Rect | null>(null);
-	let selectedTrackId = $state<string | null>(null);
-	let showExcluded = $state(false);
-	let sourceHeight = $state(0);
-	let sourceWidth = $state(0);
-	let videoContainerEl = $state<HTMLDivElement | null>(null);
-	let videoDuration = $state(0);
-	let videoElement = $state<HTMLVideoElement | null>(null);
-	let wasPlaying = false;
+	let routeFadingOut: boolean = $state(false);
+	let routeFutureSegments: Array<Array<review.Point>> = $state([]);
+	let routePastSegments: Array<Array<review.Point>> = $state([]);
+	let selectedBoxRect: review.Rect | null = $state(null);
+	let selectedTrackId: string | null = $state(null);
+	let showExcluded: boolean = $state(false);
+	let sourceHeight: number = $state(0);
+	let sourceWidth: number = $state(0);
+	let videoContainerEl: HTMLDivElement | null = $state(null);
+	let videoDuration: number = $state(0);
+	let videoElement: HTMLVideoElement | null = $state(null);
+	let wasPlaying: boolean = false;
 
-	let generalBBoxesByFrame = $derived(review.buildFrameMap(trackHistory));
-	let dataFrames = $derived.by(() => {
-		const frames = Array.from(generalBBoxesByFrame.keys());
+	const activePlaybackBoxes: Array<review.DisplayableBBox> = $derived(
+		playbackBoundingBoxes.filter((b) => indeterminados[b.id])
+	);
+	const generalBBoxesByFrame: Map<number, Array<review.GeneralBBox>> = $derived(
+		review.buildFrameMap(trackHistory)
+	);
+	const dataFrames: DataFrames | null = $derived.by(() => {
+		const frames: Array<number> = Array.from(generalBBoxesByFrame.keys());
 		return frames.length ? { first: Math.min(...frames), last: Math.max(...frames) } : null;
 	});
-	let videoScale = $derived.by(() => {
-		const vw = sourceWidth || videoWidth;
-		const vh = sourceHeight || videoHeight;
-		if (!vw || !vh || !renderedWidth || !height) {
-			return { x: 1, y: 1 };
-		}
-		return { x: renderedWidth / vw, y: height / vh };
-	});
-	let hasExcludedZones = $derived(excludedZones.length > 0);
-	let excludedLabel = $derived.by(() => {
+	const hasExcludedZones: boolean = $derived(excludedZones.length > 0);
+	const excludedLabel: string = $derived.by(() => {
 		if (!hasExcludedZones) {
 			return 'No hay zonas excluidas';
 		}
 		return showExcluded ? 'Ocultar zonas excluidas' : 'Mostrar zonas excluidas';
 	});
-	let indeterminadosByFrame = $derived(review.groupByFirstAppearance(indeterminados));
-	let activePlaybackBoxes = $derived(playbackBoundingBoxes.filter((b) => indeterminados[b.id]));
-	let visibleGeneralBBoxes = $derived.by(() => {
+	const indeterminadosByFrame: Map<number, Array<review.AppearingBox>> = $derived(
+		review.groupByFirstAppearance(indeterminados)
+	);
+	const videoScale: review.Scale = $derived.by(() => {
+		const vw: number = sourceWidth || videoWidth;
+		const vh: number = sourceHeight || videoHeight;
+		if (!vw || !vh || !renderedWidth || !height) {
+			return { x: 1, y: 1 };
+		}
+		return { x: renderedWidth / vw, y: height / vh };
+	});
+	const visibleGeneralBBoxes: Array<review.GeneralBBox> = $derived.by(() => {
 		if (hideOtherBBoxes && selectedTrackId) {
 			return generalDisplayBBoxes.filter((b) => b.id === selectedTrackId);
 		}
 		return generalDisplayBBoxes;
 	});
-	let visiblePlaybackBoxes = $derived.by(() => {
+	const visiblePlaybackBoxes: Array<review.DisplayableBBox> = $derived.by(() => {
 		if (!hideOtherBBoxes) {
 			return activePlaybackBoxes;
 		}
@@ -125,7 +133,7 @@
 
 	onMount(() => stopOverlayLoop);
 
-	export const focusTrack = (trackId: string, frame: number) => {
+	export const focusTrack = (trackId: string, frame: number): void => {
 		if (!videoElement) {
 			return;
 		}
@@ -136,7 +144,7 @@
 		updateOverlaysForCurrentFrame();
 	};
 
-	export const retargetSelection = (fromId: string, toId: string | null) => {
+	export const retargetSelection = (fromId: string, toId: string | null): void => {
 		if (selectedTrackId !== fromId) {
 			return;
 		}
@@ -148,7 +156,7 @@
 	};
 
 	const getFrameRange = (): review.FrameRange | null => {
-		const dur = videoElement?.duration ?? videoDuration ?? 0;
+		const dur: number = videoElement?.duration ?? videoDuration ?? 0;
 		if (dur <= 0 || !dataFrames) {
 			return null;
 		}
@@ -181,14 +189,14 @@
 		return pausedAtVideoTime + (performance.now() - pausedAtMs) / 1000;
 	};
 
-	const anchorPausedClock = () => {
+	const anchorPausedClock = (): void => {
 		if (videoElement) {
 			pausedAtVideoTime = videoElement.currentTime;
 			pausedAtMs = performance.now();
 		}
 	};
 
-	const resetPlayback = () => {
+	const resetPlayback = (): void => {
 		hideOtherBBoxes = false;
 		activeTrackId = null;
 		playbackBoundingBoxes = [];
@@ -198,11 +206,11 @@
 		}
 	};
 
-	const addAppearingBoxes = (currentFrame: number) => {
+	const addAppearingBoxes = (currentFrame: number): void => {
 		if (currentFrame <= lastProcessedFrame) {
 			return;
 		}
-		const added: review.DisplayableBBox[] = [];
+		const added: Array<review.DisplayableBBox> = [];
 		for (let frame = lastProcessedFrame + 1; frame <= currentFrame; frame++) {
 			for (const info of indeterminadosByFrame.get(frame) ?? []) {
 				added.push({
@@ -218,12 +226,12 @@
 		}
 	};
 
-	const overlayTick = () => {
+	const overlayTick = (): void => {
 		if (!videoElement) {
 			overlayFrameId = null;
 			return;
 		}
-		const playing = !videoElement.paused;
+		const playing: boolean = !videoElement.paused;
 		if (playing && !wasPlaying) {
 			resetPlayback();
 		}
@@ -232,9 +240,9 @@
 		}
 		wasPlaying = playing;
 
-		let currentFrame = lastProcessedFrame;
+		let currentFrame: number = lastProcessedFrame;
 		if (playing) {
-			const currentTime = videoElement.currentTime;
+			const currentTime: number = videoElement.currentTime;
 			currentFrame = computeCurrentFrameFromTime(currentTime);
 			if (currentTime + SEEK_BACK_TOLERANCE_S < lastVideoTime) {
 				lastProcessedFrame = currentFrame - 1;
@@ -261,25 +269,25 @@
 			playing || playbackBoundingBoxes.length > 0 ? requestAnimationFrame(overlayTick) : null;
 	};
 
-	const startOverlayLoop = () => {
+	const startOverlayLoop = (): void => {
 		if (overlayFrameId === null) {
 			overlayFrameId = requestAnimationFrame(overlayTick);
 		}
 	};
 
-	const stopOverlayLoop = () => {
+	const stopOverlayLoop = (): void => {
 		if (overlayFrameId !== null) {
 			cancelAnimationFrame(overlayFrameId);
 			overlayFrameId = null;
 		}
 	};
 
-	const onVideoPause = () => {
+	const onVideoPause = (): void => {
 		anchorPausedClock();
 		startOverlayLoop();
 	};
 
-	const onVideoSeek = (seeking: boolean) => {
+	const onVideoSeek = (seeking: boolean): void => {
 		if (!videoElement) {
 			return;
 		}
@@ -293,13 +301,15 @@
 		}
 	};
 
-	const updateOverlaysForFrame = (frame: number) => {
+	const updateOverlaysForFrame = (frame: number): void => {
 		generalDisplayBBoxes = generalBBoxesByFrame.get(frame) ?? [];
 		if (!selectedTrackId) {
 			selectedBoxRect = null;
 			return;
 		}
-		const sel = generalDisplayBBoxes.find((b) => b.id === selectedTrackId);
+		const sel: review.GeneralBBox | undefined = generalDisplayBBoxes.find(
+			(b) => b.id === selectedTrackId
+		);
 		if (sel) {
 			selectedBoxRect = toScreenRect(sel.box);
 		}
@@ -309,7 +319,7 @@
 		}
 	};
 
-	const updateOverlaysForCurrentFrame = () => {
+	const updateOverlaysForCurrentFrame = (): void => {
 		if (!videoElement) {
 			return;
 		}
@@ -325,14 +335,14 @@
 		if (indeterminados[trackId]) {
 			return '#000000';
 		}
-		const color = trackColor(trackId);
+		const color: string = trackColor(trackId);
 		return isBlack(color) ? '#ffffff' : color;
 	};
 
 	const hasDarkOutline = (trackId: string, selected: boolean): boolean =>
 		!selected && !indeterminados[trackId] && isBlack(trackColor(trackId));
 
-	const selectTrack = (trackId: string) => {
+	const selectTrack = (trackId: string): void => {
 		selectedTrackId = trackId;
 		isSelectionActive = true;
 		if (routeFadeTimer) {
@@ -347,7 +357,7 @@
 		routeAnimateKey++;
 	};
 
-	const clearSelection = () => {
+	const clearSelection = (): void => {
 		if (routeAnimTimer) {
 			clearTimeout(routeAnimTimer);
 		}
@@ -364,7 +374,7 @@
 		hideOtherBBoxes = false;
 	};
 
-	const beginClearSelectionWithFade = () => {
+	const beginClearSelectionWithFade = (): void => {
 		isSelectionActive = false;
 		if (!selectedTrackId && routePastSegments.length === 0 && routeFutureSegments.length === 0) {
 			routeFadingOut = false;
@@ -377,24 +387,28 @@
 		routeFadeTimer = setTimeout(clearSelection, ROUTE_FADE_MS);
 	};
 
-	const updateSelectedTrackRoute = (currentFrame: number) => {
+	const updateSelectedTrackRoute = (currentFrame: number): void => {
 		if (!selectedTrackId) {
 			return;
 		}
-		const trackPoints = trackHistory.get(selectedTrackId) ?? [];
+		const trackPoints: Array<review.TrackPoint> = trackHistory.get(selectedTrackId) ?? [];
 		if (!videoElement || trackPoints.length === 0) {
 			routePastSegments = [];
 			routeFutureSegments = [];
 			return;
 		}
-		const toXY = (p: review.TrackPoint) => review.boxCenterScaled(p.box, videoScale);
-		const pastPts = trackPoints.filter((p) => p.frame <= currentFrame).map(toXY);
-		const futurePts = trackPoints.filter((p) => p.frame > currentFrame).map(toXY);
+		const toXY = (p: review.TrackPoint): review.Point => review.boxCenterScaled(p.box, videoScale);
+		const pastPts: Array<review.Point> = trackPoints
+			.filter((p) => p.frame <= currentFrame)
+			.map(toXY);
+		const futurePts: Array<review.Point> = trackPoints
+			.filter((p) => p.frame > currentFrame)
+			.map(toXY);
 		routePastSegments = review.clipPolyline(pastPts, selectedBoxRect);
 		routeFutureSegments = review.clipPolyline(futurePts, selectedBoxRect);
 	};
 
-	const showRouteFor = (box: review.GeneralBBox) => {
+	const showRouteFor = (box: review.GeneralBBox): void => {
 		if (selectedTrackId === box.id) {
 			if (isSelectionActive) {
 				beginClearSelectionWithFade();
@@ -402,17 +416,19 @@
 			return;
 		}
 		selectTrack(box.id);
-		const currentFrame = videoElement ? computeCurrentFrameFromTime(videoElement.currentTime) : 0;
+		const currentFrame: number = videoElement
+			? computeCurrentFrameFromTime(videoElement.currentTime)
+			: 0;
 		selectedBoxRect = toScreenRect(box.box);
 		updateSelectedTrackRoute(currentFrame);
 		onbboxclick(box.id);
 	};
 
-	const updateFullscreenState = () => {
+	const updateFullscreenState = (): void => {
 		isFullscreen = !!document.fullscreenElement && document.fullscreenElement === videoContainerEl;
 	};
 
-	const toggleFullscreen = async () => {
+	const toggleFullscreen = async (): Promise<void> => {
 		if (!videoContainerEl) {
 			return;
 		}

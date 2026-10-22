@@ -1,20 +1,23 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 
-	let {
-		label,
-		value = $bindable(''),
-		error = '',
-		autocomplete = 'current-password',
-		children
-	}: {
-		label: string;
-		value: string;
-		error?: string;
+	import type { Snippet } from 'svelte';
+
+	type Props = {
 		autocomplete?: 'current-password' | 'new-password';
 		children?: Snippet;
-	} = $props();
+		error?: string;
+		label: string;
+		value: string;
+	};
+
+	let {
+		autocomplete = 'current-password',
+		children,
+		error = '',
+		label,
+		value = $bindable('')
+	}: Props = $props();
 
 	const id = $props.id();
 	const errorId = `${id}-error`;

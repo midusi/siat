@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { ActionType, TaskRow } from '$lib/types/task';
 	import Spinner from '$lib/components/Spinner.svelte';
+
+	import type { ActionType, TaskRow } from '$lib/types/task';
 	let {
 		title,
 		rows = [],

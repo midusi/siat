@@ -3,29 +3,26 @@
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
 	import Switch from '$lib/components/Switch.svelte';
-	import type { Role } from '$lib/types/user';
+
 	import type { FormErrors, UserForm } from '$lib/validation/user';
+	import type { Role } from '$lib/types/user';
 
-	let {
-		form = $bindable(),
-		errors,
-		isEditing,
-		submitting,
-		onsubmit,
-		oncancel
-	}: {
-		form: UserForm;
+	type Props = {
 		errors: FormErrors;
+		form: UserForm;
 		isEditing: boolean;
-		submitting: boolean;
-		onsubmit: (event: SubmitEvent) => void;
 		oncancel: () => void;
-	} = $props();
+		onsubmit: (event: SubmitEvent) => void;
+		submitting: boolean;
+	};
+	type RoleItem = { value: Role; label: string };
 
-	const roleItems: { value: Role; label: string }[] = [
+	const ROLE_ITEMS: Array<RoleItem> = [
 		{ value: 'ROLE_ADMIN', label: 'Admin' },
 		{ value: 'ROLE_OPERADOR', label: 'Operador' }
 	];
+
+	let { errors, form = $bindable(), isEditing, oncancel, onsubmit, submitting }: Props = $props();
 </script>
 
 <form class="space-y-4" {onsubmit}>
@@ -67,7 +64,7 @@
 			id="rol"
 			ariaLabel="Seleccionar rol"
 			ariaLabelledby="label-rol"
-			items={roleItems}
+			items={ROLE_ITEMS}
 			value={form.role}
 			onChange={(v) => (form.role = v as Role)}
 		/>

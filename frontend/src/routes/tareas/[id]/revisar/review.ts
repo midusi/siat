@@ -1,8 +1,10 @@
-import { apiFetch } from '$lib/api';
 import { apiError } from '$lib/services/errors';
+import { apiFetch } from '$lib/api';
 
 export type Appearance = { frame: string; boundingBox: BoundingBox };
+export type AppearingBox = { trackId: string; bbox: BoundingBox };
 export type BoundingBox = [string, string, string, string];
+export type Bounds = { width: number; height: number };
 export type Box = [number, number, number, number];
 export type ConteoVehiculos = { [vehiculo: string]: number };
 export type DisplayableBBox = {
@@ -24,52 +26,74 @@ export type Indeterminado = {
 	first_appearance: Appearance;
 	last_appearance: Appearance;
 	class: string;
-	labels: { in: string; out: string };
+	labels: Labels;
 };
+export type IndeterminadoField = 'class' | 'in' | 'out';
 export type Indeterminados = { [trackId: string]: Indeterminado };
-export type ObjHistoryEntry = { act_frame: number; box: Box };
+type Intersection = Point & { t: number };
+export type Labels = { in: string; out: string };
+type ObjHistory = Record<string, Array<ObjHistoryEntry>>;
+type ObjHistoryEntry = { act_frame: number; box: Box };
 export type Point = { x: number; y: number };
+type RawIndeterminado = Omit<Indeterminado, 'labels'> & {
+	labels: Labels | [string, string];
+};
+type RawIndeterminados = Record<string, RawIndeterminado>;
+type RawTaskReview = {
+	data_obj_history_url?: string;
+	dataObjHistoryUrl?: string;
+	determinados?: RawIndeterminados;
+	excludedZones?: unknown;
+	history?: History;
+	historyUrl?: string;
+	indeterminados?: RawIndeterminados;
+	roadsIn?: unknown;
+	roadsOut?: unknown;
+	rutas?: Rutas;
+	videoFps: number | string;
+	videoHeight: number | string;
+	videoPath?: string;
+	videoWidth: number | string;
+};
 export type Rect = { x: number; y: number; width: number; height: number };
-export type RoadPoly = { id: number; name: string; direction: string; polygon: [number, number][] };
+export type RoadPoly = { id: number; name: string; direction: string; polygon: Array<Vertex> };
 export type Rutas = { [entrada: string]: { [salida: string]: ConteoVehiculos } };
 export type Scale = { x: number; y: number };
-export type Tabla = { columnas: string[]; datos: FilaTabla[]; total: FilaTabla };
-export type TrackPoint = { frame: number; box: Box };
-
+export type SelectOption = { value: string; label: string };
+export type Tabla = { columnas: Array<string>; datos: Array<FilaTabla>; total: FilaTabla };
+export type TablaPorEntrada = Tabla & { nombreEntrada: string };
 export type TaskReview = {
 	videoPath: string;
 	videoWidth: number;
 	videoHeight: number;
 	videoFps: number;
-	roadsIn: RoadPoly[];
-	roadsOut: RoadPoly[];
-	excludedZones: [number, number][][];
+	roadsIn: Array<RoadPoly>;
+	roadsOut: Array<RoadPoly>;
+	excludedZones: Array<Array<Vertex>>;
 	rutas: Rutas;
 	indeterminados: Indeterminados;
 	determinados: Indeterminados;
 	history: History;
 	historyUrl: string | null;
 };
-
 export type TaskReviewChanges = {
 	rutas: Rutas;
 	indeterminados: Indeterminados;
 	determinados: Indeterminados;
-	trackHistory: Map<string, TrackPoint[]>;
+	trackHistory: TrackHistory;
 };
+export type TrackHistory = Map<string, Array<TrackPoint>>;
+export type TrackPoint = { frame: number; box: Box };
+export type Vertex = [number, number];
 
-type RawIndeterminado = Omit<Indeterminado, 'labels'> & {
-	labels: Indeterminado['labels'] | [string, string];
-};
-
+export const FADE_OUT_DURATION_SECONDS: number = 1.0;
+export const OPACITY_TRANSITION_MS: number = 500;
 const TASK_API: string = '/task';
 
-const normalizeLabels = (
-	items: Record<string, RawIndeterminado> | null | undefined
-): Indeterminados => {
+const normalizeLabels = (items: RawIndeterminados | null | undefined): Indeterminados => {
 	const out: Indeterminados = {};
 	for (const [id, it] of Object.entries(items ?? {})) {
-		const labels = Array.isArray(it.labels)
+		const labels: Labels = Array.isArray(it.labels)
 			? { in: it.labels[0] ?? '', out: it.labels[1] ?? '' }
 			: it.labels;
 		out[id] = { ...it, labels };
@@ -77,14 +101,14 @@ const normalizeLabels = (
 	return out;
 };
 
-const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? value : []);
+const asArray = <T>(value: unknown): Array<T> => (Array.isArray(value) ? value : []);
 
 export const fetchTaskReview = async (taskId: string): Promise<TaskReview> => {
-	const res = await apiFetch(`${TASK_API}/${taskId}`);
+	const res: Response = await apiFetch(`${TASK_API}/${taskId}`);
 	if (!res.ok) {
 		throw await apiError(res, 'No se pudieron obtener los datos de la tarea');
 	}
-	const data = await res.json();
+	const data: RawTaskReview = await res.json();
 	return {
 		videoPath: data.videoPath ?? '',
 		videoWidth: Number(data.videoWidth),
@@ -101,15 +125,18 @@ export const fetchTaskReview = async (taskId: string): Promise<TaskReview> => {
 	};
 };
 
-export const fetchTrackHistory = async (url: string): Promise<Map<string, TrackPoint[]>> => {
-	const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`);
+export const fetchTrackHistory = async (url: string): Promise<TrackHistory> => {
+	const res: Response = await fetch(`${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`);
 	if (!res.ok) {
 		throw new Error('Error al obtener data_obj_history.json');
 	}
-	const json = (await res.json()) as Record<string, ObjHistoryEntry[]>;
-	const trackMap = new Map<string, TrackPoint[]>();
+	const json: ObjHistory = await res.json();
+	const trackMap: TrackHistory = new Map();
 	for (const [trackId, entries] of Object.entries(json)) {
-		const points = entries.map((e) => ({ frame: Number(e.act_frame), box: e.box }));
+		const points: Array<TrackPoint> = entries.map((e) => ({
+			frame: Number(e.act_frame),
+			box: e.box
+		}));
 		trackMap.set(
 			trackId,
 			points.sort((a, b) => a.frame - b.frame)
@@ -118,10 +145,8 @@ export const fetchTrackHistory = async (url: string): Promise<Map<string, TrackP
 	return trackMap;
 };
 
-const serializeTrackHistory = (
-	trackMap: Map<string, TrackPoint[]>
-): Record<string, ObjHistoryEntry[]> => {
-	const out: Record<string, ObjHistoryEntry[]> = {};
+const serializeTrackHistory = (trackMap: TrackHistory): ObjHistory => {
+	const out: ObjHistory = {};
 	for (const [trackId, points] of trackMap.entries()) {
 		out[trackId] = points
 			.slice()
@@ -131,8 +156,11 @@ const serializeTrackHistory = (
 	return out;
 };
 
-export const updateTaskReview = async (taskId: string, changes: TaskReviewChanges) => {
-	const res = await apiFetch(`${TASK_API}/${taskId}/update-data`, {
+export const updateTaskReview = async (
+	taskId: string,
+	changes: TaskReviewChanges
+): Promise<void> => {
+	const res: Response = await apiFetch(`${TASK_API}/${taskId}/update-data`, {
 		method: 'POST',
 		body: JSON.stringify({
 			rutas: changes.rutas,
@@ -151,9 +179,9 @@ export const timeToFrame = (timeSec: number, range: FrameRange | null, fps: numb
 		return Math.floor(timeSec * (fps || 0));
 	}
 	const { dur, first, last } = range;
-	const span = Math.max(0, last - first);
-	const t = Math.min(Math.max(timeSec, 0), dur);
-	const f = first + (span > 0 ? Math.round((t / dur) * span) : 0);
+	const span: number = Math.max(0, last - first);
+	const t: number = Math.min(Math.max(timeSec, 0), dur);
+	const f: number = first + (span > 0 ? Math.round((t / dur) * span) : 0);
 	return Math.max(first, Math.min(f, last));
 };
 
@@ -162,36 +190,36 @@ export const frameToTime = (frame: number, range: FrameRange | null, fps: number
 		return fps > 0 ? frame / fps : 0;
 	}
 	const { dur, first, last } = range;
-	const span = Math.max(0, last - first);
-	const clamped = Math.max(first, Math.min(frame, last));
-	const t = span > 0 ? ((clamped - first) / span) * dur : 0;
+	const span: number = Math.max(0, last - first);
+	const clamped: number = Math.max(first, Math.min(frame, last));
+	const t: number = span > 0 ? ((clamped - first) / span) * dur : 0;
 	return Math.max(0, Math.min(t, dur));
 };
 
-export const isFrameWithinTrack = (points: TrackPoint[], frame: number): boolean => {
+export const isFrameWithinTrack = (points: Array<TrackPoint>, frame: number): boolean => {
 	if (!points.length) {
 		return false;
 	}
 	return frame >= points[0].frame && frame <= points[points.length - 1].frame;
 };
 
-export const FADE_OUT_DURATION_SECONDS = 1.0;
-export const OPACITY_TRANSITION_MS = 500;
-
 export const fadeBoxes = (
-	boxes: DisplayableBBox[],
+	boxes: Array<DisplayableBBox>,
 	clock: number,
 	nowMs: number
-): DisplayableBBox[] => {
-	const out: DisplayableBBox[] = [];
+): Array<DisplayableBBox> => {
+	const out: Array<DisplayableBBox> = [];
 	for (const box of boxes) {
-		const opacity = Math.max(0, Math.min(1, (box.hideAtTime - clock) / FADE_OUT_DURATION_SECONDS));
+		const opacity: number = Math.max(
+			0,
+			Math.min(1, (box.hideAtTime - clock) / FADE_OUT_DURATION_SECONDS)
+		);
 		if (opacity > 0) {
-			const unchanged = opacity === box.opacity && !box.fadeRemoveAtMs;
+			const unchanged: boolean = opacity === box.opacity && !box.fadeRemoveAtMs;
 			out.push(unchanged ? box : { ...box, opacity, fadeRemoveAtMs: undefined });
 			continue;
 		}
-		const removeAt = box.fadeRemoveAtMs ?? nowMs + OPACITY_TRANSITION_MS;
+		const removeAt: number = box.fadeRemoveAtMs ?? nowMs + OPACITY_TRANSITION_MS;
 		if (nowMs < removeAt) {
 			out.push({ ...box, opacity: 0, fadeRemoveAtMs: removeAt });
 		}
@@ -206,16 +234,12 @@ export const parseBoundingBox = (bbox: BoundingBox): Box => [
 	parseFloat(bbox[3])
 ];
 
-export const toScaledClampedRect = (
-	box: Box,
-	scale: Scale,
-	bounds: { width: number; height: number }
-): Rect | null => {
+export const toScaledClampedRect = (box: Box, scale: Scale, bounds: Bounds): Rect | null => {
 	const [x1, y1, x2, y2] = box;
-	let left = x1 * scale.x;
-	let top = y1 * scale.y;
-	let width = (x2 - x1) * scale.x;
-	let height = (y2 - y1) * scale.y;
+	let left: number = x1 * scale.x;
+	let top: number = y1 * scale.y;
+	let width: number = (x2 - x1) * scale.x;
+	let height: number = (y2 - y1) * scale.y;
 	if (width < 0) {
 		left += width;
 		width = Math.abs(width);
@@ -253,29 +277,27 @@ export const boxCenterScaled = (box: Box, scale: Scale): Point => {
 	return { x: ((x1 + x2) / 2) * scale.x, y: ((y1 + y2) / 2) * scale.y };
 };
 
-export const scalePolygon = (poly: [number, number][], scale: Scale): string => {
+export const scalePolygon = (poly: Array<Vertex>, scale: Scale): string => {
 	return poly.map(([x, y]) => `${x * scale.x},${y * scale.y}`).join(' ');
 };
 
-type Intersection = Point & { t: number };
-
-const segmentRectIntersections = (p1: Point, p2: Point, rect: Rect): Intersection[] => {
-	const xL = rect.x;
-	const xR = rect.x + rect.width;
-	const yT = rect.y;
-	const yB = rect.y + rect.height;
-	const dx = p2.x - p1.x;
-	const dy = p2.y - p1.y;
-	const res: Intersection[] = [];
-	const add = (t: number, x: number, y: number) => {
+const segmentRectIntersections = (p1: Point, p2: Point, rect: Rect): Array<Intersection> => {
+	const xL: number = rect.x;
+	const xR: number = rect.x + rect.width;
+	const yT: number = rect.y;
+	const yB: number = rect.y + rect.height;
+	const dx: number = p2.x - p1.x;
+	const dy: number = p2.y - p1.y;
+	const res: Array<Intersection> = [];
+	const add = (t: number, x: number, y: number): void => {
 		if (t >= 0 && t <= 1) {
 			res.push({ t, x, y });
 		}
 	};
 	if (dx !== 0) {
 		for (const edgeX of [xL, xR]) {
-			const t = (edgeX - p1.x) / dx;
-			const y = p1.y + t * dy;
+			const t: number = (edgeX - p1.x) / dx;
+			const y: number = p1.y + t * dy;
 			if (y >= yT && y <= yB) {
 				add(t, edgeX, y);
 			}
@@ -283,8 +305,8 @@ const segmentRectIntersections = (p1: Point, p2: Point, rect: Rect): Intersectio
 	}
 	if (dy !== 0) {
 		for (const edgeY of [yT, yB]) {
-			const t = (edgeY - p1.y) / dy;
-			const x = p1.x + t * dx;
+			const t: number = (edgeY - p1.y) / dy;
+			const x: number = p1.x + t * dx;
 			if (x >= xL && x <= xR) {
 				add(t, x, edgeY);
 			}
@@ -296,19 +318,19 @@ const segmentRectIntersections = (p1: Point, p2: Point, rect: Rect): Intersectio
 const isInsideRect = (p: Point, rect: Rect): boolean =>
 	p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height;
 
-export const clipPolyline = (pts: Point[], rect: Rect | null): Point[][] => {
+export const clipPolyline = (pts: Array<Point>, rect: Rect | null): Array<Array<Point>> => {
 	if (!rect) {
 		return pts.length > 1 ? [pts] : [];
 	}
-	const out: Point[][] = [];
-	let seg: Point[] = [];
+	const out: Array<Array<Point>> = [];
+	let seg: Array<Point> = [];
 	for (let i = 1; i < pts.length; i++) {
-		const a = pts[i - 1];
-		const b = pts[i];
-		const inA = isInsideRect(a, rect);
-		const inB = isInsideRect(b, rect);
+		const a: Point = pts[i - 1];
+		const b: Point = pts[i];
+		const inA: boolean = isInsideRect(a, rect);
+		const inB: boolean = isInsideRect(b, rect);
 		if (!inA && !inB) {
-			const ints = segmentRectIntersections(a, b, rect);
+			const ints: Array<Intersection> = segmentRectIntersections(a, b, rect);
 			if (seg.length === 0) {
 				seg.push(a);
 			}
@@ -322,10 +344,10 @@ export const clipPolyline = (pts: Point[], rect: Rect | null): Point[][] => {
 				seg.push(b);
 			}
 		} else if (inA && !inB) {
-			const first = segmentRectIntersections(a, b, rect)[0];
+			const first: Intersection | undefined = segmentRectIntersections(a, b, rect)[0];
 			seg = first ? [{ x: first.x, y: first.y }, b] : [b];
 		} else if (!inA && inB) {
-			const last = segmentRectIntersections(a, b, rect).at(-1);
+			const last: Intersection | undefined = segmentRectIntersections(a, b, rect).at(-1);
 			if (seg.length === 0) {
 				seg.push(a);
 			}
@@ -349,8 +371,8 @@ export const clipPolyline = (pts: Point[], rect: Rect | null): Point[][] => {
 	return out;
 };
 
-export const buildFrameMap = (trackMap: Map<string, TrackPoint[]>): Map<number, GeneralBBox[]> => {
-	const frameMap = new Map<number, GeneralBBox[]>();
+export const buildFrameMap = (trackMap: TrackHistory): Map<number, Array<GeneralBBox>> => {
+	const frameMap: Map<number, Array<GeneralBBox>> = new Map();
 	for (const [trackId, points] of trackMap.entries()) {
 		for (const p of points) {
 			if (!frameMap.has(p.frame)) {
@@ -362,8 +384,11 @@ export const buildFrameMap = (trackMap: Map<string, TrackPoint[]>): Map<number, 
 	return frameMap;
 };
 
-export const mergeTrackPoints = (keep: TrackPoint[], remove: TrackPoint[]): TrackPoint[] => {
-	const byFrame = new Map<number, TrackPoint>();
+export const mergeTrackPoints = (
+	keep: Array<TrackPoint>,
+	remove: Array<TrackPoint>
+): Array<TrackPoint> => {
+	const byFrame: Map<number, TrackPoint> = new Map();
 	for (const p of keep) {
 		byFrame.set(p.frame, p);
 	}
@@ -379,8 +404,8 @@ export const isUnknownLabel = (x: string | null | undefined): boolean => {
 	return !x || x === 'IND';
 };
 
-export const sortIndeterminados = (items: Indeterminados): [string, Indeterminado][] => {
-	const soloEntrada = (it: Indeterminado) =>
+export const sortIndeterminados = (items: Indeterminados): Array<[string, Indeterminado]> => {
+	const soloEntrada = (it: Indeterminado): boolean =>
 		!isUnknownLabel(it.labels.in) && isUnknownLabel(it.labels.out);
 	return Object.entries(items).sort(
 		([, a], [, b]) =>
@@ -389,12 +414,10 @@ export const sortIndeterminados = (items: Indeterminados): [string, Indeterminad
 	);
 };
 
-export const groupByFirstAppearance = (
-	items: Indeterminados
-): Map<number, { trackId: string; bbox: BoundingBox }[]> => {
-	const map = new Map<number, { trackId: string; bbox: BoundingBox }[]>();
+export const groupByFirstAppearance = (items: Indeterminados): Map<number, Array<AppearingBox>> => {
+	const map: Map<number, Array<AppearingBox>> = new Map();
 	for (const [trackId, item] of Object.entries(items)) {
-		const frame = parseInt(item.first_appearance.frame);
+		const frame: number = parseInt(item.first_appearance.frame);
 		if (!map.has(frame)) {
 			map.set(frame, []);
 		}
@@ -404,11 +427,12 @@ export const groupByFirstAppearance = (
 };
 
 export const mergeIndeterminados = (keep: Indeterminado, remove: Indeterminado): Indeterminado => {
-	const pickLabel = (a: string, b: string) => (isUnknownLabel(a) && !isUnknownLabel(b) ? b : a);
-	const keepFirst = parseInt(keep.first_appearance.frame);
-	const removeFirst = parseInt(remove.first_appearance.frame);
-	const keepLast = parseInt(keep.last_appearance.frame);
-	const removeLast = parseInt(remove.last_appearance.frame);
+	const pickLabel = (a: string, b: string): string =>
+		isUnknownLabel(a) && !isUnknownLabel(b) ? b : a;
+	const keepFirst: number = parseInt(keep.first_appearance.frame);
+	const removeFirst: number = parseInt(remove.first_appearance.frame);
+	const keepLast: number = parseInt(keep.last_appearance.frame);
+	const removeLast: number = parseInt(remove.last_appearance.frame);
 	return {
 		...keep,
 		labels: {
@@ -426,7 +450,7 @@ export const getTrackClass = (
 	indeterminados: Indeterminados,
 	history: History
 ): string | null => {
-	const cls =
+	const cls: string | undefined =
 		determinados[trackId]?.class || indeterminados[trackId]?.class || history[trackId]?.class;
 	return cls ? String(cls) : null;
 };
@@ -438,11 +462,11 @@ export const getVehicleName = (key: string): string => {
 	return key.charAt(0).toUpperCase() + key.slice(1).toLowerCase().replaceAll(/_/g, ' ');
 };
 
-export const getVehicleTypes = (rutas: Rutas, indeterminados: Indeterminados): string[] => {
+export const getVehicleTypes = (rutas: Rutas, indeterminados: Indeterminados): Array<string> => {
 	if (Object.keys(rutas).length === 0) {
 		return [];
 	}
-	const types = new Set<string>();
+	const types: Set<string> = new Set();
 	for (const salidas of Object.values(rutas)) {
 		for (const conteo of Object.values(salidas)) {
 			Object.keys(conteo).forEach((v) => types.add(v));
@@ -452,8 +476,8 @@ export const getVehicleTypes = (rutas: Rutas, indeterminados: Indeterminados): s
 	return Array.from(types).sort();
 };
 
-export const getZoneIds = (rutas: Rutas): string[] => {
-	const zones = new Set<string>(Object.keys(rutas));
+export const getZoneIds = (rutas: Rutas): Array<string> => {
+	const zones: Set<string> = new Set(Object.keys(rutas));
 	Object.values(rutas).forEach((salidas) => Object.keys(salidas).forEach((id) => zones.add(id)));
 	return Array.from(zones).sort();
 };
@@ -463,15 +487,15 @@ export const incrementarRuta = (
 	entrada: string,
 	salida: string,
 	vehiculo: string,
-	vehicleTypes: string[]
-) => {
+	vehicleTypes: Array<string>
+): void => {
 	if (!rutas[entrada]) {
 		rutas[entrada] = {};
 	}
 	if (!rutas[entrada][salida]) {
 		rutas[entrada][salida] = {};
 	}
-	const conteo = rutas[entrada][salida];
+	const conteo: ConteoVehiculos = rutas[entrada][salida];
 	if (conteo[vehiculo] === undefined) {
 		for (const v of vehicleTypes) {
 			conteo[v] ??= 0;
@@ -482,16 +506,16 @@ export const incrementarRuta = (
 
 const buildTabla = (
 	prefijo: string,
-	ids: string[],
-	vehicleTypes: string[],
+	ids: Array<string>,
+	vehicleTypes: Array<string>,
 	getConteo: (id: string, vehiculo: string) => number
 ): Tabla => {
-	const columnas = ids.map((id) => `${prefijo} ${id}`);
+	const columnas: Array<string> = ids.map((id) => `${prefijo} ${id}`);
 	const total: FilaTabla = { tipo: 'Total', ...Object.fromEntries(columnas.map((c) => [c, 0])) };
-	const datos = vehicleTypes.map((vehiculo) => {
+	const datos: Array<FilaTabla> = vehicleTypes.map((vehiculo) => {
 		const fila: FilaTabla = { tipo: getVehicleName(vehiculo), __key: vehiculo };
 		ids.forEach((id, i) => {
-			const conteo = getConteo(id, vehiculo);
+			const conteo: number = getConteo(id, vehiculo);
 			fila[columnas[i]] = conteo;
 			(total[columnas[i]] as number) += conteo;
 		});
@@ -500,15 +524,15 @@ const buildTabla = (
 	return { columnas, datos, total };
 };
 
-export const buildTablaEntradas = (rutas: Rutas, vehicleTypes: string[]): Tabla => {
-	const entradasIds = Object.keys(rutas).sort();
+export const buildTablaEntradas = (rutas: Rutas, vehicleTypes: Array<string>): Tabla => {
+	const entradasIds: Array<string> = Object.keys(rutas).sort();
 	return buildTabla('Entrada', entradasIds, vehicleTypes, (entradaId, vehiculo) =>
 		Object.values(rutas[entradaId] ?? {}).reduce((sum, conteo) => sum + (conteo[vehiculo] ?? 0), 0)
 	);
 };
 
-export const buildTablaSalidas = (rutas: Rutas, vehicleTypes: string[]): Tabla => {
-	const salidasIds = [...new Set(Object.values(rutas).flatMap(Object.keys))].sort();
+export const buildTablaSalidas = (rutas: Rutas, vehicleTypes: Array<string>): Tabla => {
+	const salidasIds: Array<string> = [...new Set(Object.values(rutas).flatMap(Object.keys))].sort();
 	return buildTabla('Salida', salidasIds, vehicleTypes, (salidaId, vehiculo) =>
 		Object.values(rutas).reduce((sum, salidas) => sum + (salidas[salidaId]?.[vehiculo] ?? 0), 0)
 	);
@@ -516,8 +540,8 @@ export const buildTablaSalidas = (rutas: Rutas, vehicleTypes: string[]): Tabla =
 
 export const buildTablasPorEntrada = (
 	rutas: Rutas,
-	vehicleTypes: string[]
-): (Tabla & { nombreEntrada: string })[] =>
+	vehicleTypes: Array<string>
+): Array<TablaPorEntrada> =>
 	Object.keys(rutas)
 		.sort()
 		.map((entradaId) => ({

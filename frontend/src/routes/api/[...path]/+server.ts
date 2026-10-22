@@ -1,20 +1,25 @@
 import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
-import type { RequestHandler, RequestEvent } from './$types';
+
+import type { RequestEvent, RequestHandler } from './$types';
+
+type ProxyRequestInit = RequestInit & { duplex: 'half' };
 
 const proxy = async ({ request, params }: RequestEvent): Promise<Response> => {
 	if (!env.BACKEND_URL) {
 		console.error('BACKEND_URL no está definida');
 		error(500, 'Proxy mal configurado');
 	}
-	const url = `${env.BACKEND_URL}/${params.path}`;
+	const url: string = `${env.BACKEND_URL}/${params.path}`;
 
-	const headers = new Headers(request.headers);
+	const headers: Headers = new Headers(request.headers);
 	headers.delete('host');
 	headers.delete('connection');
-	const body = ['GET', 'HEAD'].includes(request.method) ? undefined : request.body;
+	const body: ReadableStream | null | undefined = ['GET', 'HEAD'].includes(request.method)
+		? undefined
+		: request.body;
 
-	const init: RequestInit & { duplex: 'half' } = {
+	const init: ProxyRequestInit = {
 		method: request.method,
 		headers,
 		body,
@@ -34,7 +39,7 @@ const proxy = async ({ request, params }: RequestEvent): Promise<Response> => {
 		error(502, 'Backend no disponible');
 	}
 
-	const responseHeaders = new Headers(res.headers);
+	const responseHeaders: Headers = new Headers(res.headers);
 	responseHeaders.delete('content-encoding');
 	responseHeaders.delete('content-length');
 	responseHeaders.delete('set-cookie');

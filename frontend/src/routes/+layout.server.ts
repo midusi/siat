@@ -1,13 +1,16 @@
-import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
+import { REDIRECT_CODE } from '$lib/redirect';
 
-const PUBLIC_ROUTES = new Set(['/login']);
+import type { LayoutServerLoad } from './$types';
+import type { User } from '$lib/types/user';
+
+const PUBLIC_ROUTES: Set<string> = new Set(['/login']);
 
 export const load: LayoutServerLoad = ({ locals, url }) => {
-	const isPublic = PUBLIC_ROUTES.has(url.pathname);
-	const user = locals.user;
+	const isPublic: boolean = PUBLIC_ROUTES.has(url.pathname);
+	const user: User | null = locals.user;
 	if (!isPublic && !user) {
-		redirect(302, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
+		redirect(REDIRECT_CODE, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
 	}
 	return { user };
 };

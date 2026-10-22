@@ -1,19 +1,21 @@
 <script lang="ts">
-	let {
-		checked = $bindable(false),
-		id,
-		labelledby,
-		onLabel = '',
-		offLabel = '',
-		disabled = false
-	}: {
+	type Props = {
 		checked: boolean;
+		disabled?: boolean;
 		id?: string;
 		labelledby?: string;
-		onLabel?: string;
 		offLabel?: string;
-		disabled?: boolean;
-	} = $props();
+		onLabel?: string;
+	};
+
+	let {
+		checked = $bindable(false),
+		disabled = false,
+		id,
+		labelledby,
+		offLabel = '',
+		onLabel = ''
+	}: Props = $props();
 
 	const text = $derived(checked ? onLabel : offLabel);
 </script>

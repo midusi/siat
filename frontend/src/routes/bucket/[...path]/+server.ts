@@ -1,38 +1,34 @@
 import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
-import type { RequestHandler, RequestEvent } from './$types';
 
-const proxy = async (event: RequestEvent): Promise<Response> => {
-    if (!env.MINIO_URL) {
-        console.error('MINIO_URL no está definida');
-        error(500, 'MINIO mal configurado');
-    }
+import type { RequestEvent, RequestHandler } from './$types';
 
-    const { request, params } = event;
-    const targetPath = params.path;
-    const targetUrl = `${env.MINIO_URL}/${targetPath}`;
-    const headers = new Headers(request.headers);
-    headers.delete('host');
-    headers.delete('connection');
+const proxy = async ({ request, params }: RequestEvent): Promise<Response> => {
+	if (!env.MINIO_URL) {
+		console.error('MINIO_URL no está definida');
+		error(500, 'MINIO mal configurado');
+	}
+	const url: string = `${env.MINIO_URL}/${params.path}`;
 
-    try {
-        const res = await globalThis.fetch(targetUrl, {
-            method: request.method,
-            headers,
-            redirect: 'manual',
-            signal: request.signal
-        });
-        return new Response(res.body, {
-            status: res.status,
-            headers: res.headers
-        });
-    } catch (e) {
-        if (request.signal.aborted) {
-            return new Response(null, { status: 499 });
-        }
-        console.error(`MINIO error: ${request.method} ${targetUrl}`, e);
-        error(502, 'MINIO no disponible');
-    }
-}
+	const headers: Headers = new Headers(request.headers);
+	headers.delete('host');
+	headers.delete('connection');
 
-export const GET: RequestHandler = async (e) => proxy(e);
+	try {
+		const res: Response = await fetch(url, {
+			method: request.method,
+			headers,
+			redirect: 'manual',
+			signal: request.signal
+		});
+		return new Response(res.body, { status: res.status, headers: res.headers });
+	} catch (e) {
+		if (request.signal.aborted) {
+			return new Response(null, { status: 499 });
+		}
+		console.error(`MINIO error: ${request.method} ${url}`, e);
+		error(502, 'MINIO no disponible');
+	}
+};
+
+export const GET: RequestHandler = proxy;

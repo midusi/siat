@@ -5,16 +5,9 @@
 		createUser,
 		deleteUser,
 		fetchUsers,
-		updateUser,
-		type UserUpdates
+		updateUser
 	} from '$lib/services/users';
-	import {
-		emptyErrors,
-		hasErrors,
-		validateUserForm,
-		type FormErrors,
-		type UserForm
-	} from '$lib/validation/user';
+	import { emptyErrors, hasErrors, validateUserForm } from '$lib/validation/user';
 	import Icon from '$lib/components/Icon.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { onMount } from 'svelte';
@@ -22,52 +15,46 @@
 	import { showAlert, showConfirm } from '$lib/dialog';
 	import UserEditForm from './UserEditForm.svelte';
 	import UserTable from './UserTable.svelte';
-	import type { User } from '$lib/types/user';
 
-	const emptyForm = (): UserForm => ({
+	import type { FormErrors, UserForm } from '$lib/validation/user';
+	import type { PendingByUserId, User } from '$lib/types/user';
+	import type { UserUpdates } from '$lib/services/users';
+
+	type EditableField = 'active' | 'email' | 'first_name' | 'last_name' | 'role';
+
+	const DELETE_MESSAGE: string =
+		'¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.';
+	const EDITABLE_FIELDS: Array<EditableField> = [
+		'active',
+		'email',
+		'first_name',
+		'last_name',
+		'role'
+	];
+	const EMPTY_FORM: UserForm = {
+		active: true,
+		confirm_password: '',
+		email: '',
 		first_name: '',
 		last_name: '',
-		email: '',
-		username: '',
+		password: '',
 		role: 'ROLE_OPERADOR',
-		active: true,
-		password: '',
-		confirm_password: ''
-	});
+		username: ''
+	};
 
-	const formFromUser = (user: User): UserForm => ({
-		first_name: user.first_name,
-		last_name: user.last_name,
-		email: user.email,
-		username: user.username,
-		role: user.role,
-		active: user.active,
-		password: '',
-		confirm_password: ''
-	});
+	let deleting: PendingByUserId = $state({});
+	let editingUser: User | null = $state(null);
+	let formErrors: FormErrors = $state(emptyErrors());
+	let loadError: string = $state('');
+	let newUser: UserForm = $state({ ...EMPTY_FORM });
+	let searchQuery: string = $state('');
+	let showModal: boolean = $state(false);
+	let submitting: boolean = $state(false);
+	let toggling: PendingByUserId = $state({});
+	let users: Array<User> = $state([]);
 
-	let users = $state<User[]>([]);
-	let loadError = $state('');
-	let searchQuery = $state('');
-	let showModal = $state(false);
-	let editingUser = $state<User | null>(null);
-	let newUser = $state<UserForm>(emptyForm());
-	let formErrors = $state<FormErrors>(emptyErrors());
-	let submitting = $state(false);
-	let toggling = $state<Record<number, boolean>>({});
-	let deleting = $state<Record<number, boolean>>({});
-
-	onMount(async () => {
-		try {
-			users = await fetchUsers();
-		} catch (e) {
-			console.error('Error de red al cargar usuarios', e);
-			loadError = 'No se pudieron cargar los usuarios';
-		}
-	});
-
-	const filteredUsers = $derived.by(() => {
-		const q = searchQuery.trim().toLowerCase();
+	const filteredUsers: Array<User> = $derived.by(() => {
+		const q: string = searchQuery.trim().toLowerCase();
 		if (!q) {
 			return users;
 		}
@@ -78,13 +65,33 @@
 		);
 	});
 
+	onMount(async () => {
+		try {
+			users = await fetchUsers();
+		} catch (e) {
+			console.error('Error de red al cargar usuarios', e);
+			loadError = 'No se pudieron cargar los usuarios';
+		}
+	});
+
+	const formFromUser = (user: User): UserForm => ({
+		active: user.active,
+		confirm_password: '',
+		email: user.email,
+		first_name: user.first_name,
+		last_name: user.last_name,
+		password: '',
+		role: user.role,
+		username: user.username
+	});
+
 	const patchUser = (id: number, patch: Partial<User>): void => {
 		users = users.map((u) => (u.id === id ? { ...u, ...patch } : u));
 	};
 
 	const openCreateModal = (): void => {
 		editingUser = null;
-		newUser = emptyForm();
+		newUser = { ...EMPTY_FORM };
 		formErrors = emptyErrors();
 		showModal = true;
 	};
@@ -103,10 +110,22 @@
 		showModal = false;
 	};
 
-	const handleSubmit = async (event?: SubmitEvent) => {
-		if (event?.preventDefault) {
-			event.preventDefault();
+	const buildUpdates = (current: User): UserUpdates => {
+		const updates: UserUpdates = {};
+		for (const field of EDITABLE_FIELDS) {
+			if (newUser[field] !== current[field]) {
+				Object.assign(updates, { [field]: newUser[field] });
+			}
 		}
+		if (newUser.password) {
+			updates.password = newUser.password;
+			updates.confirm_password = newUser.confirm_password;
+		}
+		return updates;
+	};
+
+	const handleSubmit = async (event: SubmitEvent): Promise<void> => {
+		event.preventDefault();
 		formErrors = validateUserForm(newUser, !!editingUser);
 		if (hasErrors(formErrors)) {
 			return;
@@ -114,43 +133,19 @@
 		submitting = true;
 		try {
 			if (editingUser) {
-				const current = editingUser;
-				const updates: UserUpdates = {};
-				const fields = ['first_name', 'last_name', 'email', 'role', 'active'] as const;
-				for (const field of fields) {
-					if (newUser[field] !== current[field]) {
-						Object.assign(updates, { [field]: newUser[field] });
-					}
-				}
-				if (newUser.password) {
-					updates.password = newUser.password;
-					updates.confirm_password = newUser.confirm_password;
-				}
-
+				const updates: UserUpdates = buildUpdates(editingUser);
 				if (Object.keys(updates).length > 0) {
-					const updated = await updateUser(current.id, updates);
+					const updated: User = await updateUser(editingUser.id, updates);
 					patchUser(updated.id, updated);
 				}
-
-				showModal = false;
-				return;
+			} else {
+				const created: User = await createUser(newUser);
+				users = [...users, created];
 			}
-
-			const created = await createUser({
-				username: newUser.username,
-				password: newUser.password,
-				confirm_password: newUser.confirm_password,
-				email: newUser.email,
-				role: newUser.role,
-				first_name: newUser.first_name,
-				last_name: newUser.last_name,
-				active: newUser.active
-			});
-			users = [...users, created];
 			showModal = false;
 		} catch (e) {
-			const message = e instanceof Error ? e.message : 'Error de red';
-			const field = e instanceof ApiError ? e.field : undefined;
+			const message: string = e instanceof Error ? e.message : 'Error de red';
+			const field: string | undefined = e instanceof ApiError ? e.field : undefined;
 			if (field && field !== 'general' && field in formErrors) {
 				formErrors[field as keyof FormErrors] = message;
 			} else {
@@ -165,12 +160,11 @@
 		if (toggling[user.id]) {
 			return;
 		}
-		const prev = user.active;
-		const targetActive = !prev;
+		const prev: boolean = user.active;
 		toggling[user.id] = true;
-		patchUser(user.id, { active: targetActive });
+		patchUser(user.id, { active: !prev });
 		try {
-			const updated = await changeUserStatus(user.id, targetActive);
+			const updated: User | null = await changeUserStatus(user.id, !prev);
 			if (updated) {
 				patchUser(user.id, updated);
 			}
@@ -189,9 +183,8 @@
 		if (deleting[userId]) {
 			return;
 		}
-		const confirmed = await showConfirm({
-			message:
-				'¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.',
+		const confirmed: boolean = await showConfirm({
+			message: DELETE_MESSAGE,
 			variant: 'danger',
 			confirmText: 'Eliminar',
 			cancelText: 'Cancelar'
@@ -200,7 +193,7 @@
 			return;
 		}
 		deleting[userId] = true;
-		const prev = users;
+		const prev: Array<User> = users;
 		users = users.filter((u) => u.id !== userId);
 		try {
 			await deleteUser(userId);

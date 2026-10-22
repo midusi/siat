@@ -7,34 +7,37 @@
 		validateChangePassword
 	} from '$lib/validation/user';
 	import { goto } from '$app/navigation';
-	import { logout } from '$lib/services/auth';
 	import Icon from '$lib/components/Icon.svelte';
+	import { logout } from '$lib/services/auth';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
 	import { showSuccess } from '$lib/toast';
 	import Spinner from '$lib/components/Spinner.svelte';
 
-	let current_password = $state('');
-	let new_password = $state('');
-	let confirm_password = $state('');
+	import type { ChangePasswordErrors } from '$lib/validation/user';
 
-	let errors = $state(emptyChangePasswordErrors());
-	let submitting = $state(false);
+	const REDIRECT_DELAY_MS: number = 900;
 
-	const handleSubmit = async (e: SubmitEvent) => {
+	let confirmPassword: string = $state('');
+	let currentPassword: string = $state('');
+	let errors: ChangePasswordErrors = $state(emptyChangePasswordErrors());
+	let newPassword: string = $state('');
+	let submitting: boolean = $state(false);
+
+	const handleSubmit = async (e: SubmitEvent): Promise<void> => {
 		e.preventDefault();
 
-		errors = validateChangePassword(current_password, new_password, confirm_password);
+		errors = validateChangePassword(currentPassword, newPassword, confirmPassword);
 		if (hasErrors(errors)) {
 			return;
 		}
 
 		submitting = true;
 		try {
-			await changePassword(current_password, new_password, confirm_password);
+			await changePassword(currentPassword, newPassword, confirmPassword);
 			await logout();
 			showSuccess('Contraseña cambiada con éxito. Vas a ser redirigido al inicio de sesión.');
-			setTimeout(() => goto('/login'), 900);
+			setTimeout(() => goto('/login'), REDIRECT_DELAY_MS);
 		} catch (err) {
 			errors.general =
 				err instanceof ApiError ? err.message : 'No se pudo conectar con el servidor';
@@ -63,14 +66,14 @@
 		<form onsubmit={handleSubmit} class="space-y-5">
 			<PasswordInput
 				label="Contraseña actual"
-				bind:value={current_password}
+				bind:value={currentPassword}
 				error={errors.current}
 				autocomplete="current-password"
 			/>
 
 			<PasswordNewConfirm
-				bind:newPassword={new_password}
-				bind:confirmPassword={confirm_password}
+				bind:newPassword
+				bind:confirmPassword
 				errorNew={errors.new}
 				errorConfirm={errors.confirm}
 			/>

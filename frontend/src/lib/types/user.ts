@@ -9,3 +9,5 @@ export interface User {
     last_name: string;
     active: boolean;
 };
+
+export type PendingByUserId = Record<number, boolean>;

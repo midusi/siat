@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { toasts, type Toast } from '$lib/toast';
-	import { fly, fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import { fade, fly } from 'svelte/transition';
+	import { toasts } from '$lib/toast';
+
+	import type { Toast } from '$lib/toast';
 
 	let items: Toast[] = [];
 	toasts.subscribe((v) => (items = v));

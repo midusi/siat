@@ -2,6 +2,7 @@ import { apiError } from './errors';
 import { apiFetch } from '$lib/api';
 
 export type Option = { id: number; name: string };
+export type SelectItem = { value: number; label: string };
 
 const fetchOptions = async (path: string, fallback: string): Promise<Option[]> => {
 	const res = await apiFetch(path);
@@ -19,3 +20,9 @@ export const fetchLocalities = (districtId: number): Promise<Option[]> =>
 
 export const fetchProvinces = (): Promise<Option[]> =>
 	fetchOptions('/province', 'No se pudieron cargar las provincias');
+
+export const toSelectItems = (options: Option[]): SelectItem[] =>
+	options
+		.slice()
+		.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+		.map((x) => ({ value: x.id, label: x.name }));

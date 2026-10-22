@@ -1,13 +1,17 @@
-import { type ActionType, type TaskResponse, type TaskRow, toTaskRow } from '$lib/types/task';
 import { deleteTask } from '$lib/services/tasks';
 import { errorMessage } from '$lib/services/errors';
 import { showConfirm } from '$lib/dialog';
 import { showError } from '$lib/toast';
+import { toTaskRow } from '$lib/types/task';
 
+import type { ActionType, TaskResponse, TaskRow } from '$lib/types/task';
+
+export type ActionDispatch = (action: ActionType, taskId: number) => void;
 export type ActionHandlers = Partial<Record<ActionType, (taskId: number) => void>>;
+export type TaskList = ReturnType<typeof createTaskList>;
 
 export const actionDispatcher =
-	(handlers: ActionHandlers) =>
+	(handlers: ActionHandlers): ActionDispatch =>
 	(action: ActionType, taskId: number): void =>
 		handlers[action]?.(taskId);
 

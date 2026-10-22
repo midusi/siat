@@ -6,55 +6,54 @@
 	import { showConfirm } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
 
-	type Item = { value: string; label: string };
-	type Field = 'class' | 'in' | 'out';
-
-	let {
-		items,
-		vehicleItems,
-		zoneItems,
-		savingById,
-		mergeInProgress,
-		liveIds,
-		activeId,
-		height,
-		classColor,
-		onselect,
-		onedit,
-		onconfirm,
-		ondelete,
-		onmerge
-	}: {
-		items: [string, review.Indeterminado][];
-		vehicleItems: Item[];
-		zoneItems: Item[];
-		savingById: Record<string, boolean>;
-		mergeInProgress: boolean;
-		liveIds: Set<string>;
+	type Props = {
 		activeId: string | null;
-		height: number;
 		classColor: (cls: string) => string;
-		onselect: (trackId: string) => void;
-		onedit: (trackId: string, field: Field, value: string) => void;
+		height: number;
+		items: Array<[string, review.Indeterminado]>;
+		liveIds: Set<string>;
+		mergeInProgress: boolean;
 		onconfirm: (trackId: string) => void;
 		ondelete: (trackId: string) => void;
+		onedit: (trackId: string, field: review.IndeterminadoField, value: string) => void;
 		onmerge: (keepId: string, removeId: string) => Promise<void>;
-	} = $props();
+		onselect: (trackId: string) => void;
+		savingById: Record<string, boolean>;
+		vehicleItems: Array<review.SelectOption>;
+		zoneItems: Array<review.SelectOption>;
+	};
 
-	let mergeModeActive = $state(false);
-	let mergeSourceId = $state<string | null>(null);
-	let searchInputEl = $state<HTMLInputElement | null>(null);
-	let searchQuery = $state('');
+	let {
+		activeId,
+		classColor,
+		height,
+		items,
+		liveIds,
+		mergeInProgress,
+		onconfirm,
+		ondelete,
+		onedit,
+		onmerge,
+		onselect,
+		savingById,
+		vehicleItems,
+		zoneItems
+	}: Props = $props();
 
-	let visibleItems = $derived.by(() => {
-		const q = searchQuery.trim();
+	let mergeModeActive: boolean = $state(false);
+	let mergeSourceId: string | null = $state(null);
+	let searchInputEl: HTMLInputElement | null = $state(null);
+	let searchQuery: string = $state('');
+
+	const visibleItems: Array<[string, review.Indeterminado]> = $derived.by(() => {
+		const q: string = searchQuery.trim();
 		if (!q) {
 			return items;
 		}
 		return items.filter(([id]) => id.includes(q));
 	});
 
-	const onGlobalKeyDown = (e: KeyboardEvent) => {
+	const onGlobalKeyDown = (e: KeyboardEvent): void => {
 		if (e.ctrlKey && e.key.toLowerCase() === 'k') {
 			e.preventDefault();
 			searchQuery = '';
@@ -62,12 +61,12 @@
 		}
 	};
 
-	const cancelMergeMode = () => {
+	const cancelMergeMode = (): void => {
 		mergeModeActive = false;
 		mergeSourceId = null;
 	};
 
-	const toggleMergeFrom = (trackId: string) => {
+	const toggleMergeFrom = (trackId: string): void => {
 		if (!mergeModeActive) {
 			if (!mergeInProgress) {
 				mergeModeActive = true;
@@ -80,7 +79,7 @@
 		}
 	};
 
-	const onCardClick = async (trackId: string) => {
+	const onCardClick = async (trackId: string): Promise<void> => {
 		if (!mergeModeActive) {
 			onselect(trackId);
 			return;
@@ -92,11 +91,11 @@
 			cancelMergeMode();
 			return;
 		}
-		const a = parseInt(mergeSourceId);
-		const b = parseInt(trackId);
-		const keepId = String(Math.min(a, b));
-		const removeId = String(Math.max(a, b));
-		const proceed = await showConfirm({
+		const a: number = parseInt(mergeSourceId);
+		const b: number = parseInt(trackId);
+		const keepId: string = String(Math.min(a, b));
+		const removeId: string = String(Math.max(a, b));
+		const proceed: boolean = await showConfirm({
 			title: 'Unir indeterminados',
 			message: `Se unirán los indeterminados ${keepId} y ${removeId}. El ID ${keepId} se mantendrá y el ${removeId} se eliminará.\n¿Desea continuar?`,
 			variant: 'warning',
@@ -109,15 +108,23 @@
 		cancelMergeMode();
 	};
 
-	const withoutPropagation = (fn: () => void) => (e: Event) => {
-		e.stopPropagation();
-		fn();
-	};
+	const withoutPropagation =
+		(fn: () => void): ((e: Event) => void) =>
+		(e: Event): void => {
+			e.stopPropagation();
+			fn();
+		};
 </script>
 
 <svelte:window onkeydown={onGlobalKeyDown} />
 
-{#snippet select(trackId: string, field: Field, options: Item[], value: string, label: string)}
+{#snippet select(
+	trackId: string,
+	field: review.IndeterminadoField,
+	options: Array<review.SelectOption>,
+	value: string,
+	label: string
+)}
 	<GlassSelect
 		items={options}
 		{value}

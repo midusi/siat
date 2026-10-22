@@ -1,26 +1,29 @@
 <script lang="ts">
-	import type { User } from '$lib/types/user';
 	import UserRow from './UserRow.svelte';
 
-	let {
-		users,
-		toggling,
-		deleting,
-		loadError = '',
-		isFiltering = false,
-		onedit,
-		ontoggle,
-		ondelete
-	}: {
-		users: User[];
-		toggling: Record<number, boolean>;
-		deleting: Record<number, boolean>;
-		loadError?: string;
+	import type { PendingByUserId, User } from '$lib/types/user';
+
+	type Props = {
+		deleting: PendingByUserId;
 		isFiltering?: boolean;
+		loadError?: string;
+		ondelete: (userId: number) => void;
 		onedit: (user: User) => void;
 		ontoggle: (user: User) => void;
-		ondelete: (userId: number) => void;
-	} = $props();
+		toggling: PendingByUserId;
+		users: Array<User>;
+	};
+
+	let {
+		deleting,
+		isFiltering = false,
+		loadError = '',
+		ondelete,
+		onedit,
+		ontoggle,
+		toggling,
+		users
+	}: Props = $props();
 </script>
 
 <div class="glass-card overflow-hidden">

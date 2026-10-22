@@ -17,7 +17,12 @@
 </script>
 
 <script lang="ts">
-	let { name, class: className = 'h-5 w-5' }: { name: IconName; class?: string } = $props();
+	type Props = {
+		class?: string;
+		name: IconName;
+	};
+
+	let { class: className = 'h-5 w-5', name }: Props = $props();
 </script>
 
 <svg

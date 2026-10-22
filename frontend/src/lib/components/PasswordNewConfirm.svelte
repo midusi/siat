@@ -1,23 +1,25 @@
 <script lang="ts">
 	import PasswordInput from './PasswordInput.svelte';
 
-	let {
-		newPassword = $bindable(''),
-		confirmPassword = $bindable(''),
-		errorNew = '',
-		errorConfirm = '',
-		newLabel = 'Nueva contraseña',
-		confirmLabel = 'Confirmar nueva contraseña',
-		showRequirements = true
-	}: {
-		newPassword: string;
-		confirmPassword: string;
-		errorNew?: string;
-		errorConfirm?: string;
-		newLabel?: string;
+	type Props = {
 		confirmLabel?: string;
+		confirmPassword: string;
+		errorConfirm?: string;
+		errorNew?: string;
+		newLabel?: string;
+		newPassword: string;
 		showRequirements?: boolean;
-	} = $props();
+	};
+
+	let {
+		confirmLabel = 'Confirmar nueva contraseña',
+		confirmPassword = $bindable(''),
+		errorConfirm = '',
+		errorNew = '',
+		newLabel = 'Nueva contraseña',
+		newPassword = $bindable(''),
+		showRequirements = true
+	}: Props = $props();
 
 	const segments = [0, 1, 2, 3];
 	const strengthLabels = ['Muy débil', 'Débil', 'Media', 'Fuerte', 'Muy fuerte'];

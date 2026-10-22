@@ -1,19 +1,21 @@
 <script lang="ts">
-	let {
-		id,
-		label,
-		value = $bindable(''),
-		type = 'text',
-		error = '',
-		disabled = false
-	}: {
+	type Props = {
+		disabled?: boolean;
+		error?: string;
 		id: string;
 		label: string;
-		value: string;
 		type?: 'text' | 'email';
-		error?: string;
-		disabled?: boolean;
-	} = $props();
+		value: string;
+	};
+
+	let {
+		disabled = false,
+		error = '',
+		id,
+		label,
+		type = 'text',
+		value = $bindable('')
+	}: Props = $props();
 </script>
 
 <div>

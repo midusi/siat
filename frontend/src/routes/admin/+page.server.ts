@@ -1,15 +1,16 @@
-import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
+import { REDIRECT_CODE } from '$lib/redirect';
 
-const REDIRECT_CODE: number = 302;
+import type { PageServerLoad } from './$types';
+import type { User } from '$lib/types/user';
 
-export const load: PageServerLoad = async ({ locals }) => {
-	const user = locals.user;
+export const load: PageServerLoad = ({ locals }) => {
+	const user: User | null = locals.user;
 	if (!user) {
-		throw redirect(REDIRECT_CODE, '/login');
+		redirect(REDIRECT_CODE, '/login');
 	}
 	if (user.role !== 'ROLE_ADMIN') {
-		throw redirect(REDIRECT_CODE, '/');
+		redirect(REDIRECT_CODE, '/');
 	}
 	return { user };
 };

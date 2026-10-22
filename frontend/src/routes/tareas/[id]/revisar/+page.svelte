@@ -6,50 +6,50 @@
 	import { page } from '$app/state';
 	import ResumenTablas from './ResumenTablas.svelte';
 	import * as review from './review';
-	import { showSuccess, showError } from '$lib/toast';
+	import { showError, showSuccess } from '$lib/toast';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import VideoPanel from './VideoPanel.svelte';
 
-	let activeIndeterminateId = $state<string | null>(null);
-	let determinados = $state<review.Indeterminados>({});
-	let error = $state<string | null>(null);
-	let excludedZones = $state<[number, number][][]>([]);
-	let generalReady = $state(false);
-	let history = $state<review.History>({});
-	let indeterminados = $state<review.Indeterminados>({});
-	let liveIds = $state(new Set<string>());
-	let loading = $state(true);
-	let mergeInProgress = $state(false);
-	let roadsIn = $state<review.RoadPoly[]>([]);
-	let roadsOut = $state<review.RoadPoly[]>([]);
-	let rutas = $state<review.Rutas>({});
-	let savingById = $state<Record<string, boolean>>({});
-	let sortedIndeterminados = $state<[string, review.Indeterminado][]>([]);
-	let trackHistory = $state.raw(new Map<string, review.TrackPoint[]>());
-	let videoFps = $state(0);
-	let videoHeight = $state(0);
-	let videoPanel = $state<VideoPanel | null>(null);
-	let videoPanelHeight = $state(0);
-	let videoPath = $state('');
-	let videoWidth = $state(0);
+	let activeIndeterminateId: string | null = $state(null);
+	let determinados: review.Indeterminados = $state({});
+	let error: string | null = $state(null);
+	let excludedZones: Array<Array<review.Vertex>> = $state([]);
+	let generalReady: boolean = $state(false);
+	let history: review.History = $state({});
+	let indeterminados: review.Indeterminados = $state({});
+	let liveIds: Set<string> = $state(new Set());
+	let loading: boolean = $state(true);
+	let mergeInProgress: boolean = $state(false);
+	let roadsIn: Array<review.RoadPoly> = $state([]);
+	let roadsOut: Array<review.RoadPoly> = $state([]);
+	let rutas: review.Rutas = $state({});
+	let savingById: Record<string, boolean> = $state({});
+	let sortedIndeterminados: Array<[string, review.Indeterminado]> = $state([]);
+	let trackHistory: review.TrackHistory = $state.raw(new Map());
+	let videoFps: number = $state(0);
+	let videoHeight: number = $state(0);
+	let videoPanel: VideoPanel | null = $state(null);
+	let videoPanelHeight: number = $state(0);
+	let videoPath: string = $state('');
+	let videoWidth: number = $state(0);
 
-	const taskId = $derived(page.params.id);
-	let vehicleTypes = $derived(review.getVehicleTypes(rutas, indeterminados));
-	let vehicleItems = $derived(
+	const hasRutas: boolean = $derived(Object.keys(rutas).length > 0);
+	const taskId: string = $derived(page.params.id);
+	const vehicleTypes: Array<string> = $derived(review.getVehicleTypes(rutas, indeterminados));
+	const vehicleItems: Array<review.SelectOption> = $derived(
 		vehicleTypes.map((v) => ({ value: v, label: review.getVehicleName(v) }))
 	);
-	let zoneItems = $derived([
+	const zoneItems: Array<review.SelectOption> = $derived([
 		{ value: '', label: 'Seleccionar…' },
 		...review.getZoneIds(rutas).map((z) => ({ value: z, label: `Zona ${z}` }))
 	]);
-	let hasRutas = $derived(Object.keys(rutas).length > 0);
 
 	onMount(() => {
 		fetchData();
 	});
 
-	const loadTrackHistory = async (url: string | null) => {
-		let tracks = new Map<string, review.TrackPoint[]>();
+	const loadTrackHistory = async (url: string | null): Promise<void> => {
+		let tracks: review.TrackHistory = new Map();
 		if (url) {
 			try {
 				tracks = await review.fetchTrackHistory(url);
@@ -61,12 +61,12 @@
 		generalReady = true;
 	};
 
-	const fetchData = async () => {
+	const fetchData = async (): Promise<void> => {
 		loading = true;
 		error = null;
 		generalReady = false;
 		try {
-			const data = await review.fetchTaskReview(taskId);
+			const data: review.TaskReview = await review.fetchTaskReview(taskId);
 			videoPath = data.videoPath;
 			videoWidth = data.videoWidth;
 			videoHeight = data.videoHeight;
@@ -103,8 +103,8 @@
 		}
 	};
 
-	const updateTracks = (change: (tracks: Map<string, review.TrackPoint[]>) => void) => {
-		const next = new Map(trackHistory);
+	const updateTracks = (change: (tracks: review.TrackHistory) => void): void => {
+		const next: review.TrackHistory = new Map(trackHistory);
 		change(next);
 		trackHistory = next;
 	};
@@ -112,39 +112,39 @@
 	const classColor = (cls: string): string => getCategoryColor(cls, vehicleTypes);
 
 	const trackColor = (trackId: string): string => {
-		const cls = review.getTrackClass(trackId, determinados, indeterminados, history);
+		const cls: string | null = review.getTrackClass(trackId, determinados, indeterminados, history);
 		return cls ? classColor(cls) : '#ffffff';
 	};
 
-	const hideIndeterminado = (trackId: string) => {
+	const hideIndeterminado = (trackId: string): void => {
 		sortedIndeterminados = sortedIndeterminados.filter(([id]) => id !== trackId);
 		if (activeIndeterminateId === trackId) {
 			activeIndeterminateId = null;
 		}
 	};
 
-	const moveToDeterminados = (trackId: string, entrada: string, salida: string) => {
-		const item = indeterminados[trackId];
+	const moveToDeterminados = (trackId: string, entrada: string, salida: string): void => {
+		const item: review.Indeterminado = indeterminados[trackId];
 		review.incrementarRuta(rutas, entrada, salida, item.class, vehicleTypes);
 		determinados[trackId] = { ...item, labels: { in: entrada, out: salida } };
 		delete indeterminados[trackId];
 	};
 
-	const selectIndeterminado = (trackId: string) => {
+	const selectIndeterminado = (trackId: string): void => {
 		activeIndeterminateId = trackId;
-		const item = indeterminados[trackId];
+		const item: review.Indeterminado | undefined = indeterminados[trackId];
 		if (item) {
 			videoPanel?.focusTrack(trackId, parseInt(item.first_appearance.frame));
 		}
 	};
 
-	const onBBoxClick = (trackId: string) => {
+	const onBBoxClick = (trackId: string): void => {
 		if (!indeterminados[trackId]) {
 			return;
 		}
 		activeIndeterminateId = trackId;
 		queueMicrotask(() => {
-			const el = document.getElementById(`ind-card-${trackId}`);
+			const el: HTMLElement | null = document.getElementById(`ind-card-${trackId}`);
 			if (el) {
 				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 				el.focus({ preventScroll: true });
@@ -152,8 +152,12 @@
 		});
 	};
 
-	const editIndeterminado = (trackId: string, field: 'class' | 'in' | 'out', value: string) => {
-		const item = indeterminados[trackId];
+	const editIndeterminado = (
+		trackId: string,
+		field: review.IndeterminadoField,
+		value: string
+	): void => {
+		const item: review.Indeterminado | undefined = indeterminados[trackId];
 		if (!item) {
 			return;
 		}
@@ -164,8 +168,8 @@
 		}
 	};
 
-	const confirmIndeterminado = async (trackId: string) => {
-		const item = indeterminados[trackId];
+	const confirmIndeterminado = async (trackId: string): Promise<void> => {
+		const item: review.Indeterminado | undefined = indeterminados[trackId];
 		if (!item) {
 			return;
 		}
@@ -181,7 +185,7 @@
 		delete savingById[trackId];
 	};
 
-	const deleteIndeterminado = async (trackId: string) => {
+	const deleteIndeterminado = async (trackId: string): Promise<void> => {
 		savingById[trackId] = true;
 		hideIndeterminado(trackId);
 		videoPanel?.retargetSelection(trackId, null);
@@ -196,20 +200,20 @@
 		delete savingById[trackId];
 	};
 
-	const mergeIndeterminados = async (keepId: string, removeId: string) => {
+	const mergeIndeterminados = async (keepId: string, removeId: string): Promise<void> => {
 		if (mergeInProgress) {
 			return;
 		}
 		mergeInProgress = true;
 		try {
-			const keep = indeterminados[keepId];
-			const remove = indeterminados[removeId];
+			const keep: review.Indeterminado | undefined = indeterminados[keepId];
+			const remove: review.Indeterminado | undefined = indeterminados[removeId];
 			if (!keep || !remove) {
 				showError('No se encontraron ambos indeterminados.');
 				return;
 			}
 
-			const merged = review.mergeIndeterminados(keep, remove);
+			const merged: review.Indeterminado = review.mergeIndeterminados(keep, remove);
 			const { in: entrada, out: salida } = merged.labels;
 			indeterminados[keepId] = merged;
 			delete indeterminados[removeId];
@@ -224,7 +228,8 @@
 				tracks.delete(removeId);
 			});
 
-			const nowDetermined = !review.isUnknownLabel(entrada) && !review.isUnknownLabel(salida);
+			const nowDetermined: boolean =
+				!review.isUnknownLabel(entrada) && !review.isUnknownLabel(salida);
 			if (nowDetermined) {
 				moveToDeterminados(keepId, entrada, salida);
 			}

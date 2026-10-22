@@ -1,19 +1,19 @@
 <script lang="ts">
 	import * as review from './review';
 
-	let {
-		rutas,
-		vehicleTypes,
-		classColor
-	}: {
-		rutas: review.Rutas;
-		vehicleTypes: string[];
+	type Props = {
 		classColor: (cls: string) => string;
-	} = $props();
+		rutas: review.Rutas;
+		vehicleTypes: Array<string>;
+	};
 
-	let entradas = $derived(review.buildTablaEntradas(rutas, vehicleTypes));
-	let salidas = $derived(review.buildTablaSalidas(rutas, vehicleTypes));
-	let porEntrada = $derived(review.buildTablasPorEntrada(rutas, vehicleTypes));
+	let { classColor, rutas, vehicleTypes }: Props = $props();
+
+	const entradas: review.Tabla = $derived(review.buildTablaEntradas(rutas, vehicleTypes));
+	const porEntrada: Array<review.TablaPorEntrada> = $derived(
+		review.buildTablasPorEntrada(rutas, vehicleTypes)
+	);
+	const salidas: review.Tabla = $derived(review.buildTablaSalidas(rutas, vehicleTypes));
 </script>
 
 {#snippet tabla(t: review.Tabla)}
