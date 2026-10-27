@@ -1,18 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from app.schemas.auth import ResetPerform, ResetRequest
 from app.services.dependencies import get_password_reset_service, get_email_service
 from app.services.password_reset_service import PasswordResetService
 from app.services.email_service import EmailService
 
-router = APIRouter(prefix="/auth/password", tags=["auth"]) 
-
-class ResetRequest(BaseModel):
-    identifier: str  # username or email
-
-class ResetPerform(BaseModel):
-    token: str
-    new_password: str
-    confirm_password: str
+router = APIRouter(prefix="/auth/password", tags=["auth"])
 
 @router.post("/request", status_code=204)
 async def request_reset(body: ResetRequest, svc: PasswordResetService = Depends(get_password_reset_service), mail: EmailService = Depends(get_email_service)):

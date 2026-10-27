@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
+from app.api.cookies import clear_session_cookies, set_session_cookies
+from app.api.dependencies import require_csrf_header
 from app.schemas.user import UserLoginRequest, UserResponse
 from app.services.auth_service import AuthService
 from app.services.dependencies import get_auth_service
 from app.auth.dependencies import get_current_user
-from app.config import (
-    COOKIE_NAME, COOKIE_SECURE, COOKIE_SAMESITE, COOKIE_DOMAIN, COOKIE_PATH,
-    REFRESH_COOKIE_NAME, REFRESH_COOKIE_SECURE, REFRESH_COOKIE_SAMESITE, REFRESH_COOKIE_DOMAIN, REFRESH_COOKIE_PATH,
-    CSRF_HEADER_NAME
-)
+from app.config import COOKIE_NAME, REFRESH_COOKIE_NAME
 from app.auth.jwt import decode_token
 from app.security.rate_limit import rate_limit_login
 import logging
@@ -31,27 +29,7 @@ async def login(
     access_token, refresh_token, user = result
     log.info(f"login success user_id={user.id} username={user.username}")
 
-    # Set cookies
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=access_token,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
-        max_age=60 * 60,
-        domain=COOKIE_DOMAIN,
-        path=COOKIE_PATH,
-    )
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=refresh_token,
-        httponly=True,
-        secure=REFRESH_COOKIE_SECURE,
-        samesite=REFRESH_COOKIE_SAMESITE,
-        max_age=60 * 60 * 24 * 7,
-        domain=REFRESH_COOKIE_DOMAIN,
-        path=REFRESH_COOKIE_PATH,
-    )
+    set_session_cookies(response, access_token, refresh_token)
     return {"access_token": access_token}
 
 
@@ -73,34 +51,12 @@ async def refresh(request: Request, response: Response, service: AuthService = D
 
     access_token, refresh_token, _ = result
 
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=access_token,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
-        max_age=60 * 60,
-        domain=COOKIE_DOMAIN,
-        path=COOKIE_PATH,
-    )
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=refresh_token,
-        httponly=True,
-        secure=REFRESH_COOKIE_SECURE,
-        samesite=REFRESH_COOKIE_SAMESITE,
-        max_age=60 * 60 * 24 * 7,
-        domain=REFRESH_COOKIE_DOMAIN,
-        path=REFRESH_COOKIE_PATH,
-    )
+    set_session_cookies(response, access_token, refresh_token)
     return {"access_token": access_token}
 
 
-@router.post("/logout", status_code=204)
+@router.post("/logout", status_code=204, dependencies=[Depends(require_csrf_header)])
 async def logout(request: Request, response: Response, service: AuthService = Depends(get_auth_service)):
-    if not request.headers.get(CSRF_HEADER_NAME):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSRF token faltante")
-
     access = request.cookies.get(COOKIE_NAME)
     user_id = None
     if access:
@@ -120,8 +76,9 @@ async def logout(request: Request, response: Response, service: AuthService = De
         service.logout(user_id)
         log.info(f"logout user_id={user_id}")
 
-    response.delete_cookie(COOKIE_NAME, domain=COOKIE_DOMAIN, path=COOKIE_PATH)
-    response.delete_cookie(REFRESH_COOKIE_NAME, domain=REFRESH_COOKIE_DOMAIN, path=REFRESH_COOKIE_PATH)
+    # Contrato actual: el borrado se aplica a `response` pero se devuelve un Response nuevo,
+    # por lo que el cliente no recibe Set-Cookie (ver test_contract_auth).
+    clear_session_cookies(response)
     return Response(status_code=204)
 
 

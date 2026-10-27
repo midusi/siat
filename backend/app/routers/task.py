@@ -1,54 +1,23 @@
 from fastapi import APIRouter, Depends, UploadFile, Form, File, HTTPException
 from app.services.task_service import TaskService
 from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
+from app.schemas.task_upload import (
+    MultipartAbortRequest,
+    MultipartCompleteRequest,
+    MultipartInitRequest,
+    MultipartInitResponse,
+    MultipartPartRequest,
+    MultipartPartResponse,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
+)
 from app.services.dependencies import get_task_service
 from datetime import datetime
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from app.auth.dependencies import get_current_user, require_role
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/task", tags=["task"], dependencies=[Depends(get_current_user)])
 
-
-class PresignedUploadRequest(BaseModel):
-    filename: str
-    content_type: str
-
-class PresignedUploadResponse(BaseModel):
-    upload_url: str
-    object_key: str
-    expires_in: int
-
-class MultipartInitRequest(BaseModel):
-    filename: str
-    content_type: str = "video/mp4"
-    file_size: int
-
-class MultipartInitResponse(BaseModel):
-    object_key: str
-    upload_id: str
-    part_size: int
-    part_count: int
-    expires_in: int
-
-class MultipartPartRequest(BaseModel):
-    object_key: str
-    upload_id: str
-    part_number: int
-
-class MultipartPartResponse(BaseModel):
-    upload_url: str
-    part_number: int
-    expires_in: int
-
-class MultipartCompleteRequest(BaseModel):
-    object_key: str
-    upload_id: str
-    part_count: int
-
-class MultipartAbortRequest(BaseModel):
-    object_key: str
-    upload_id: str
 
 @router.post("/upload/presigned-url", response_model=PresignedUploadResponse)
 async def get_presigned_upload_url(
