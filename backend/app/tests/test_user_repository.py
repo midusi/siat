@@ -1,8 +1,11 @@
 import ast
 from pathlib import Path
 
+import pytest
+
 from app.adapters.persistence.memory import InMemoryUnitOfWork
 from app.domain.entities import User, TaskStatus
+from app.domain.exceptions import UnauthorizedError
 from app.schemas.user import UserCreateRequest
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
@@ -79,4 +82,5 @@ def test_auth_service_login_with_memory_uow():
     assert access
     assert refresh
     assert user.id == created.id
-    assert auth.login("operador", "wrong1") is None
+    with pytest.raises(UnauthorizedError, match="Credenciales inválidas"):
+        auth.login("operador", "wrong1")
