@@ -6,15 +6,22 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.config import SECRET_KEY, RESET_TOKEN_EXPIRES_MIN
+from app.domain.exceptions import ValidationError
 from app.ports.uow import UnitOfWork
+from app.services.email_service import EmailService
 from app.services.user_service import UserService
 
 UTC = timezone.utc
 
+INVALID_TOKEN_DETAIL = "Token inválido o expirado"
+RESET_EMAIL_SUBJECT = "Recuperación de contraseña"
+RESET_EMAIL_BODY = "Usa este token para recuperar tu contraseña (válido por tiempo limitado):\n\n{token}\n"
+
 
 class PasswordResetService:
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, email_service: EmailService):
         self.uow = uow
+        self.email_service = email_service
         self.user_service = UserService(uow)
 
     def _sign(self, data: str) -> str:
@@ -52,27 +59,25 @@ class PasswordResetService:
         except Exception:
             return None
 
-    def request_reset(self, identifier: str) -> Optional[str]:
-        token, _email = self.request_reset_with_email(identifier)
-        return token
+    def request_reset(self, identifier: str) -> None:
+        """Envía el token por email si el usuario existe; si no, no hace nada.
 
-    def request_reset_with_email(self, identifier: str) -> tuple[Optional[str], Optional[str]]:
+        No señala si el usuario existe para evitar enumeración de usuarios.
+        """
         user = self.uow.users.find_by_identifier(identifier)
         if not user:
-            return None, None
-        iat = datetime.now(UTC)
-        token = self._make_token(user.id, user.email, iat)
-        return token, user.email
+            return
+        token = self._make_token(user.id, user.email, datetime.now(UTC))
+        self.email_service.send(user.email, RESET_EMAIL_SUBJECT, RESET_EMAIL_BODY.format(token=token))
 
-    def perform_reset(self, token: str, new_password: str, confirm_password: str) -> bool:
+    def perform_reset(self, token: str, new_password: str, confirm_password: str) -> None:
         data = self._parse_and_verify(token)
         if not data:
-            return False
+            raise ValidationError(INVALID_TOKEN_DETAIL)
         user = self.uow.users.get(data["uid"])
         if not user or user.email != data["email"]:
-            return False
+            raise ValidationError(INVALID_TOKEN_DETAIL)
         self.user_service._validate_passwords(new_password, confirm_password)
         user.password = self.user_service.hash_password(new_password)
         user.refresh_token_version = (user.refresh_token_version or 0) + 1
         self.uow.commit()
-        return True
