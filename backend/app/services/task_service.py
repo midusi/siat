@@ -1,16 +1,18 @@
 import os
 from fastapi import UploadFile
 import hashlib
+import logging
 import time
 import datetime
 import json
+from typing import Iterator, NamedTuple
 
 from app.services.locality_service import LocalityService
 from app.services.video_service import VideoService
 from app.services.task_status_service import TaskStatusService
 from app.services.task_status_history_service import TaskStatusHistoryService
 from app.services.road_service import RoadService
-from app.schemas.task import TaskCreateRequest, TaskResponse, TaskConfigRequest
+from app.schemas.task import FirstFrameInfoResponse, TaskCreateRequest, TaskResponse, TaskConfigRequest
 from app.schemas.task import TaskUpdateData
 from app.domain.entities import Task, Video, TaskStatusHistory, Road, Inference
 from app.enums.road_direction import RoadDirection
@@ -27,6 +29,15 @@ from app.services.task_upload import (
 from app.domain.exceptions import NotFoundError, ValidationError, InternalError
 
 ARCHIVED_STATUS_ID = "ARCHIVED"
+
+logger = logging.getLogger("task")
+
+
+class VideoDownload(NamedTuple):
+    chunks: Iterator[bytes]
+    content_type: str
+    content_length: int | None
+    filename: str
 
 
 class TaskService:
@@ -93,6 +104,7 @@ class TaskService:
         return [self._to_response(t) for t in tasks]
 
     def get_task(self, task_id: int) -> dict:
+        logger.info(f"Solicitud recibida para la tarea con ID: {task_id}")
         task = self._require_task(task_id)
         if not task.video:
             raise ValidationError("La tarea no tiene video asociado")
@@ -158,6 +170,18 @@ class TaskService:
                 payload["historyUrl"] = f"{public_base}/{task.inference.url_data_obj_history}"
 
         return payload
+
+    def create_task(
+        self,
+        task_request: TaskCreateRequest,
+        object_key: str | None = None,
+        file: UploadFile | None = None,
+    ) -> TaskResponse:
+        if object_key:
+            return self.create_from_object_key(task_request, object_key)
+        if file and file.filename:
+            return self.create(task_request, file)
+        raise ValidationError("Debe proporcionar 'file' o 'object_key'")
 
     def create(
         self,
@@ -301,6 +325,8 @@ class TaskService:
             raise InternalError(str(e))
 
     def config(self, task_config_request: TaskConfigRequest, task_id: int):
+        logger.info(f"Configurar tarea {task_id}")
+        logger.debug(f"Configuración recibida para la tarea {task_id}: {task_config_request}")
         task = self._require_task(task_id)
 
         current_task_status_history = self.task_status_history_service.get_current_by_task(task.id)
@@ -388,6 +414,15 @@ class TaskService:
 
         first_frame_b64 = self.video_service.get_frame(video.url, 0)
         return first_frame_b64
+
+    def get_first_frame_info(self, task_id: int) -> FirstFrameInfoResponse:
+        image_b64 = self.get_first_frame(task_id)
+        dimensions = self.get_video_dimensions(task_id)
+        return FirstFrameInfoResponse(
+            width=dimensions["width"],
+            height=dimensions["height"],
+            image_b64=image_b64,
+        )
 
     def get_video_dimensions(self, task_id: int) -> dict:
         task = self._require_task(task_id)
@@ -511,6 +546,7 @@ class TaskService:
         self.uow.commit()
 
     def update_data(self, task_id: int, updated_data: TaskUpdateData) -> dict:
+        logger.info(f"Actualización recibida para la tarea con ID: {task_id}")
         task = self._require_task(task_id)
         video = task.video
         if not video:
@@ -632,6 +668,11 @@ class TaskService:
             key = task.video.url
             base_name = f"{task.video.name}.{task.video.format}"
         return key, base_name
+
+    def get_video_download(self, task_id: int) -> VideoDownload:
+        video_key, filename = self.get_video_download_info(task_id)
+        chunks, content_type, content_length = self.video_service.get_video_stream(video_key)
+        return VideoDownload(chunks, content_type, content_length, filename)
 
     def get_tasks_by_status(self, status_id: str) -> list[Task]:
         return self.uow.tasks.list_by_status(status_id)

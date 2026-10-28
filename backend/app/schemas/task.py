@@ -10,6 +10,12 @@ class TaskCreateRequest(BaseModel):
     locality_id: int
     date: datetime
     
+class FirstFrameInfoResponse(BaseModel):
+    width: int
+    height: int
+    image_b64: str
+    mimetype: str = "image/jpeg"
+
 class TaskResponse(BaseModel):
     id: int
     name: str
