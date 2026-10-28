@@ -34,9 +34,7 @@ async def enable_user(user_id: int, service: UserService = Depends(get_user_serv
 @router.post("/user/{user_id}/reset-password", status_code=204)
 async def admin_reset_password(user_id: int, req: AdminResetPasswordRequest, service: UserService = Depends(get_user_service)):
     service.admin_reset_password(user_id, req)
-    return {}
 
 @router.delete("/user/{user_id}", status_code=204)
 async def delete_user(user_id: int, service: UserService = Depends(get_user_service)):
     service.delete(user_id)
-    return {}
