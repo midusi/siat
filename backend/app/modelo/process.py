@@ -14,6 +14,22 @@ import subprocess # Para encodear el video de salida con ffmpeg
 import imageio_ffmpeg # Provee un ffmpeg estático con soporte de H.264
 import json
 
+# process.py is executed both as a standalone subprocess (via process_command.py)
+# and imported as part of the app package (tests).  Use a path-based import so
+# it works in both contexts without requiring PYTHONPATH to include backend/.
+import importlib.util as _ilu, pathlib as _pl
+_mc_spec = _ilu.spec_from_file_location(
+    "motion_compensator", _pl.Path(__file__).parent / "motion_compensator.py"
+)
+_mc_mod = _ilu.module_from_spec(_mc_spec)  # type: ignore[arg-type]
+_mc_spec.loader.exec_module(_mc_mod)  # type: ignore[union-attr]
+MotionCompensator = _mc_mod.MotionCompensator
+
+# Camera motion compensation: on by default, can be disabled via env var.
+_COMPENSATION_ENABLED: bool = os.getenv("CAMERA_MOTION_COMPENSATION", "true").lower() not in ("0", "false", "no")
+_COMPENSATION_DEADBAND_PX: float = float(os.getenv("CAMERA_MOTION_DEADBAND_PX", "2.0"))
+_COMPENSATION_SCALE: float = float(os.getenv("CAMERA_MOTION_SCALE", "0.5"))
+
 # Importar torch para la detección de GPU
 try:
     import torch
@@ -71,7 +87,7 @@ class ObjectTracker:
     y la interacción con zonas predefinidas en un feed de video.
     """
 
-    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None, names_polygons_in: list[str] = [], names_polygons_out: list[str] = [], excluded_polygons: list[np.ndarray] = []):
+    def __init__(self, model_path: str, tracker_path: str, zone_in_polygons: list[np.ndarray], zone_out_polygons: list[np.ndarray], device: Optional[str] = None, names_polygons_in: list[str] = [], names_polygons_out: list[str] = [], excluded_polygons: list[np.ndarray] = [], compensation_enabled: bool = True):
         """
         Inicializa el ObjectTracker.
 
@@ -151,6 +167,15 @@ class ObjectTracker:
         self.last_frame_index = None
         # IDs de tracks excluidos de indeterminados por estar en límites (frame 1 o último)
         self.excluded_undetermined_ids = set()
+
+        # Camera motion compensation state.
+        self.compensation_enabled: bool = compensation_enabled
+        # Initialized on the first frame of run() (the reference frame).
+        self._compensator: Optional[MotionCompensator] = None
+        # Current-frame → reference-frame affine transform (updated each frame).
+        self._current_motion_transform: np.ndarray = np.eye(2, 3, dtype=np.float64)
+        # Per-frame motion metrics written to camera_motion.json at the end.
+        self.motion_log: List[Dict] = []
 
     def _get_torch_device(self, preferred_device: Optional[str]) -> torch.device: # type: ignore
         """
@@ -257,18 +282,30 @@ class ObjectTracker:
             cv2.fillPoly(overlay, [pts], color=(0, 0, 0))
         return overlay
 
-    def _get_zone_index(self, box: np.ndarray, polygons: list[np.ndarray]) -> int:
+    def _get_zone_index(
+        self,
+        box: np.ndarray,
+        polygons: list[np.ndarray],
+        motion_transform: Optional[np.ndarray] = None,
+    ) -> int:
         """
         Detecta si el centro de un bounding box está dentro de alguno de los polígonos.
+
+        If *motion_transform* is provided (a 2x3 affine matrix mapping current-frame
+        to reference-frame coordinates) the center is remapped before the test, so
+        zone polygons defined on the reference frame remain valid under camera shake.
 
         Args:
             box (np.ndarray): Coordenadas del bounding box [x1, y1, x2, y2].
             polygons (list[np.ndarray]): Lista de polígonos a verificar.
+            motion_transform: Optional 2x3 affine (current → reference frame).
 
         Returns:
             int: El índice del polígono si el centro está dentro, -1 en caso contrario.
         """
         center = self._get_center_bb(box)
+        if motion_transform is not None:
+            center = MotionCompensator.transform_point(center, motion_transform)
         for i, polygon in enumerate(polygons):
             if cv2.pointPolygonTest(polygon, center, False) > 0:
                 return i
@@ -277,20 +314,33 @@ class ObjectTracker:
     def _register_zone_entry_exit(self, box: np.ndarray, track_id: int):
         """
         Registra la primera zona de entrada y/o salida que un objeto visita.
-        
+
+        When camera motion compensation is active the bounding-box center is
+        transformed to reference-frame coordinates before the point-in-polygon
+        test, so the zone boundaries (defined on the reference frame) remain
+        stable under camera shake.
+
         Args:
             box (np.ndarray): Bounding box del objeto.
             track_id (int): ID de seguimiento del objeto.
         """
         # Registrar la primera entrada en una zona IN
         if track_id not in self.track_first_in_zone:
-            zone_in_idx = self._get_zone_index(box, [zone["polygon"] for zone in self.zone_in_polygons])
+            zone_in_idx = self._get_zone_index(
+                box,
+                [zone["polygon"] for zone in self.zone_in_polygons],
+                motion_transform=self._current_motion_transform,
+            )
             if zone_in_idx >= 0:
                 self.track_first_in_zone[track_id] = zone_in_idx
 
         # Registrar la primera entrada en una zona OUT
         if track_id not in self.track_first_out_zone:
-            zone_out_idx = self._get_zone_index(box, [zone["polygon"] for zone in self.zone_out_polygons])
+            zone_out_idx = self._get_zone_index(
+                box,
+                [zone["polygon"] for zone in self.zone_out_polygons],
+                motion_transform=self._current_motion_transform,
+            )
             if zone_out_idx >= 0:
                 self.track_first_out_zone[track_id] = zone_out_idx
 
@@ -589,8 +639,20 @@ class ObjectTracker:
             if not success:
                 print("\nFin del video o error al leer frame.")
                 break
-            
+
             act_frame += 1
+
+            # Initialize the motion compensator on the first frame (= reference frame).
+            if act_frame == 1 and self.compensation_enabled:
+                self._compensator = MotionCompensator(
+                    frame,
+                    scale=_COMPENSATION_SCALE,
+                    deadband_px=_COMPENSATION_DEADBAND_PX,
+                )
+                print(
+                    f"Camera motion compensation: ON "
+                    f"(scale={_COMPENSATION_SCALE}, deadband={_COMPENSATION_DEADBAND_PX}px)"
+                )
 
             # Mostrar progreso en la terminal
             if progress_enabled:
@@ -616,7 +678,18 @@ class ObjectTracker:
             # Aplicar máscara de exclusión antes de inferir
             masked_for_inference = self._apply_exclusion_mask(frame)
             results = self.model.track(masked_for_inference, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, imgsz=infer_imgsz, tracker=self.tracker_path)
-            
+
+            # Estimate camera motion and update the compensation transform.
+            # This must happen BEFORE process_frame so _register_zone_entry_exit
+            # uses the up-to-date transform for this frame.
+            if self._compensator is not None:
+                vehicle_boxes: Optional[np.ndarray] = None
+                if results and results[0].boxes.id is not None:
+                    vehicle_boxes = results[0].boxes.xyxy.cpu().numpy()
+                transform, metrics = self._compensator.estimate(frame, vehicle_boxes)
+                self._current_motion_transform = transform
+                self.motion_log.append({"frame": act_frame, **metrics})
+
             # Procesar el frame (dibujar zonas, BBs, etc.)
             # También aplicar la máscara al frame de salida para que "no se vea"
             masked_for_output = self._apply_exclusion_mask(frame)
@@ -756,7 +829,7 @@ if __name__ == "__main__":
     EXCLUDED_POLYGONS = [np.array(p, dtype=np.int32) for p in (args.excluded_zones or [])]
     
     # 3. Crear una instancia del ObjectTracker
-    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE, names_polygons_in=args.names_polygons_in, names_polygons_out=args.names_polygons_out, excluded_polygons=EXCLUDED_POLYGONS)
+    tracker = ObjectTracker(args.model_path, args.tracker_path, ZONE_IN_POLYGONS, ZONE_OUT_POLYGONS, device=DEVICE_TO_USE, names_polygons_in=args.names_polygons_in, names_polygons_out=args.names_polygons_out, excluded_polygons=EXCLUDED_POLYGONS, compensation_enabled=_COMPENSATION_ENABLED)
 
     # 4. Ejecutar el proceso de seguimiento
     tracker.run(
@@ -784,3 +857,11 @@ if __name__ == "__main__":
     with open(f"{output_dir}/transition_counts.json", "w", encoding="utf-8") as f:
         serializable_dict = {str(k): v for k, v in tracker.transition_counts.items()}
         json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
+
+    with open(f"{output_dir}/camera_motion.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "compensation_enabled": _COMPENSATION_ENABLED,
+            "scale": _COMPENSATION_SCALE,
+            "deadband_px": _COMPENSATION_DEADBAND_PX,
+            "frames": tracker.motion_log,
+        }, f, ensure_ascii=False, indent=2)
