@@ -49,6 +49,25 @@ export interface TaskEvent {
 	progress?: number;
 }
 
+export interface FirstFrameInfo {
+	width: number;
+	height: number;
+	image_b64: string;
+}
+
+export type AbsolutePoint = [number, number];
+
+export interface Road {
+	name: string;
+	polygon: AbsolutePoint[];
+}
+
+export interface TaskConfigPayload {
+	roads_in: Road[];
+	roads_out: Road[];
+	excluded_zones: AbsolutePoint[][];
+}
+
 export interface StatusMeta {
 	badgeClass: string;
 	actions: ActionType[];

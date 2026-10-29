@@ -1,7 +1,7 @@
-import { apiError } from './errors';
+import { ApiError, apiError } from './errors';
 import { apiFetch } from '$lib/api';
 
-import type { TaskResponse } from '$lib/types/task';
+import type { FirstFrameInfo, TaskConfigPayload, TaskResponse } from '$lib/types/task';
 
 const TASK_API: string = '/task';
 
@@ -58,5 +58,27 @@ export const createTask = async (task: NewTask): Promise<void> => {
 	const res = await apiFetch(TASK_API, { method: 'POST', body });
 	if (!res.ok) {
 		throw await apiError(res, 'No se pudo crear la tarea');
+	}
+};
+
+export const fetchFirstFrame = async (id: number): Promise<FirstFrameInfo> => {
+	const res = await apiFetch(`${TASK_API}/${id}/get-first-frame-info`);
+	if (!res.ok) {
+		throw await apiError(res, 'No se pudo cargar la imagen');
+	}
+	const info = (await res.json()) as FirstFrameInfo;
+	if (!info.image_b64) {
+		throw new ApiError('La respuesta no contiene la imagen');
+	}
+	return info;
+};
+
+export const saveTaskConfig = async (id: number, payload: TaskConfigPayload): Promise<void> => {
+	const res = await apiFetch(`${TASK_API}/${id}/config`, {
+		method: 'POST',
+		body: JSON.stringify(payload)
+	});
+	if (!res.ok) {
+		throw await apiError(res, 'No se pudieron guardar las vías');
 	}
 };

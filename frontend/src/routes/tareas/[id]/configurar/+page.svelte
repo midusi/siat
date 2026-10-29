@@ -1,38 +1,28 @@
 <script lang="ts">
-	import { apiFetch } from '$lib/api';
+	import { buildConfigPayload, centroid, toCanvasPx } from './geometry';
+	import { calculatePopoverPosition } from './popover';
+	import { createPolygonEditor, OPCIONES_SENTIDO } from './editor.svelte';
+	import { errorMessage as apiErrorMessage } from '$lib/services/errors';
 	import { fade, fly } from 'svelte/transition';
+	import { fetchFirstFrame, saveTaskConfig } from '$lib/services/tasks';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { quintOut } from 'svelte/easing';
+	import { redraw } from './draw';
 	import ScrollArea from '$lib/components/ScrollArea.svelte';
 	import { showAlert } from '$lib/dialog';
 	import Spinner from '$lib/components/Spinner.svelte';
 
-	type AbsolutePoint = [number, number];
-	type Coordinates = { x: number; y: number };
-	type FirstFrameInfo = { width: number; height: number; image_b64: string };
-	type Polygon = {
-		id: number;
-		via: string;
-		sentido: string;
-		vertices: Array<Coordinates>;
-	};
-	type PopoverPosition = { top: number; left: number; transform: string };
-	type Road = { name: string; polygon: Array<AbsolutePoint> };
-	type TaskConfigPayload = {
-		roads_in: Array<Road>;
-		roads_out: Array<Road>;
-		excluded_zones: Array<Array<AbsolutePoint>>;
-	};
+	import type { Coordinates, Sentido } from './geometry';
+	import type { PolygonEditor } from './editor.svelte';
+	import type { PopoverPosition } from './popover';
 
-	const OPCIONES_SENTIDO: Array<string> = ['Entrada', 'Salida'];
+	const editor: PolygonEditor = createPolygonEditor();
 
-	let _idCounter: number = 0;
 	let canvas: HTMLCanvasElement | null = $state(null);
 	let ctx: CanvasRenderingContext2D | null = $state.raw(null);
-	let currentPoints: Array<Coordinates> = $state([]);
 	let errorMessage: string | null = $state(null);
 	let frameHeight: number = $state(1080);
 	let frameWidth: number = $state(1920);
@@ -40,10 +30,6 @@
 	let imageSrc: string = $state('');
 	let isLoading: boolean = $state(true);
 	let isSubmitting: boolean = $state(false);
-	let lastSentido: string = OPCIONES_SENTIDO[0];
-	let modoZonaExcluida: boolean = $state(false);
-	let pendingPolygon: Omit<Polygon, 'id'> | null = $state(null);
-	let polygons: Array<Polygon> = $state([]);
 	let popoverEl: HTMLDivElement | null = $state(null);
 	let popoverPosition: PopoverPosition = $state({
 		top: 0,
@@ -52,34 +38,27 @@
 	});
 	let viaInputEl: HTMLInputElement | null = $state(null);
 
-	const taskId: string = $derived(page.params.id);
-	let entradasCount: number = $derived(polygons.filter((p) => p.sentido === 'Entrada').length);
-	let salidasCount: number = $derived(polygons.filter((p) => p.sentido === 'Salida').length);
-	let canSubmit: boolean = $derived(entradasCount > 0 && salidasCount > 0 && !isSubmitting);
+	const canSubmit: boolean = $derived(
+		editor.entradasCount > 0 && editor.salidasCount > 0 && !isSubmitting
+	);
+	const taskId: number = $derived(Number(page.params.id));
 
 	$effect(() => {
 		redrawCanvas();
 	});
 
 	onMount(() => {
-		fetchFirstFrame();
+		loadFirstFrame();
 	});
 
-	const fetchFirstFrame = async (): Promise<void> => {
+	const loadFirstFrame = async (): Promise<void> => {
 		if (!taskId) {
 			return;
 		}
 		try {
 			isLoading = true;
 			errorMessage = null;
-			const response: Response = await apiFetch(`/task/${taskId}/get-first-frame-info`);
-			if (!response.ok) {
-				throw new Error(`Error al obtener información del primer frame: ${response.statusText}`);
-			}
-			const info: FirstFrameInfo = await response.json();
-			if (!info.image_b64) {
-				throw new Error('Respuesta sin imagen base64');
-			}
+			const info = await fetchFirstFrame(taskId);
 			frameWidth = info.width;
 			frameHeight = info.height;
 			imageSrc = `data:image/jpeg;base64,${info.image_b64}`;
@@ -93,23 +72,7 @@
 
 	const onResize = (): void => {
 		setupCanvas();
-		updatePopoverPositionForCurrentPending();
-	};
-
-	const newId = (): number => {
-		_idCounter += 1;
-		return Date.now() + _idCounter;
-	};
-
-	const setModoZonaExcluida = (flag: boolean): void => {
-		if (modoZonaExcluida === flag) {
-			return;
-		}
-		modoZonaExcluida = flag;
-		currentPoints = [];
-		if (pendingPolygon) {
-			cancelPendingPolygon();
-		}
+		updatePopoverPosition();
 	};
 
 	const setupCanvas = (): void => {
@@ -122,183 +85,36 @@
 		requestAnimationFrame(redrawCanvas);
 	};
 
-	const toCanvasPx = (points: Array<Coordinates>, target: HTMLCanvasElement): Array<Coordinates> =>
-		points.map((p) => ({ x: p.x * target.width, y: p.y * target.height }));
-
-	const ordenarVertices = (points: Array<Coordinates>): Array<Coordinates> => {
-		if (points.length < 3) {
-			return points;
-		}
-		const n: number = points.length;
-		const centro: Coordinates = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), {
-			x: 0,
-			y: 0
-		});
-		centro.x /= n;
-		centro.y /= n;
-		return points
-			.map((point) => ({
-				...point,
-				angle: Math.atan2(point.y - centro.y, point.x - centro.x)
-			}))
-			.sort((a, b) => a.angle - b.angle)
-			.map(({ x, y }) => ({ x, y }));
-	};
-
-	const calculatePopoverPosition = (
-		polyVerticesCanvasPx: Array<Coordinates>,
-		canvasRect: DOMRect,
-		measuredWidth?: number,
-		measuredHeight?: number
-	): PopoverPosition => {
-		const centro: Coordinates = polyVerticesCanvasPx.reduce(
-			(acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
-			{
-				x: 0,
-				y: 0
-			}
-		);
-		centro.x /= 4;
-		centro.y /= 4;
-
-		const margin: number = 16;
-		const offsetY: number = 15;
-		const width: number = measuredWidth ?? popoverEl?.offsetWidth ?? 288;
-		const height: number = measuredHeight ?? popoverEl?.offsetHeight ?? 230;
-
-		let top: number = centro.y + canvasRect.top + offsetY;
-		let transform: string = 'translate(-50%, 0)';
-
-		if (top + height > window.innerHeight - margin) {
-			top = centro.y + canvasRect.top - offsetY - height;
-			transform = 'translate(-50%, 0)';
-		}
-
-		let left: number = centro.x + canvasRect.left;
-		if (left + width / 2 > window.innerWidth - margin) {
-			left = window.innerWidth - width / 2 - margin;
-		}
-		if (left - width / 2 < margin) {
-			left = width / 2 + margin;
-		}
-
-		return { top, left, transform };
-	};
-
 	const handleCanvasClick = async (event: MouseEvent): Promise<void> => {
-		if (pendingPolygon || !canvas) {
+		if (!canvas) {
 			return;
 		}
 		const rect: DOMRect = canvas.getBoundingClientRect();
-		const xCanvas: number = event.clientX - rect.left;
-		const yCanvas: number = event.clientY - rect.top;
-		const xRel: number = xCanvas / canvas.width;
-		const yRel: number = yCanvas / canvas.height;
-		currentPoints.push({ x: xRel, y: yRel });
-
-		if (modoZonaExcluida || currentPoints.length !== 4) {
+		const roadCompleted: boolean = editor.addPoint({
+			x: (event.clientX - rect.left) / canvas.width,
+			y: (event.clientY - rect.top) / canvas.height
+		});
+		if (!roadCompleted) {
 			return;
 		}
-
-		const verticesOrdenados: Array<Coordinates> = ordenarVertices(currentPoints);
-		pendingPolygon = {
-			vertices: verticesOrdenados,
-			via: '',
-			sentido: lastSentido
-		};
-		currentPoints = [];
-		const verticesCanvas: Array<Coordinates> = toCanvasPx(verticesOrdenados, canvas);
-		popoverPosition = calculatePopoverPosition(verticesCanvas, rect);
-
+		// Primero se ubica con el tamaño por defecto; una vez renderizado, con el tamaño real
+		updatePopoverPosition();
 		await tick();
-		const rect2: DOMRect = canvas.getBoundingClientRect();
-		popoverPosition = calculatePopoverPosition(
-			verticesCanvas,
-			rect2,
-			popoverEl?.offsetWidth,
-			popoverEl?.offsetHeight
-		);
+		updatePopoverPosition();
 
 		viaInputEl?.focus();
 		viaInputEl?.select();
 	};
 
-	const handleKeyDown = async (event: KeyboardEvent): Promise<void> => {
-		if (pendingPolygon) {
-			if (event.key === 'Enter') {
-				if (pendingPolygon.via && pendingPolygon.via.trim().length > 0) {
-					confirmPendingPolygon();
-				}
-			}
-			if (event.key === 'Escape') {
-				cancelPendingPolygon();
-			}
-			return;
-		}
-
-		if (modoZonaExcluida) {
-			if (event.key === 'Enter') {
-				if (currentPoints.length >= 3) {
-					const verticesOrdenados: Array<Coordinates> = ordenarVertices(currentPoints);
-					const nextIdx: number = polygons.filter((p) => p.sentido === 'Excluida').length + 1;
-					polygons = [
-						...polygons,
-						{
-							id: newId(),
-							via: `Zona excluída ${nextIdx}`,
-							sentido: 'Excluida',
-							vertices: verticesOrdenados
-						}
-					];
-					currentPoints = [];
-				}
-			}
-			if (event.key === 'Escape') {
-				currentPoints = [];
-			}
-			if (event.key === 'Backspace') {
-				currentPoints.pop();
-			}
-			return;
-		}
-		if (event.key === 'Escape') {
-			currentPoints = [];
-		}
-		if (event.key === 'Backspace') {
-			currentPoints.pop();
-		}
-	};
-
-	const confirmPendingPolygon = (): void => {
-		if (!pendingPolygon) {
-			return;
-		}
-		lastSentido = pendingPolygon.sentido;
-		polygons = [
-			...polygons,
-			{
-				id: newId(),
-				via: pendingPolygon.via.trim(),
-				sentido: pendingPolygon.sentido,
-				vertices: pendingPolygon.vertices
-			}
-		];
-		pendingPolygon = null;
-	};
-
-	const cancelPendingPolygon = (): void => {
-		pendingPolygon = null;
-	};
-
-	const eliminarPoligono = (id: number): void => {
-		polygons = polygons.filter((p) => p.id !== id);
+	const handleKeyDown = (event: KeyboardEvent): void => {
+		editor.handleKey(event.key);
 	};
 
 	const finalizarProceso = async (): Promise<void> => {
 		if (isSubmitting) {
 			return;
 		}
-		if (entradasCount === 0 || salidasCount === 0) {
+		if (editor.entradasCount === 0 || editor.salidasCount === 0) {
 			await showAlert({
 				message: 'Debes configurar al menos una entrada y una salida antes de continuar.',
 				variant: 'warning'
@@ -306,38 +122,17 @@
 			return;
 		}
 		isSubmitting = true;
-
-		const toAbs = (v: Coordinates): AbsolutePoint => [
-			Math.round(v.x * frameWidth),
-			Math.round(v.y * frameHeight)
-		];
-		const payload: TaskConfigPayload = {
-			roads_in: polygons
-				.filter((p) => p.sentido === 'Entrada')
-				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
-			roads_out: polygons
-				.filter((p) => p.sentido === 'Salida')
-				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
-			excluded_zones: polygons
-				.filter((p) => p.sentido === 'Excluida')
-				.map((p) => p.vertices.map(toAbs))
-		};
-
 		try {
-			const response: Response = await apiFetch(`/task/${taskId}/config`, {
-				method: 'POST',
-				body: JSON.stringify(payload)
-			});
-			if (!response.ok) {
-				throw new Error('Error en el servidor');
-			}
-			await response.json();
+			await saveTaskConfig(
+				taskId,
+				buildConfigPayload(editor.polygons, { width: frameWidth, height: frameHeight })
+			);
 			await showAlert({ message: 'Vías guardadas correctamente.', variant: 'success' });
 			goto('/');
 		} catch (error) {
 			console.error('Fallo al enviar los datos:', error);
 			await showAlert({
-				message: 'Hubo un error al guardar las vías. Inténtalo de nuevo.',
+				message: apiErrorMessage(error, 'Hubo un error al guardar las vías. Inténtalo de nuevo.'),
 				variant: 'danger'
 			});
 		} finally {
@@ -346,108 +141,23 @@
 	};
 
 	const redrawCanvas = (): void => {
-		if (!ctx || !canvas) {
+		if (!ctx) {
 			return;
 		}
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-		polygons
-			.filter((p) => p.sentido !== 'Excluida')
-			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
-		polygons
-			.filter((p) => p.sentido === 'Excluida')
-			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
-		if (pendingPolygon) {
-			drawPolygonRel(pendingPolygon, { pending: true });
-		}
-		if (currentPoints.length > 0) {
-			ctx.beginPath();
-			const absPoints: Array<Coordinates> = toCanvasPx(currentPoints, canvas);
-			ctx.moveTo(absPoints[0].x, absPoints[0].y);
-			for (const p of absPoints.slice(1)) {
-				ctx.lineTo(p.x, p.y);
-			}
-			ctx.strokeStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 0.8)';
-			ctx.lineWidth = 2;
-			ctx.setLineDash([6, 6]);
-			ctx.stroke();
-			ctx.setLineDash([]);
-			for (const p of absPoints) {
-				ctx.fillStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 1)';
-				ctx.beginPath();
-				ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-				ctx.fill();
-			}
-		}
+		redraw(ctx, editor);
 	};
 
-	const updatePopoverPositionForCurrentPending = (): void => {
-		if (!pendingPolygon || !canvas) {
+	const updatePopoverPosition = (): void => {
+		if (!editor.pending || !canvas) {
 			return;
 		}
 		const rect: DOMRect = canvas.getBoundingClientRect();
-		const absVerticesCanvas: Array<Coordinates> = toCanvasPx(pendingPolygon.vertices, canvas);
-		const measured: PopoverPosition = calculatePopoverPosition(
-			absVerticesCanvas,
-			rect,
-			popoverEl?.offsetWidth ?? undefined,
-			popoverEl?.offsetHeight ?? undefined
+		const center: Coordinates = centroid(toCanvasPx(editor.pending.vertices, canvas));
+		popoverPosition = calculatePopoverPosition(
+			{ x: center.x + rect.left, y: center.y + rect.top },
+			popoverEl ? { width: popoverEl.offsetWidth, height: popoverEl.offsetHeight } : null,
+			{ width: window.innerWidth, height: window.innerHeight }
 		);
-		popoverPosition = measured;
-	};
-
-	const drawPolygonRel = (
-		poly: Omit<Polygon, 'id'>,
-		options: { confirmed?: boolean; pending?: boolean }
-	): void => {
-		if (!ctx || !canvas) {
-			return;
-		}
-		const absVertices: Array<Coordinates> = toCanvasPx(poly.vertices, canvas);
-		const isExcluded: boolean = poly.sentido === 'Excluida';
-		const color: string = isExcluded
-			? 'rgba(0,0,0,1)'
-			: poly.sentido === 'Entrada'
-				? 'rgba(74, 222, 128, 1)'
-				: 'rgba(248, 113, 113, 1)';
-		ctx.fillStyle = isExcluded
-			? 'rgba(0,0,0,1)'
-			: color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
-		ctx.beginPath();
-		ctx.moveTo(absVertices[0].x, absVertices[0].y);
-		for (const v of absVertices.slice(1)) {
-			ctx.lineTo(v.x, v.y);
-		}
-		ctx.closePath();
-		ctx.fill();
-		ctx.strokeStyle = isExcluded ? 'rgba(0,0,0,1)' : color;
-		ctx.lineWidth = options.pending ? 4 : 2;
-		if (options.pending) {
-			ctx.setLineDash([8, 4]);
-		}
-		ctx.stroke();
-		ctx.setLineDash([]);
-		if (!options.confirmed) {
-			return;
-		}
-		const centro: Coordinates = absVertices.reduce(
-			(acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
-			{
-				x: 0,
-				y: 0
-			}
-		);
-		const n: number = absVertices.length || 1;
-		centro.x /= n;
-		centro.y /= n;
-		ctx.font = 'bold 14px sans-serif';
-		ctx.fillStyle = 'white';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.shadowColor = 'black';
-		ctx.shadowBlur = 5;
-		ctx.fillText(`${poly.via}`, centro.x, centro.y);
-		ctx.shadowBlur = 0;
 	};
 
 	const goBack = (): void => {
@@ -465,7 +175,7 @@
 				<p class="text-white/70 text-sm m-0">
 					<span class="swap-container">
 						<span class="swap-measure">
-							{#if !modoZonaExcluida}
+							{#if !editor.excludedMode}
 								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
 								<kbd class="key-kbd">Backspace</kbd> para deshacer o
 								<kbd class="key-kbd">Esc</kbd> para cancelar.
@@ -476,7 +186,7 @@
 								<kbd class="key-kbd">Esc</kbd> para cancelar.
 							{/if}
 						</span>
-						{#if !modoZonaExcluida}
+						{#if !editor.excludedMode}
 							<span class="swap-layer" transition:fade={{ duration: 210 }}>
 								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
 								<kbd class="key-kbd">Backspace</kbd> para deshacer o
@@ -495,25 +205,25 @@
 				<div class="flex items-center gap-2">
 					<div class="mode-toggle" role="group" aria-label="Modo de dibujo">
 						<div
-							class={`mode-indicator ${modoZonaExcluida ? 'right bg-excluded' : 'left bg-inout'}`}
+							class={`mode-indicator ${editor.excludedMode ? 'right bg-excluded' : 'left bg-inout'}`}
 							aria-hidden="true"
 						></div>
 						<button
 							class="mode-option left"
-							disabled={!modoZonaExcluida}
-							aria-pressed={!modoZonaExcluida}
-							onclick={() => setModoZonaExcluida(false)}
+							disabled={!editor.excludedMode}
+							aria-pressed={!editor.excludedMode}
+							onclick={() => editor.setExcludedMode(false)}
 							title="Dibujar entradas/salidas"
 						>
 							<span class="swap-container">
 								<span class="swap-measure">
-									{#if !modoZonaExcluida}
+									{#if !editor.excludedMode}
 										Dibujando entradas/salidas...
 									{:else}
 										Dibujar entradas/salidas
 									{/if}
 								</span>
-								{#if !modoZonaExcluida}
+								{#if !editor.excludedMode}
 									<span class="swap-layer" transition:fade={{ duration: 210 }}
 										>Dibujando entradas/salidas...</span
 									>
@@ -526,20 +236,20 @@
 						</button>
 						<button
 							class="mode-option right"
-							disabled={modoZonaExcluida}
-							aria-pressed={modoZonaExcluida}
-							onclick={() => setModoZonaExcluida(true)}
+							disabled={editor.excludedMode}
+							aria-pressed={editor.excludedMode}
+							onclick={() => editor.setExcludedMode(true)}
 							title="Dibujar zonas excluidas (confirme con Enter)"
 						>
 							<span class="swap-container">
 								<span class="swap-measure">
-									{#if modoZonaExcluida}
+									{#if editor.excludedMode}
 										Dibujando zonas excluidas...
 									{:else}
 										Dibujar zonas excluidas
 									{/if}
 								</span>
-								{#if modoZonaExcluida}
+								{#if editor.excludedMode}
 									<span class="swap-layer" transition:fade={{ duration: 210 }}
 										>Dibujando zonas excluidas...</span
 									>
@@ -569,16 +279,16 @@
 				class="flex flex-col h-full max-h-full min-h-0 overflow-hidden glass-card p-4 lg:mr-4 mb-8 lg:mb-0"
 			>
 				<div class="flex items-center justify-between mb-4 gap-2">
-					<h2 class="heading-2">Vías Definidas ({polygons.length})</h2>
+					<h2 class="heading-2">Vías Definidas ({editor.polygons.length})</h2>
 				</div>
 				<ScrollArea orientation="y" className="flex-1 min-h-0 pr-1" autoHide>
-					{#if polygons.length === 0}
+					{#if editor.polygons.length === 0}
 						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
 						</p>
 					{:else}
 						<div class="space-y-3">
-							{#each polygons as poly (poly.id)}
+							{#each editor.polygons as poly (poly.id)}
 								<div
 									class="glass-surface p-3 rounded-lg flex justify-between items-center transition-all border"
 									class:border-green-400={poly.sentido === 'Entrada'}
@@ -596,7 +306,7 @@
 										</p>
 									</div>
 									<button
-										onclick={() => eliminarPoligono(poly.id)}
+										onclick={() => editor.removePolygon(poly.id)}
 										class="glass-button btn-danger"
 										aria-label="Eliminar vía"
 									>
@@ -668,7 +378,7 @@
 						role="button"
 						tabindex="0"
 						onkeydown={() => {}}
-						aria-label={modoZonaExcluida
+						aria-label={editor.excludedMode
 							? 'Definir zona excluída en la imagen'
 							: 'Definir entrada/salida en la imagen'}
 					>
@@ -690,7 +400,7 @@
 		</div>
 	</div>
 
-	{#if pendingPolygon}
+	{#if editor.pending}
 		<div
 			class="popover glass-strong frost frost-polarized p-4 w-72 border shadow-2xl"
 			style="top: {popoverPosition.top}px; left: {popoverPosition.left}px; transform: {popoverPosition.transform};"
@@ -704,7 +414,7 @@
 					<input
 						id="via-input"
 						type="text"
-						bind:value={pendingPolygon.via}
+						bind:value={editor.pending.via}
 						bind:this={viaInputEl}
 						class="glass-input"
 						placeholder="Nombre de la vía"
@@ -716,21 +426,17 @@
 					<GlassSelect
 						id="sentido-select"
 						items={OPCIONES_SENTIDO.map((s) => ({ value: s, label: s }))}
-						value={pendingPolygon.sentido}
-						onChange={(v) => (pendingPolygon!.sentido = String(v))}
+						value={editor.pending.sentido}
+						onChange={(v) => (editor.pending!.sentido = String(v) as Sentido)}
 					/>
 				</div>
 			</div>
 			<div class="flex gap-2 pt-4">
-				<button onclick={cancelPendingPolygon} class="glass-button">Cancelar (Esc)</button>
+				<button onclick={editor.cancelPending} class="glass-button">Cancelar (Esc)</button>
 				<button
-					onclick={() => {
-						if (pendingPolygon?.via && pendingPolygon.via.trim().length > 0) {
-							confirmPendingPolygon();
-						}
-					}}
+					onclick={editor.confirmPending}
 					class="glass-button btn-success"
-					disabled={!pendingPolygon.via || pendingPolygon.via.trim().length === 0}
+					disabled={!editor.canConfirm}
 					>Confirmar (Enter)</button
 				>
 			</div>
