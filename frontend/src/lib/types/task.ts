@@ -19,7 +19,7 @@ export interface TaskRow {
 	estadoBadgeClass: string;
 	detalle: string;
 	progreso: number;
-	acciones: ActionType[];
+	acciones: Array<ActionType>;
 }
 
 export interface TaskResponse {
@@ -59,18 +59,18 @@ export type AbsolutePoint = [number, number];
 
 export interface Road {
 	name: string;
-	polygon: AbsolutePoint[];
+	polygon: Array<AbsolutePoint>;
 }
 
 export interface TaskConfigPayload {
-	roads_in: Road[];
-	roads_out: Road[];
-	excluded_zones: AbsolutePoint[][];
+	roads_in: Array<Road>;
+	roads_out: Array<Road>;
+	excluded_zones: Array<Array<AbsolutePoint>>;
 }
 
 export interface StatusMeta {
 	badgeClass: string;
-	actions: ActionType[];
+	actions: Array<ActionType>;
 }
 
 export const STATUS_META = {

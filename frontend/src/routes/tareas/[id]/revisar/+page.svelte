@@ -176,7 +176,7 @@
 		savingById[trackId] = true;
 		hideIndeterminado(trackId);
 
-		const { in: entrada, out: salida } = item.labels;
+		const { in: entrada, out: salida }: review.Labels = item.labels;
 		moveToDeterminados(trackId, entrada, salida);
 
 		if (await saveChanges()) {
@@ -214,7 +214,7 @@
 			}
 
 			const merged: review.Indeterminado = review.mergeIndeterminados(keep, remove);
-			const { in: entrada, out: salida } = merged.labels;
+			const { in: entrada, out: salida }: review.Labels = merged.labels;
 			indeterminados[keepId] = merged;
 			delete indeterminados[removeId];
 

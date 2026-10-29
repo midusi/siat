@@ -156,7 +156,6 @@
 				{@const saving = !!savingById[trackId]}
 				{@const isMergeSource = mergeModeActive && mergeSourceId === trackId}
 				{@const isLive = liveIds.has(trackId) || trackId === activeId}
-				<!-- Click en toda la tarjeta para el mouse; con teclado se usa el botón del ID -->
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					id={`ind-card-${trackId}`}

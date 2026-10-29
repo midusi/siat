@@ -178,7 +178,7 @@ export const timeToFrame = (timeSec: number, range: FrameRange | null, fps: numb
 	if (!range) {
 		return Math.floor(timeSec * (fps || 0));
 	}
-	const { dur, first, last } = range;
+	const { dur, first, last }: FrameRange = range;
 	const span: number = Math.max(0, last - first);
 	const t: number = Math.min(Math.max(timeSec, 0), dur);
 	const f: number = first + (span > 0 ? Math.round((t / dur) * span) : 0);
@@ -189,7 +189,7 @@ export const frameToTime = (frame: number, range: FrameRange | null, fps: number
 	if (!range) {
 		return fps > 0 ? frame / fps : 0;
 	}
-	const { dur, first, last } = range;
+	const { dur, first, last }: FrameRange = range;
 	const span: number = Math.max(0, last - first);
 	const clamped: number = Math.max(first, Math.min(frame, last));
 	const t: number = span > 0 ? ((clamped - first) / span) * dur : 0;
@@ -235,7 +235,7 @@ export const parseBoundingBox = (bbox: BoundingBox): Box => [
 ];
 
 export const toScaledClampedRect = (box: Box, scale: Scale, bounds: Bounds): Rect | null => {
-	const [x1, y1, x2, y2] = box;
+	const [x1, y1, x2, y2]: Box = box;
 	let left: number = x1 * scale.x;
 	let top: number = y1 * scale.y;
 	let width: number = (x2 - x1) * scale.x;
@@ -273,7 +273,7 @@ export const rectStyle = (rect: Rect): string => {
 };
 
 export const boxCenterScaled = (box: Box, scale: Scale): Point => {
-	const [x1, y1, x2, y2] = box;
+	const [x1, y1, x2, y2]: Box = box;
 	return { x: ((x1 + x2) / 2) * scale.x, y: ((y1 + y2) / 2) * scale.y };
 };
 

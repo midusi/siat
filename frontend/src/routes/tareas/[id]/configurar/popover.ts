@@ -6,10 +6,6 @@ const DEFAULT_POPOVER_SIZE: Size = { width: 288, height: 230 };
 const MARGIN: number = 16;
 const OFFSET_Y: number = 15;
 
-/**
- * Ubica el popover debajo del ancla (o arriba si no entra) y lo mantiene
- * dentro del viewport horizontalmente. `anchor` está en coordenadas de viewport.
- */
 export const calculatePopoverPosition = (
 	anchor: Coordinates,
 	popover: Size | null,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import './configurar.css';
 	import { buildConfigPayload, centroid, toCanvasPx } from './geometry';
 	import { calculatePopoverPosition } from './popover';
 	import { createPolygonEditor, OPCIONES_SENTIDO } from './editor.svelte';
@@ -16,6 +17,7 @@
 	import Spinner from '$lib/components/Spinner.svelte';
 
 	import type { Coordinates, Sentido } from './geometry';
+	import type { FirstFrameInfo } from '$lib/types/task';
 	import type { PolygonEditor } from './editor.svelte';
 	import type { PopoverPosition } from './popover';
 
@@ -58,13 +60,16 @@
 		try {
 			isLoading = true;
 			errorMessage = null;
-			const info = await fetchFirstFrame(taskId);
+			const info: FirstFrameInfo = await fetchFirstFrame(taskId);
 			frameWidth = info.width;
 			frameHeight = info.height;
 			imageSrc = `data:image/jpeg;base64,${info.image_b64}`;
 		} catch (error) {
 			console.error('No se pudo cargar el frame de la tarea:', error);
-			errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
+			errorMessage = apiErrorMessage(
+				error,
+				'No se pudo cargar la imagen. Por favor, recargue la página.'
+			);
 		} finally {
 			isLoading = false;
 		}
@@ -97,7 +102,6 @@
 		if (!roadCompleted) {
 			return;
 		}
-		// Primero se ubica con el tamaño por defecto; una vez renderizado, con el tamaño real
 		updatePopoverPosition();
 		await tick();
 		updatePopoverPosition();
@@ -167,7 +171,7 @@
 
 <svelte:window onkeydown={handleKeyDown} onresize={onResize} />
 
-<div class="page-container page-vertical">
+<div class="configurar-page page-container page-vertical">
 	<div class="mx-auto flex flex-col flex-1 min-h-0 h-full">
 		<div class="mb-2">
 			<h1 class="heading-1">Asignar Vías</h1>
@@ -436,153 +440,9 @@
 				<button
 					onclick={editor.confirmPending}
 					class="glass-button btn-success"
-					disabled={!editor.canConfirm}
-					>Confirmar (Enter)</button
+					disabled={!editor.canConfirm}>Confirmar (Enter)</button
 				>
 			</div>
 		</div>
 	{/if}
 </div>
-
-<style>
-	.page-container {
-		max-width: 95% !important;
-		padding-left: 0 !important;
-		padding-right: 0 !important;
-	}
-	.page-container > .mx-auto {
-		margin-left: 0 !important;
-		margin-right: 0 !important;
-		max-width: none !important;
-		width: 95% !important;
-	}
-	.page-vertical {
-		display: flex;
-		flex-direction: column;
-		min-height: calc(
-			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
-				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
-		);
-	}
-	.canvas-container {
-		position: relative;
-		width: 100%;
-		cursor: crosshair;
-		line-height: 0;
-	}
-	canvas {
-		position: absolute;
-		top: 0;
-		left: 0;
-		pointer-events: none;
-	}
-	.popover {
-		position: fixed;
-		z-index: 50;
-	}
-	.prevent-drag {
-		user-select: none;
-		-webkit-user-drag: none;
-	}
-
-	.key-kbd {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #1f2937;
-		background-color: #f3f4f6;
-		border: 1px solid #e5e7eb;
-		border-radius: 0.5rem;
-	}
-
-	.swap-container {
-		position: relative;
-		display: inline-block;
-		vertical-align: middle;
-	}
-	.swap-measure {
-		visibility: hidden;
-		pointer-events: none;
-	}
-	.swap-layer {
-		position: absolute;
-		top: 0;
-		left: 0;
-		white-space: nowrap;
-	}
-
-	.mode-toggle {
-		position: relative;
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0;
-		align-items: center;
-		background: transparent;
-		border: 1px solid rgba(255, 255, 255, 0.25);
-		border-radius: 12px;
-		overflow: hidden;
-		min-width: 420px;
-		height: 40px;
-	}
-	.mode-option {
-		position: relative;
-		z-index: 1;
-		background: transparent;
-		border: none;
-		outline: none;
-		color: white;
-		font-weight: 600;
-		font-size: 0.9rem;
-		padding: 0 16px;
-		height: 100%;
-		cursor: pointer;
-	}
-	.mode-option:disabled {
-		cursor: default;
-	}
-	.mode-indicator {
-		position: absolute;
-		top: -1px;
-		left: -1px;
-		height: calc(100% + 2px);
-		width: calc(50% + 2px);
-		border: 1px solid rgba(255, 255, 255, 0.65);
-		border-radius: 12px;
-		box-shadow:
-			0 0 0 2px rgba(255, 255, 255, 0.12),
-			0 8px 24px rgba(0, 0, 0, 0.35);
-		transition:
-			transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
-			background 260ms ease;
-		will-change: transform;
-	}
-	.mode-indicator.left {
-		transform: translateX(0%);
-	}
-	.mode-indicator.right {
-		transform: translateX(100%);
-	}
-	.bg-inout {
-		background: linear-gradient(
-			90deg,
-			rgba(74, 222, 128, 0.35) 0%,
-			rgba(74, 222, 128, 0.35) 40%,
-			rgba(248, 113, 113, 0.35) 60%,
-			rgba(248, 113, 113, 0.35) 100%
-		);
-		backdrop-filter: blur(8px) saturate(140%);
-		-webkit-backdrop-filter: blur(8px) saturate(140%);
-		border-color: transparent;
-		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
-	}
-	.bg-excluded {
-		background: rgba(0, 0, 0, 0.9);
-	}
-
-	@media (max-width: 640px) {
-		.mode-toggle {
-			min-width: 300px;
-			font-size: 0.85rem;
-		}
-	}
-</style>

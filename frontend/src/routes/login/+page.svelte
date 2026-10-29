@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './login.css';
-	import { ApiError } from '$lib/services/errors';
+	import { errorMessage } from '$lib/services/errors';
 	import { goto } from '$app/navigation';
 	import { login } from '$lib/services/auth';
 	import { page } from '$app/state';
@@ -19,7 +19,7 @@
 			await login(username, password);
 			await goto(safeNext(page.url.searchParams.get('next')));
 		} catch (e) {
-			error = e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor';
+			error = errorMessage(e);
 		} finally {
 			isSubmitting = false;
 		}

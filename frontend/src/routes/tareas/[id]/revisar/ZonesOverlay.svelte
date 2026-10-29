@@ -2,9 +2,9 @@
 	import * as review from './review';
 
 	type Props = {
-		excludedZones: [number, number][][];
-		roadsIn: review.RoadPoly[];
-		roadsOut: review.RoadPoly[];
+		excludedZones: Array<Array<review.Vertex>>;
+		roadsIn: Array<review.RoadPoly>;
+		roadsOut: Array<review.RoadPoly>;
 		scale: review.Scale;
 	};
 

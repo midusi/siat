@@ -3,18 +3,27 @@ import { sortVertices } from './geometry';
 import type { Coordinates, Polygon, Sentido } from './geometry';
 
 export type PendingPolygon = Omit<Polygon, 'id'>;
-export type PolygonEditor = ReturnType<typeof createPolygonEditor>;
+export type PolygonEditor = {
+	readonly canConfirm: boolean;
+	readonly currentPoints: Array<Coordinates>;
+	readonly entradasCount: number;
+	readonly excludedMode: boolean;
+	readonly pending: PendingPolygon | null;
+	readonly polygons: Array<Polygon>;
+	readonly salidasCount: number;
+	addPoint: (point: Coordinates) => boolean;
+	cancelPending: () => void;
+	confirmPending: () => void;
+	handleKey: (key: string) => void;
+	removePolygon: (id: number) => void;
+	setExcludedMode: (flag: boolean) => void;
+};
 
 const MIN_EXCLUDED_VERTICES: number = 3;
 export const OPCIONES_SENTIDO: Array<Sentido> = ['Entrada', 'Salida'];
 const ROAD_VERTICES: number = 4;
 
-/**
- * Estado del dibujo de vías y zonas excluidas.
- * Las vías se cierran solas al cuarto click y quedan pendientes hasta que se les pone nombre;
- * las zonas excluidas se cierran con Enter (mínimo 3 vértices).
- */
-export const createPolygonEditor = () => {
+export const createPolygonEditor = (): PolygonEditor => {
 	let currentPoints: Array<Coordinates> = $state([]);
 	let excludedMode: boolean = $state(false);
 	let lastId: number = 0;
@@ -31,7 +40,6 @@ export const createPolygonEditor = () => {
 		polygons.push({ id: lastId, ...poly });
 	};
 
-	/** Devuelve `true` si el punto completó una vía y quedó pendiente de confirmar. */
 	const addPoint = (point: Coordinates): boolean => {
 		if (pending) {
 			return false;
@@ -106,25 +114,25 @@ export const createPolygonEditor = () => {
 	};
 
 	return {
-		get canConfirm() {
+		get canConfirm(): boolean {
 			return canConfirm;
 		},
-		get currentPoints() {
+		get currentPoints(): Array<Coordinates> {
 			return currentPoints;
 		},
-		get entradasCount() {
+		get entradasCount(): number {
 			return entradasCount;
 		},
-		get excludedMode() {
+		get excludedMode(): boolean {
 			return excludedMode;
 		},
-		get pending() {
+		get pending(): PendingPolygon | null {
 			return pending;
 		},
-		get polygons() {
+		get polygons(): Array<Polygon> {
 			return polygons;
 		},
-		get salidasCount() {
+		get salidasCount(): number {
 			return salidasCount;
 		},
 		addPoint,
