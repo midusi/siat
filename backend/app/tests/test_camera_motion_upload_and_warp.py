@@ -278,3 +278,23 @@ class TestCameraMotionUpload:
         storage = InMemoryObjectStorage(bucket_name="siat-bucket")
         key = "task/99/old_task_camera_motion.json"
         assert not storage.exists(key)
+
+
+# --------------------------------------------------------------------------- #
+# Regression: drawing warped zones                                            #
+# --------------------------------------------------------------------------- #
+
+def test_draw_zones_with_nonzero_motion_does_not_crash():
+    """Warped polygons must keep the (N, 2) shape that sv.get_polygon_center expects."""
+    process = pytest.importorskip("app.modelo.process")
+
+    tracker = process.ObjectTracker.__new__(process.ObjectTracker)
+    tracker.zone_in_polygons = [{"polygon": _sample_polygon(), "name": "1"}]
+    tracker.zone_out_polygons = [{"polygon": _sample_polygon() + 50, "name": "1"}]
+    tracker._current_ref_to_cur_transform = _affine(dx=25.0, dy=-10.0, angle_deg=1.5)
+
+    frame = np.zeros((600, 800, 3), dtype=np.uint8)
+    result = tracker._draw_zones_in_out(frame, 2)
+
+    assert result.shape == frame.shape
+    assert result.any()
