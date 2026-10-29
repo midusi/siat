@@ -174,6 +174,9 @@ class ObjectTracker:
         self._compensator: Optional[MotionCompensator] = None
         # Current-frame → reference-frame affine transform (updated each frame).
         self._current_motion_transform: np.ndarray = np.eye(2, 3, dtype=np.float64)
+        # Reference-frame → current-frame affine transform (inverse of above).
+        # Used to draw zone polygons (defined on the reference frame) on the current frame.
+        self._current_ref_to_cur_transform: np.ndarray = np.eye(2, 3, dtype=np.float64)
         # Per-frame motion metrics written to camera_motion.json at the end.
         self.motion_log: List[Dict] = []
 
@@ -260,6 +263,11 @@ class ObjectTracker:
         """
         Dibuja todos los polígonos de entrada y salida en el frame.
 
+        Zone polygons are defined in reference-frame coordinates.  When camera
+        motion compensation is active, each polygon is warped into current-frame
+        coordinates using ``self._current_ref_to_cur_transform`` (reference →
+        current) so the overlays track the physical road as the camera moves.
+
         Args:
             annotated_frame (np.ndarray): Frame sobre el que dibujar las zonas.
             thickness (int): Grosor de las líneas de los polígonos.
@@ -267,18 +275,38 @@ class ObjectTracker:
         Returns:
             np.ndarray: Frame con todas las zonas dibujadas.
         """
+        ref_to_cur = self._current_ref_to_cur_transform
+        needs_warp = not np.allclose(ref_to_cur, np.eye(2, 3))
+
         for i, (zone_in, zone_out) in enumerate(zip(self.zone_in_polygons, self.zone_out_polygons)):
-            self._draw_polygon(annotated_frame, zone_in["polygon"], zone_in["name"], ZoneType.IN, thickness)
-            self._draw_polygon(annotated_frame, zone_out["polygon"], zone_in["name"], ZoneType.OUT, thickness)
+            poly_in = zone_in["polygon"]
+            poly_out = zone_out["polygon"]
+            if needs_warp:
+                poly_in = MotionCompensator.transform_polygon(poly_in, ref_to_cur)
+                poly_out = MotionCompensator.transform_polygon(poly_out, ref_to_cur)
+            self._draw_polygon(annotated_frame, poly_in, zone_in["name"], ZoneType.IN, thickness)
+            self._draw_polygon(annotated_frame, poly_out, zone_in["name"], ZoneType.OUT, thickness)
         return annotated_frame
 
     def _apply_exclusion_mask(self, frame: np.ndarray) -> np.ndarray:
-        """Rellena con negro todas las zonas excluidas sobre el frame."""
+        """
+        Rellena con negro todas las zonas excluidas sobre el frame.
+
+        Exclusion polygons are defined in reference-frame coordinates.  When
+        camera motion compensation is active they are warped into current-frame
+        coordinates using ``self._current_ref_to_cur_transform`` so the mask
+        follows the physical road region regardless of camera drift.
+        """
         if not self.excluded_polygons:
             return frame
         overlay = frame.copy()
+        ref_to_cur = self._current_ref_to_cur_transform
+        needs_warp = not np.allclose(ref_to_cur, np.eye(2, 3))
         for poly in self.excluded_polygons:
-            pts = poly.reshape((-1, 1, 2))
+            if needs_warp:
+                pts = MotionCompensator.transform_polygon(poly, ref_to_cur)
+            else:
+                pts = poly.reshape((-1, 1, 2))
             cv2.fillPoly(overlay, [pts], color=(0, 0, 0))
         return overlay
 
@@ -679,16 +707,30 @@ class ObjectTracker:
             masked_for_inference = self._apply_exclusion_mask(frame)
             results = self.model.track(masked_for_inference, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, imgsz=infer_imgsz, tracker=self.tracker_path)
 
-            # Estimate camera motion and update the compensation transform.
+            # Estimate camera motion and update the compensation transforms.
             # This must happen BEFORE process_frame so _register_zone_entry_exit
-            # uses the up-to-date transform for this frame.
+            # and the zone-drawing functions use the up-to-date transforms.
             if self._compensator is not None:
                 vehicle_boxes: Optional[np.ndarray] = None
                 if results and results[0].boxes.id is not None:
                     vehicle_boxes = results[0].boxes.xyxy.cpu().numpy()
+                # transform: current-frame → reference-frame (used for zone membership tests)
                 transform, metrics = self._compensator.estimate(frame, vehicle_boxes)
                 self._current_motion_transform = transform
-                self.motion_log.append({"frame": act_frame, **metrics})
+                # Inverse: reference-frame → current-frame (used to draw reference polygons
+                # on the current frame so zone overlays track the physical road).
+                if np.allclose(transform, np.eye(2, 3)):
+                    self._current_ref_to_cur_transform = np.eye(2, 3, dtype=np.float64)
+                else:
+                    self._current_ref_to_cur_transform = cv2.invertAffineTransform(transform)
+                self.motion_log.append({
+                    "frame": act_frame,
+                    **metrics,
+                    # Full 2×3 affine matrix (reference → current).  The frontend
+                    # uses this to warp zone polygons onto the video for each frame.
+                    # Convention: p_current = M @ [px, py, 1]^T
+                    "matrix_ref_to_cur": self._current_ref_to_cur_transform.tolist(),
+                })
 
             # Procesar el frame (dibujar zonas, BBs, etc.)
             # También aplicar la máscara al frame de salida para que "no se vea"
@@ -863,5 +905,18 @@ if __name__ == "__main__":
             "compensation_enabled": _COMPENSATION_ENABLED,
             "scale": _COMPENSATION_SCALE,
             "deadband_px": _COMPENSATION_DEADBAND_PX,
+            # Convention for matrix_ref_to_cur (present in each frame entry):
+            #   p_current = M @ [px_ref, py_ref, 1]^T
+            # That is: apply this 2x3 matrix to any point defined in the reference
+            # frame (frame 1) to get its position in the current frame.
+            # The identity matrix means no camera movement (or motion below deadband).
+            # Rotation centre: image origin (top-left), consistent with cv2.warpAffine.
+            "convention": (
+                "matrix_ref_to_cur maps reference-frame coordinates to current-frame "
+                "coordinates. Apply it to zone polygon vertices (defined on frame 1) "
+                "to draw them correctly on each video frame. "
+                "p_current = M @ [px_ref, py_ref, 1]^T. "
+                "Identity when motion is absent or below the deadband."
+            ),
             "frames": tracker.motion_log,
         }, f, ensure_ascii=False, indent=2)
