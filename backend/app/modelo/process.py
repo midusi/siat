@@ -282,8 +282,9 @@ class ObjectTracker:
             poly_in = zone_in["polygon"]
             poly_out = zone_out["polygon"]
             if needs_warp:
-                poly_in = MotionCompensator.transform_polygon(poly_in, ref_to_cur)
-                poly_out = MotionCompensator.transform_polygon(poly_out, ref_to_cur)
+                # transform_polygon returns (N, 1, 2); sv.get_polygon_center needs (N, 2).
+                poly_in = MotionCompensator.transform_polygon(poly_in, ref_to_cur).reshape(-1, 2)
+                poly_out = MotionCompensator.transform_polygon(poly_out, ref_to_cur).reshape(-1, 2)
             self._draw_polygon(annotated_frame, poly_in, zone_in["name"], ZoneType.IN, thickness)
             self._draw_polygon(annotated_frame, poly_out, zone_in["name"], ZoneType.OUT, thickness)
         return annotated_frame
