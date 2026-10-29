@@ -239,7 +239,22 @@ def process_next_task() -> bool:
             local_processed_video_path = os.path.join(output_dir, f"processed{input_ext}")
             with open(local_processed_video_path, 'rb') as f:
                 bucket_service.upload(f, object_name=bucket_video_path, content_type="video/mp4")
-            
+
+            # Subir camera_motion.json al bucket (solo si existe — puede estar ausente
+            # si la compensación estaba desactivada o si fue un procesamiento antiguo).
+            local_camera_motion_path = os.path.join(output_dir, "camera_motion.json")
+            bucket_camera_motion_path = f"task/{task_to_process.id}/{hash_value}_camera_motion.json"
+            url_camera_motion: str | None = None
+            if os.path.exists(local_camera_motion_path):
+                typer.echo("Subiendo camera_motion.json al bucket...")
+                with open(local_camera_motion_path, 'rb') as f:
+                    bucket_service.upload(
+                        f,
+                        object_name=bucket_camera_motion_path,
+                        content_type="application/json",
+                    )
+                url_camera_motion = bucket_camera_motion_path
+
             # Paso 7: Crear el objeto de inferencia
             inference = inference_service.create_inference(
                 task_id=task_to_process.id,
@@ -247,7 +262,8 @@ def process_next_task() -> bool:
                 transition_undetermined=undetermined_content,
                 transition_determined=determined_content,
                 url_data_obj_history=bucket_data_obj_history_path,
-                url_video_processed=bucket_video_path
+                url_video_processed=bucket_video_path,
+                url_camera_motion=url_camera_motion,
             )
             
             # Paso 8: Cambiar estado de tarea a PROCESSED

@@ -6,6 +6,13 @@
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { showConfirm } from '$lib/dialog';
 	import { getCategoryColor, getCategoryColorMap, RESERVED_COLORS } from '$lib/colors';
+	import {
+		buildFrameMotionMap,
+		getFrameMatrix,
+		warpPolygon,
+		type AffineMatrix,
+		type CameraMotionData,
+	} from '$lib/camera-motion';
 
 	// --- Props y estado inicial ---
 	let { data } = $props();
@@ -98,6 +105,12 @@
 	type RoadPoly = { id: number; name: string; direction: string; polygon: [number, number][] };
 	let roadsIn = $state<RoadPoly[]>([]);
 	let roadsOut = $state<RoadPoly[]>([]);
+
+	// Camera motion compensation — zone polygon warping.
+	// Populated in background when the task has a cameraMotionUrl.
+	let cameraMotionMap = $state<Map<number, AffineMatrix> | null>(null);
+	// Current video frame tracked for polygon warping (updated by the animation loop).
+	let currentVideoFrame = $state(0);
 	let rutas = $state<Rutas>({});
 	let indeterminados = $state<Indeterminados>({});
 	let determinados = $state<Record<string, any>>({});
@@ -350,6 +363,8 @@
 
 		const currentTime = videoElement.currentTime;
 		const currentFrame = computeCurrentFrameFromTime(currentTime);
+		// Keep currentVideoFrame in sync so polygon warp rerenders on frame change.
+		currentVideoFrame = currentFrame;
 
 		// Detectar loop (el tiempo se resetea de fin a inicio sin pausa)
 		if (currentTime + 0.05 < lastVideoTime) {
@@ -521,6 +536,20 @@
 	// Utilidad para escalar puntos de polígonos a la vista actual del video
 	function scaledPolygonPoints(poly: [number, number][]): string {
 		return poly.map(([x, y]) => `${x * videoScale.x},${y * videoScale.y}`).join(' ');
+	}
+
+	/**
+	 * Like scaledPolygonPoints, but first warps the polygon from reference-frame
+	 * to current-frame coordinates using the camera motion data (when available).
+	 * Falls back to static rendering when no motion data is loaded.
+	 *
+	 * Reads currentVideoFrame and cameraMotionMap as reactive state so the
+	 * SVG polygon re-renders automatically as the video plays.
+	 */
+	function scaledPolygonPointsWarped(poly: [number, number][]): string {
+		const matrix = getFrameMatrix(cameraMotionMap, currentVideoFrame);
+		const warped = warpPolygon(poly, matrix);
+		return scaledPolygonPoints(warped);
 	}
 
 	// CAMBIO 4: La BBox manual también debe tener una propiedad 'opacity' para ser consistente.
@@ -910,6 +939,26 @@
 				apiData.dataObjHistoryUrl || apiData.data_obj_history_url || apiData.historyUrl || null;
 			// Historial ligero para tablas: no necesitamos descargar nada si no viene inline
 			const historyPromise: Promise<any> = Promise.resolve(apiData.history ?? {});
+
+			// Load camera motion data in the background (when available).
+			// Graceful fallback: if the URL is absent or the fetch fails, zone polygons
+			// are rendered statically (reference-frame coords, same as before this feature).
+			const cameraMotionUrl: string | null = apiData.cameraMotionUrl ?? null;
+			if (cameraMotionUrl) {
+				fetch(bust(cameraMotionUrl))
+					.then((r) => {
+						if (!r.ok) throw new Error(`camera_motion.json fetch failed: ${r.status}`);
+						return r.json() as Promise<CameraMotionData>;
+					})
+					.then((data) => {
+						if (Array.isArray(data?.frames)) {
+							cameraMotionMap = buildFrameMotionMap(data.frames);
+						}
+					})
+					.catch((err) => {
+						console.warn('[camera-motion] Failed to load motion data, using static polygons:', err);
+					});
+			}
 
 			// Cargar data_obj_history.json en segundo plano para el reproductor (no bloquear UI)
 			const loadGeneralInBackground = async () => {
@@ -1592,7 +1641,10 @@
 							{isFullscreen ? 'Salir' : 'Full'}
 						</button>
 
-						<!-- Overlay de polígonos de Entrada (verde) y Salida (rojo) -->
+						<!-- Overlay de polígonos de Entrada (verde) y Salida (rojo).
+						     When camera motion data is available, vertices are warped from
+						     reference-frame to current-frame coordinates so the overlays
+						     track the physical road as the camera drifts. -->
 						<svg
 							class="absolute inset-0 pointer-events-none"
 							style="z-index: 11;"
@@ -1601,7 +1653,7 @@
 						>
 							{#each roadsIn as r (r.id)}
 								<polygon
-									points={scaledPolygonPoints(r.polygon)}
+									points={scaledPolygonPointsWarped(r.polygon)}
 									fill="rgba(16,185,129,0.20)"
 									stroke="#10b981"
 									stroke-width="2"
@@ -1611,7 +1663,7 @@
 							{/each}
 							{#each roadsOut as r (r.id)}
 								<polygon
-									points={scaledPolygonPoints(r.polygon)}
+									points={scaledPolygonPointsWarped(r.polygon)}
 									fill="rgba(239,68,68,0.20)"
 									stroke="#ef4444"
 									stroke-width="2"
@@ -1630,7 +1682,7 @@
 							>
 								{#each excludedZones as poly, i (i)}
 									<polygon
-										points={scaledPolygonPoints(poly)}
+										points={scaledPolygonPointsWarped(poly)}
 										fill="rgba(0,0,0,1)"
 										stroke="#000000"
 										stroke-width="2"

@@ -156,6 +156,8 @@ class TaskService:
                 payload["determinados"] = det
             if task.inference.url_data_obj_history:
                 payload["historyUrl"] = f"{public_base}/{task.inference.url_data_obj_history}"
+            if getattr(task.inference, "url_camera_motion", None):
+                payload["cameraMotionUrl"] = f"{public_base}/{task.inference.url_camera_motion}"
 
         return payload
 
