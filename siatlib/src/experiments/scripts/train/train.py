@@ -1,6 +1,7 @@
 from ultralytics import YOLO
+from config import config
 
-FROM_SCRATCH = True
+
 
 def main():
     """
@@ -8,60 +9,29 @@ def main():
     para el análisis de tráfico desde drones.
     """
 
-    if(FROM_SCRATCH):
-      # ENTRENAMIENTO DE MODELO DESDE CERO
-      model = YOLO('yolo11n.yaml')  # O yolo11m.yaml, yolo11l.yaml, etc. según la variante
-      
-      # Iniciar el entrenamiento desde cero
-      results = model.train(
-          data='datasets/dataset-v5/data.yaml',
-          epochs=100,                 # Recomendado: más épocas para entrenar desde cero
-          imgsz=1280,
-          batch=8,
-          device=0,
+    
+    model = YOLO(config["model_base"])  # O yolo11m.yaml, yolo11l.yaml, etc. según la variante
 
-          patience = 15,
-          seed = 42,
-          
-          # Optimización ajustada para entrenamiento desde cero
-          optimizer='SGD',            # SGD suele funcionar mejor que AdamW al entrenar sin pesos previos
-          lr0=0.01,
-          
-          # Augmentation (muy importante cuando se entrena de cero para evitar overfitting)
-          mosaic=True,
-          mixup=0.5,
-          
-          project='runs',
-          name='traffic-scratch-y11m',
-          exist_ok=True,
-      )
-    else:
-      # FINE-TUNING
-      # --- 1. Cargar el modelo base ---
-      model = YOLO('yolo11m.pt')
-
-      # --- 2. Iniciar el entrenamiento ---
+    # ENTRENAMIENTO DE MODELO 
+    if(config["from_scratch"]):
       results = model.train(
         # --- Datos ---
-        data='datasets/dataset-v5/data.yaml',
-        epochs=100,                 # suficiente para dataset pequeño
-        imgsz=1280,                 # buena resolución para objetos pequeños
-        batch=2,                    # estable para GPU promedio
-        nbs=4,
-        device=0,                   # GPU
+        data=config["data"],
+        epochs=config["epochs"],                 # suficiente para dataset pequeño
+        imgsz=config["imgsz"],                 # buena resolución para objetos pequeños
+        batch=config["batch"],                    # estable para GPU promedio
+        #nbs=4,
+        device=config["device"],                   # GPU
+        optimizer=config["optimizer"],
+        lr0=config["lr0"],
 
         # --- Regularización y early stopping ---
-        patience=15,                # detiene si no hay mejora en val loss
-        seed=42,                    # reproducibilidad
-
-        # --- Optimización ---
-        optimizer='AdamW',          # recomendado para dataset pequeño
-        lr0=0.01,                   # learning rate inicial
-        weight_decay=0.0005,        # regularización
+        patience=config["patience"],                # detiene si no hay mejora en val loss
+        seed=config["seed"],                    # reproducibilidad
 
         # --- Augmentation ---
-        mosaic=True,                # combina 4 imágenes en 1
-        mixup=0.5,                  # mezcla 2 imágenes con etiquetas
+        mosaic=config["mosaic"],                # combina 4 imágenes en 1
+        mixup=config["mixup"],                  # mezcla 2 imágenes con etiquetas
         auto_augment='randaugment', # política de auto-augmentation
 
         # --- Organización ---
@@ -69,9 +39,31 @@ def main():
         name='traffic-v5b-y11m-1280px-100e-aug',
         exist_ok=True,
       )
+    else:
+      results = model.train(
+            data=config["data"],
+            epochs=config["epochs"],
+            imgsz=config["imgsz"],
+            batch=config["batch"],
+            nbs=4,
+            freeze=10,
+            device=config["device"],
+            patience=config["patience"],
+            seed=config["seed"],
+            optimizer=config["optimizer"],
+            lr0=config["lr0"],
+            weight_decay=0.0005,
+            mosaic=config["mosaic"],
+            mixup=config["mixup"],
+            auto_augment='randaugment',
+            project=config["project"],
+            name=config["run_name"],
+            exist_ok=True,
+            output_dir=config["output_result_dir"],
+        )
 
-      print("Entrenamiento finalizado.")
-      print(f"Los mejores pesos (best.pt) se han guardado en la carpeta: {results.save_dir}")
+    print("Entrenamiento finalizado.")
+    print(f"Los mejores pesos (best.pt) se han guardado en la carpeta: {results.save_dir}")
 
 if __name__ == '__main__':
     main()
