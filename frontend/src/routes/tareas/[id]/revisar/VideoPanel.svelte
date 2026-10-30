@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { RESERVED_COLORS } from '$lib/colors';
 	import * as review from './review';
 	import RouteOverlay from './RouteOverlay.svelte';
 	import { videoClicks } from '$lib/actions/videoClicks';
@@ -326,17 +327,17 @@
 		updateOverlaysForFrame(computeCurrentFrameFromTime(videoElement.currentTime));
 	};
 
-	const isBlack = (color: string): boolean => color.toLowerCase() === '#000000';
+	const isBlack = (color: string): boolean => color.toLowerCase() === RESERVED_COLORS.black;
 
 	const generalBorderColor = (trackId: string, selected: boolean): string => {
 		if (selected) {
-			return '#ffffff';
+			return RESERVED_COLORS.white;
 		}
 		if (indeterminados[trackId]) {
-			return '#000000';
+			return RESERVED_COLORS.black;
 		}
 		const color: string = trackColor(trackId);
-		return isBlack(color) ? '#ffffff' : color;
+		return isBlack(color) ? RESERVED_COLORS.white : color;
 	};
 
 	const hasDarkOutline = (trackId: string, selected: boolean): boolean =>

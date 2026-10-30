@@ -3,9 +3,8 @@
 		ALLOWED_VIDEO_EXTENSIONS,
 		INVALID_VIDEO_MESSAGE,
 		isAllowedVideo,
-		localDateString,
 		TaskFormSchema
-	} from '$lib/types/task';
+	} from '$lib/validation/task';
 	import { createTask } from '$lib/services/tasks';
 	import { errorMessage } from '$lib/services/errors';
 	import {
@@ -18,13 +17,14 @@
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/Icon.svelte';
+	import { localDateString } from '$lib/format';
 	import { onMount } from 'svelte';
-	import { showAlert } from '$lib/dialog';
+	import { showAlert } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { uploadVideoToMinio } from '$lib/services/upload';
 
 	import type { Option, SelectItem } from '$lib/services/locations';
-	import type { TaskForm } from '$lib/types/task';
+	import type { TaskForm } from '$lib/validation/task';
 
 	type TaskValidation = ReturnType<typeof TaskFormSchema.safeParse>;
 

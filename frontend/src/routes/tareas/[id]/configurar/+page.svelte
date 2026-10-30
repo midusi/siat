@@ -13,7 +13,7 @@
 	import { quintOut } from 'svelte/easing';
 	import { redraw } from './draw';
 	import ScrollArea from '$lib/components/ScrollArea.svelte';
-	import { showAlert } from '$lib/dialog';
+	import { showAlert } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
 	import type { Coordinates, Sentido } from './geometry';

@@ -1,12 +1,9 @@
 <script lang="ts">
 	import { cubicOut } from 'svelte/easing';
 	import { fade, fly } from 'svelte/transition';
-	import { toasts } from '$lib/toast';
+	import { toasts } from '$lib/toast.svelte';
 
-	import type { Toast } from '$lib/toast';
-
-	let items: Toast[] = [];
-	toasts.subscribe((v) => (items = v));
+	import type { Toast } from '$lib/toast.svelte';
 
 	function colorClasses(variant: Toast['variant']): string {
 		switch (variant) {
@@ -51,7 +48,7 @@
 
 <div class="pointer-events-none fixed inset-0 z-[90] flex items-end justify-end p-4">
 	<div class="flex w-full max-w-sm flex-col gap-2">
-		{#each items as t (t.id)}
+		{#each toasts.list as t (t.id)}
 			<div
 				use:autoDismiss={{ id: t.id, duration: t.duration }}
 				class="pointer-events-auto glass-strong frost frost-polarized border p-3 shadow-xl {colorClasses(
@@ -65,7 +62,7 @@
 					<div class="flex-1 text-sm leading-5">{t.message}</div>
 					<button
 						class="ml-2 text-white/80 hover:text-white cursor-pointer"
-						on:click={() => toasts.dismissToast(t.id)}
+						onclick={() => toasts.dismissToast(t.id)}
 						aria-label="Cerrar">✕</button
 					>
 				</div>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { apiFetch } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import { LOGIN_PATH } from '$lib/constants';
 	import { portal } from '$lib/actions/portal';
 	import Spinner from '$lib/components/Spinner.svelte';
 
@@ -61,7 +62,7 @@
 		isLoggingOut = true;
 		const res = await apiFetch('/auth/logout', { method: 'POST' });
 		if (res.ok || res.status === 204) {
-			await goto('/login');
+			await goto(LOGIN_PATH);
 		}
 		isLoggingOut = false;
 	}

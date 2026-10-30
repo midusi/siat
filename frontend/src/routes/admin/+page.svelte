@@ -12,7 +12,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { onMount } from 'svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { showAlert, showConfirm } from '$lib/dialog';
+	import { showAlert, showConfirm } from '$lib/dialog.svelte';
 	import UserEditForm from './UserEditForm.svelte';
 	import UserTable from './UserTable.svelte';
 

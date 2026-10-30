@@ -1,7 +1,6 @@
-// Definición de tipos para los elementos del menú
-export interface MenuItem {
+export type MenuItem = {
 	id: string;
 	label: string;
 	path: string;
 	icon: string;
-}
+};

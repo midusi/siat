@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { errorMessage } from '$lib/services/errors';
-	import { getCategoryColor } from '$lib/colors';
+	import { getCategoryColor, getCategoryColorMap, RESERVED_COLORS } from '$lib/colors';
 	import IndeterminadosPanel from './IndeterminadosPanel.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import ResumenTablas from './ResumenTablas.svelte';
 	import * as review from './review';
-	import { showError, showSuccess } from '$lib/toast';
+	import { showError, showSuccess } from '$lib/toast.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import VideoPanel from './VideoPanel.svelte';
 
@@ -36,6 +36,7 @@
 	const hasRutas: boolean = $derived(Object.keys(rutas).length > 0);
 	const taskId: string = $derived(page.params.id);
 	const vehicleTypes: Array<string> = $derived(review.getVehicleTypes(rutas, indeterminados));
+	const categoryColors: Map<string, string> = $derived(getCategoryColorMap(vehicleTypes));
 	const vehicleItems: Array<review.SelectOption> = $derived(
 		vehicleTypes.map((v) => ({ value: v, label: review.getVehicleName(v) }))
 	);
@@ -109,11 +110,11 @@
 		trackHistory = next;
 	};
 
-	const classColor = (cls: string): string => getCategoryColor(cls, vehicleTypes);
+	const classColor = (cls: string): string => getCategoryColor(cls, categoryColors);
 
 	const trackColor = (trackId: string): string => {
 		const cls: string | null = review.getTrackClass(trackId, determinados, indeterminados, history);
-		return cls ? classColor(cls) : '#ffffff';
+		return cls ? classColor(cls) : RESERVED_COLORS.white;
 	};
 
 	const hideIndeterminado = (trackId: string): void => {

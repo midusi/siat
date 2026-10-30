@@ -1,6 +1,8 @@
+import { BACKEND_URL, BUCKET_URL } from '$lib/constants';
+
 import type { Handle } from '@sveltejs/kit';
 
-const SKIP_AUTH_PREFIXES = ['/api', '/bucket'];
+const SKIP_AUTH_PREFIXES = [BACKEND_URL, BUCKET_URL];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
@@ -15,7 +17,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	try {
-		const res = await event.fetch('/api/auth/me');
+		const res = await event.fetch(`${BACKEND_URL}/auth/me`);
 		if (res.ok) {
 			const data = await res.json();
 			event.locals.user = data as App.Locals['user'];

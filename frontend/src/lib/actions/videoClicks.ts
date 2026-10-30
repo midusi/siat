@@ -1,59 +1,75 @@
-import type { Action } from 'svelte/action';
+import { on } from 'svelte/events';
 
-const CONTROLS_BAR_HEIGHT_PX = 48;
-const DOUBLE_CLICK_DELAY_MS = 200;
+import type { Action, ActionReturn } from 'svelte/action';
 
-export const videoClicks: Action<HTMLElement, () => void> = (node, onDoubleClick) => {
-	let onDouble = onDoubleClick;
-	let timer: ReturnType<typeof setTimeout> | null = null;
+type DoubleClickHandler = () => void;
+type Timer = ReturnType<typeof setTimeout>;
 
-	const cancelPending = () => {
+const CAPTURE: AddEventListenerOptions = { capture: true };
+const CONTROLS_BAR_HEIGHT_PX: number = 48;
+const DOUBLE_CLICK_DELAY_MS: number = 200;
+
+const isOnControlsBar = (video: HTMLVideoElement, clientY: number): boolean => {
+	const rect: DOMRect = video.getBoundingClientRect();
+	return clientY - rect.top >= rect.height - CONTROLS_BAR_HEIGHT_PX;
+};
+
+const togglePlayback = (video: HTMLVideoElement): void => {
+	if (video.paused) {
+		video.play();
+	} else {
+		video.pause();
+	}
+};
+
+export const videoClicks: Action<HTMLElement, DoubleClickHandler> = (
+	node: HTMLElement,
+	onDoubleClick: DoubleClickHandler
+): ActionReturn<DoubleClickHandler> => {
+	let onDouble: DoubleClickHandler = onDoubleClick;
+	let timer: Timer | null = null;
+
+	const cancelPending = (): void => {
 		if (timer) {
 			clearTimeout(timer);
 		}
 		timer = null;
 	};
 
-	const onClick = (ev: MouseEvent) => {
-		const video = node.querySelector('video');
-		if (!video || ev.target !== video) {
-			return;
-		}
-		const rect = video.getBoundingClientRect();
-		if (ev.clientY - rect.top >= rect.height - CONTROLS_BAR_HEIGHT_PX) {
-			return;
-		}
+	const swallow = (ev: MouseEvent): void => {
 		ev.preventDefault();
 		ev.stopImmediatePropagation();
 		cancelPending();
+	};
+
+	const onClick = (ev: MouseEvent): void => {
+		const video: EventTarget | null = ev.target;
+		if (!(video instanceof HTMLVideoElement) || isOnControlsBar(video, ev.clientY)) {
+			return;
+		}
+		swallow(ev);
 		timer = setTimeout(() => {
 			timer = null;
-			if (video.paused) {
-				video.play();
-			} else {
-				video.pause();
-			}
+			togglePlayback(video);
 		}, DOUBLE_CLICK_DELAY_MS);
 	};
 
-	const onDblClick = (ev: MouseEvent) => {
-		ev.preventDefault();
-		ev.stopImmediatePropagation();
-		cancelPending();
-		onDouble?.();
+	const onDblClick = (ev: MouseEvent): void => {
+		swallow(ev);
+		onDouble();
 	};
 
-	node.addEventListener('click', onClick, { capture: true });
-	node.addEventListener('dblclick', onDblClick, { capture: true });
+	const offClick: () => void = on(node, 'click', onClick, CAPTURE);
+	const offDblClick: () => void = on(node, 'dblclick', onDblClick, CAPTURE);
 
 	return {
-		update(next) {
+		update: (next: DoubleClickHandler): void => {
 			onDouble = next;
 		},
-		destroy() {
+		destroy: (): void => {
 			cancelPending();
-			node.removeEventListener('click', onClick, { capture: true });
-			node.removeEventListener('dblclick', onDblClick, { capture: true });
+			offClick();
+			offDblClick();
 		}
 	};
 };

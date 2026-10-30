@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+
+	import type { MenuItem } from '$lib/types/menu';
+
 	let { user } = $props<{ user: App.Locals['user'] }>();
 
 	// Lista de elementos del menú
-	const menuItems = [
+	const menuItems: Array<MenuItem> = [
 		{
 			id: 'tareas',
 			label: 'Tareas',

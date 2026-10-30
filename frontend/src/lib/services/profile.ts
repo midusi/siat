@@ -8,7 +8,7 @@ export const changePassword = async (
 	new_password: string,
 	confirm_password: string
 ): Promise<void> => {
-	const res = await apiFetch(`${PROFILE_API}/change-password`, {
+	const res: Response = await apiFetch(`${PROFILE_API}/change-password`, {
 		method: 'POST',
 		body: JSON.stringify({ current_password, new_password, confirm_password })
 	});

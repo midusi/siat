@@ -1,114 +1,113 @@
-import { BACKEND_URL } from '$lib/constants';
+import { ApiError, apiError } from './errors';
+import { apiFetch } from '$lib/api';
 
-export interface UploadProgress {
+export type UploadProgress = {
 	loaded: number;
 	total: number;
 	percentage: number;
-}
+};
 
-export interface PresignedUploadResponse {
+type ProgressCallback = (progress: UploadProgress) => void;
+
+type PresignedUploadResponse = {
 	upload_url: string;
 	object_key: string;
 	expires_in: number;
-}
+};
 
+type MultipartInitResponse = {
+	object_key: string;
+	upload_id: string;
+	part_size: number;
+	part_count: number;
+	expires_in: number;
+};
+
+type PartUrlResponse = { upload_url: string };
+
+const UPLOAD_API: string = '/task/upload';
 /** Por encima de este tamaño la subida va por partes. Tiene que coincidir con PART_SIZE_BYTES del backend. */
-const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
-const MAX_ATTEMPTS = 3;
+const MULTIPART_THRESHOLD: number = 5 * 1024 * 1024;
+const MAX_ATTEMPTS: number = 3;
+const RETRY_DELAY_MS: number = 400;
+const DEFAULT_CONTENT_TYPE: string = 'video/mp4';
+const UPLOAD_ERROR_MESSAGE: string = 'No se pudo subir el video';
+const NETWORK_ERROR_MESSAGE: string = 'Error de red al subir el video';
 
 /**
  * Sube un archivo de video directamente a MinIO usando presigned URLs.
  * Los archivos grandes van en partes de 5 MB: un PUT único de un video de ~1 min
  * corta la conexión en el proxy y el navegador lo reporta como network error.
  */
-export async function uploadVideoToMinio(
-	file: File,
-	onProgress?: (progress: UploadProgress) => void
-): Promise<string> {
-	if (file.size > MULTIPART_THRESHOLD) {
-		return uploadMultipart(file, onProgress);
-	}
-	return uploadSingle(file, onProgress);
-}
+export const uploadVideoToMinio = (file: File, onProgress?: ProgressCallback): Promise<string> =>
+	file.size > MULTIPART_THRESHOLD
+		? uploadMultipart(file, onProgress)
+		: uploadSingle(file, onProgress);
 
-async function uploadSingle(
-	file: File,
-	onProgress?: (progress: UploadProgress) => void
-): Promise<string> {
-	const data = await postJson<PresignedUploadResponse>('/task/upload/presigned-url', {
-		filename: file.name,
-		content_type: file.type
-	});
+const uploadSingle = async (file: File, onProgress?: ProgressCallback): Promise<string> => {
+	const contentType: string = file.type || DEFAULT_CONTENT_TYPE;
+	const data: PresignedUploadResponse = await postUpload<PresignedUploadResponse>(
+		'/presigned-url',
+		{ filename: file.name, content_type: contentType }
+	);
 
-	await putWithRetry(data.upload_url, file, file.type, (loaded) => {
+	await putWithRetry(data.upload_url, file, contentType, (loaded: number): void => {
 		report(onProgress, loaded, file.size);
 	});
 	report(onProgress, file.size, file.size);
 	return data.object_key;
-}
+};
 
-interface MultipartInitResponse {
-	object_key: string;
-	upload_id: string;
-	part_size: number;
-	part_count: number;
-	expires_in: number;
-}
-
-async function uploadMultipart(
-	file: File,
-	onProgress?: (progress: UploadProgress) => void
-): Promise<string> {
-	const init = await postJson<MultipartInitResponse>('/task/upload/multipart/init', {
+const uploadMultipart = async (file: File, onProgress?: ProgressCallback): Promise<string> => {
+	const init: MultipartInitResponse = await postUpload<MultipartInitResponse>('/multipart/init', {
 		filename: file.name,
-		content_type: file.type || 'video/mp4',
+		content_type: file.type || DEFAULT_CONTENT_TYPE,
 		file_size: file.size
 	});
 
-	const loaded = new Array<number>(init.part_count).fill(0);
-	const reportParts = () => {
-		const sum = loaded.reduce((total, part) => total + part, 0);
-		report(onProgress, sum, file.size);
+	const loadedByPart: Array<number> = new Array<number>(init.part_count).fill(0);
+	const reportParts = (): void => {
+		const loaded: number = loadedByPart.reduce(
+			(total: number, part: number): number => total + part,
+			0
+		);
+		report(onProgress, loaded, file.size);
 	};
 
 	try {
-		for (let partNumber = 1; partNumber <= init.part_count; partNumber++) {
-			const start = (partNumber - 1) * init.part_size;
-			const end = Math.min(start + init.part_size, file.size);
-			const chunk = file.slice(start, end);
-			const signed = await postJson<{ upload_url: string }>('/task/upload/multipart/part-url', {
+		for (let partNumber: number = 1; partNumber <= init.part_count; partNumber++) {
+			const start: number = (partNumber - 1) * init.part_size;
+			const end: number = Math.min(start + init.part_size, file.size);
+			const chunk: Blob = file.slice(start, end);
+			const signed: PartUrlResponse = await postUpload<PartUrlResponse>('/multipart/part-url', {
 				object_key: init.object_key,
 				upload_id: init.upload_id,
 				part_number: partNumber
 			});
-			await putWithRetry(signed.upload_url, chunk, undefined, (partLoaded) => {
-				loaded[partNumber - 1] = partLoaded;
+			await putWithRetry(signed.upload_url, chunk, undefined, (partLoaded: number): void => {
+				loadedByPart[partNumber - 1] = partLoaded;
 				reportParts();
 			});
-			loaded[partNumber - 1] = chunk.size;
+			loadedByPart[partNumber - 1] = chunk.size;
 			reportParts();
 		}
 
-		await postJson('/task/upload/multipart/complete', {
+		await postUpload('/multipart/complete', {
 			object_key: init.object_key,
 			upload_id: init.upload_id,
 			part_count: init.part_count
 		});
 		return init.object_key;
 	} catch (error) {
-		await postJson('/task/upload/multipart/abort', {
+		await postUpload('/multipart/abort', {
 			object_key: init.object_key,
 			upload_id: init.upload_id
-		}).catch(() => undefined);
+		}).catch((): undefined => undefined);
 		throw error;
 	}
-}
+};
 
-function report(
-	onProgress: ((progress: UploadProgress) => void) | undefined,
-	loaded: number,
-	total: number
-) {
+const report = (onProgress: ProgressCallback | undefined, loaded: number, total: number): void => {
 	if (!onProgress || total <= 0) {
 		return;
 	}
@@ -117,79 +116,74 @@ function report(
 		total,
 		percentage: Math.min(100, Math.round((loaded / total) * 100))
 	});
-}
+};
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-	const response = await fetch(`${BACKEND_URL}${path}`, {
+const postUpload = async <T = unknown>(path: string, body: unknown): Promise<T> => {
+	const res: Response = await apiFetch(`${UPLOAD_API}${path}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		credentials: 'include',
 		body: JSON.stringify(body)
 	});
-	if (!response.ok) {
-		const error = await response.text();
-		throw new Error(error || `Request failed (${response.status})`);
+	if (!res.ok) {
+		throw await apiError(res, UPLOAD_ERROR_MESSAGE);
 	}
-	return response.json() as Promise<T>;
-}
+	return (await res.json()) as T;
+};
 
-function putWithRetry(
+const putWithRetry = async (
 	url: string,
 	body: Blob,
 	contentType: string | undefined,
 	onLoaded: (loaded: number) => void
-): Promise<void> {
-	return (async () => {
-		let lastError: Error | null = null;
-		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-			try {
-				await putOnce(url, body, contentType, onLoaded);
-				return;
-			} catch (error) {
-				lastError = error instanceof Error ? error : new Error(String(error));
-				if (attempt < MAX_ATTEMPTS) {
-					await delay(400 * attempt);
-				}
+): Promise<void> => {
+	let lastError: Error | null = null;
+	for (let attempt: number = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+		try {
+			await putOnce(url, body, contentType, onLoaded);
+			return;
+		} catch (error) {
+			lastError = error instanceof Error ? error : new Error(String(error));
+			if (attempt < MAX_ATTEMPTS) {
+				await delay(RETRY_DELAY_MS * attempt);
 			}
 		}
-		throw lastError ?? new Error('Upload failed due to network error');
-	})();
-}
+	}
+	throw lastError ?? new ApiError(NETWORK_ERROR_MESSAGE);
+};
 
-function putOnce(
+const putOnce = (
 	url: string,
 	body: Blob,
 	contentType: string | undefined,
 	onLoaded: (loaded: number) => void
-): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const xhr = new XMLHttpRequest();
+): Promise<void> =>
+	new Promise((resolve: () => void, reject: (error: ApiError) => void): void => {
+		const xhr: XMLHttpRequest = new XMLHttpRequest();
 		xhr.open('PUT', url);
 		if (contentType) {
 			xhr.setRequestHeader('Content-Type', contentType);
 		}
-		xhr.upload.addEventListener('progress', (event: ProgressEvent) => {
+		xhr.upload.addEventListener('progress', (event: ProgressEvent): void => {
 			if (event.lengthComputable) {
 				onLoaded(event.loaded);
 			}
 		});
-		xhr.addEventListener('load', () => {
+		xhr.addEventListener('load', (): void => {
 			if (xhr.status >= 200 && xhr.status < 300) {
 				resolve();
 			} else {
-				reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
+				reject(new ApiError(`${UPLOAD_ERROR_MESSAGE} (estado ${xhr.status})`));
 			}
 		});
-		xhr.addEventListener('error', () => {
-			reject(new Error('Upload failed due to network error'));
+		xhr.addEventListener('error', (): void => {
+			reject(new ApiError(NETWORK_ERROR_MESSAGE));
 		});
-		xhr.addEventListener('abort', () => {
-			reject(new Error('Upload was aborted'));
+		xhr.addEventListener('abort', (): void => {
+			reject(new ApiError('La subida del video fue cancelada'));
 		});
 		xhr.send(body);
 	});
-}
 
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const delay = (ms: number): Promise<void> =>
+	new Promise((resolve: () => void): void => {
+		setTimeout(resolve, ms);
+	});

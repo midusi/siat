@@ -3,7 +3,7 @@
 	import * as review from './review';
 	import ScrollArea from '$lib/components/ScrollArea.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { showConfirm } from '$lib/dialog';
+	import { showConfirm } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
 	type Props = {
