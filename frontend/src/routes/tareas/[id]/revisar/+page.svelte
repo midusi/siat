@@ -11,6 +11,7 @@
 	import VideoPanel from './VideoPanel.svelte';
 
 	let activeIndeterminateId: string | null = $state(null);
+	let cameraMotion: review.CameraMotion | null = $state.raw(null);
 	let determinados: review.Indeterminados = $state({});
 	let error: string | null = $state(null);
 	let excludedZones: Array<Array<review.Vertex>> = $state([]);
@@ -62,6 +63,17 @@
 		generalReady = true;
 	};
 
+	const loadCameraMotion = async (url: string | null): Promise<void> => {
+		if (!url) {
+			return;
+		}
+		try {
+			cameraMotion = await review.fetchCameraMotion(url);
+		} catch (e) {
+			console.warn('No se pudo cargar el movimiento de cámara, se usan zonas estáticas:', e);
+		}
+	};
+
 	const fetchData = async (): Promise<void> => {
 		loading = true;
 		error = null;
@@ -81,6 +93,7 @@
 			history = data.history;
 			sortedIndeterminados = review.sortIndeterminados(indeterminados);
 			loadTrackHistory(data.historyUrl);
+			loadCameraMotion(data.cameraMotionUrl);
 		} catch (e) {
 			error = errorMessage(e, 'Error desconocido al cargar los datos.');
 		} finally {
@@ -277,6 +290,7 @@
 						bind:height={videoPanelHeight}
 						bind:liveIds
 						{videoPath}
+						{cameraMotion}
 						{videoFps}
 						{videoWidth}
 						{videoHeight}

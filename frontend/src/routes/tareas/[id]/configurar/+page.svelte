@@ -3,6 +3,7 @@
 	import { buildConfigPayload, centroid, toCanvasPx } from './geometry';
 	import { calculatePopoverPosition } from './popover';
 	import { createPolygonEditor, OPCIONES_SENTIDO } from './editor.svelte';
+	import { defaultColorForSentido } from '$lib/polygon-utils';
 	import { errorMessage as apiErrorMessage } from '$lib/services/errors';
 	import { fade, fly } from 'svelte/transition';
 	import { fetchFirstFrame, saveTaskConfig } from '$lib/services/tasks';
@@ -21,10 +22,14 @@
 	import type { PolygonEditor } from './editor.svelte';
 	import type { PopoverPosition } from './popover';
 
+	const HANDLE_HIT_RADIUS_PX: number = 15;
+
 	const editor: PolygonEditor = createPolygonEditor();
 
 	let canvas: HTMLCanvasElement | null = $state(null);
 	let ctx: CanvasRenderingContext2D | null = $state.raw(null);
+	let editingId: number | null = $state(null);
+	let editValue: string = $state('');
 	let errorMessage: string | null = $state(null);
 	let frameHeight: number = $state(1080);
 	let frameWidth: number = $state(1920);
@@ -90,15 +95,24 @@
 		requestAnimationFrame(redrawCanvas);
 	};
 
+	const canvasPoint = (event: MouseEvent, target: HTMLCanvasElement): Coordinates => {
+		const rect: DOMRect = target.getBoundingClientRect();
+		return {
+			x: (event.clientX - rect.left) / target.width,
+			y: (event.clientY - rect.top) / target.height
+		};
+	};
+
+	const handleRadius = (target: HTMLCanvasElement): Coordinates => ({
+		x: HANDLE_HIT_RADIUS_PX / target.width,
+		y: HANDLE_HIT_RADIUS_PX / target.height
+	});
+
 	const handleCanvasClick = async (event: MouseEvent): Promise<void> => {
-		if (!canvas) {
+		if (!canvas || editor.editMode) {
 			return;
 		}
-		const rect: DOMRect = canvas.getBoundingClientRect();
-		const roadCompleted: boolean = editor.addPoint({
-			x: (event.clientX - rect.left) / canvas.width,
-			y: (event.clientY - rect.top) / canvas.height
-		});
+		const roadCompleted: boolean = editor.addPoint(canvasPoint(event, canvas));
 		if (!roadCompleted) {
 			return;
 		}
@@ -110,8 +124,50 @@
 		viaInputEl?.select();
 	};
 
+	const handleCanvasMouseDown = (event: MouseEvent): void => {
+		if (!canvas || !editor.editMode) {
+			return;
+		}
+		event.preventDefault();
+		editor.pointerDown(canvasPoint(event, canvas), handleRadius(canvas));
+	};
+
+	const handleWindowMouseMove = (event: MouseEvent): void => {
+		if (!canvas) {
+			return;
+		}
+		editor.pointerMove(canvasPoint(event, canvas), handleRadius(canvas));
+	};
+
 	const handleKeyDown = (event: KeyboardEvent): void => {
 		editor.handleKey(event.key);
+	};
+
+	const startRename = async (id: number, via: string): Promise<void> => {
+		editValue = via;
+		editingId = id;
+		await tick();
+		const input: HTMLInputElement | null = document.querySelector(`#rename-input-${id}`);
+		input?.focus();
+		input?.select();
+	};
+
+	const commitRename = (id: number): void => {
+		editor.renamePolygon(id, editValue);
+		editingId = null;
+	};
+
+	const cancelRename = (): void => {
+		editingId = null;
+	};
+
+	const handleRenameKeydown = (event: KeyboardEvent, id: number): void => {
+		if (event.key === 'Enter') {
+			commitRename(id);
+		}
+		if (event.key === 'Escape') {
+			cancelRename();
+		}
 	};
 
 	const finalizarProceso = async (): Promise<void> => {
@@ -169,7 +225,12 @@
 	};
 </script>
 
-<svelte:window onkeydown={handleKeyDown} onresize={onResize} />
+<svelte:window
+	onkeydown={handleKeyDown}
+	onmousemove={handleWindowMouseMove}
+	onmouseup={editor.pointerUp}
+	onresize={onResize}
+/>
 
 <div class="configurar-page page-container page-vertical">
 	<div class="mx-auto flex flex-col flex-1 min-h-0 h-full">
@@ -179,7 +240,10 @@
 				<p class="text-white/70 text-sm m-0">
 					<span class="swap-container">
 						<span class="swap-measure">
-							{#if !editor.excludedMode}
+							{#if editor.editMode}
+								Clic en una zona para seleccionarla. Arrastre para moverla. Arrastre un vértice
+								(círculo blanco) para redimensionarla. <kbd class="key-kbd">Esc</kbd> para deseleccionar.
+							{:else if !editor.excludedMode}
 								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
 								<kbd class="key-kbd">Backspace</kbd> para deshacer o
 								<kbd class="key-kbd">Esc</kbd> para cancelar.
@@ -190,7 +254,12 @@
 								<kbd class="key-kbd">Esc</kbd> para cancelar.
 							{/if}
 						</span>
-						{#if !editor.excludedMode}
+						{#if editor.editMode}
+							<span class="swap-layer" transition:fade={{ duration: 210 }}>
+								Clic en una zona para seleccionarla. Arrastre para moverla. Arrastre un vértice
+								(círculo blanco) para redimensionarla. <kbd class="key-kbd">Esc</kbd> para deseleccionar.
+							</span>
+						{:else if !editor.excludedMode}
 							<span class="swap-layer" transition:fade={{ duration: 210 }}>
 								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
 								<kbd class="key-kbd">Backspace</kbd> para deshacer o
@@ -206,15 +275,21 @@
 						{/if}
 					</span>
 				</p>
-				<div class="flex items-center gap-2">
-					<div class="mode-toggle" role="group" aria-label="Modo de dibujo">
+				<div class="flex items-center gap-2 flex-wrap">
+					<div
+						class="mode-toggle"
+						role="group"
+						aria-label="Modo de dibujo"
+						class:opacity-50={editor.editMode}
+						class:pointer-events-none={editor.editMode}
+					>
 						<div
 							class={`mode-indicator ${editor.excludedMode ? 'right bg-excluded' : 'left bg-inout'}`}
 							aria-hidden="true"
 						></div>
 						<button
 							class="mode-option left"
-							disabled={!editor.excludedMode}
+							disabled={!editor.excludedMode || editor.editMode}
 							aria-pressed={!editor.excludedMode}
 							onclick={() => editor.setExcludedMode(false)}
 							title="Dibujar entradas/salidas"
@@ -240,7 +315,7 @@
 						</button>
 						<button
 							class="mode-option right"
-							disabled={editor.excludedMode}
+							disabled={editor.excludedMode || editor.editMode}
 							aria-pressed={editor.excludedMode}
 							onclick={() => editor.setExcludedMode(true)}
 							title="Dibujar zonas excluidas (confirme con Enter)"
@@ -265,6 +340,41 @@
 							</span>
 						</button>
 					</div>
+					<button
+						class="glass-button px-3 py-2 flex items-center gap-1.5 border-white/20"
+						class:bg-blue-500={editor.editMode}
+						class:bg-opacity-30={editor.editMode}
+						class:border-blue-400={editor.editMode}
+						class:border-opacity-60={editor.editMode}
+						class:bg-white-10={!editor.editMode}
+						class:hover-bg-white-20={!editor.editMode}
+						onclick={() => editor.setEditMode(!editor.editMode)}
+						title={editor.editMode
+							? 'Salir del modo edición'
+							: 'Mover y redimensionar zonas existentes'}
+						aria-pressed={editor.editMode}
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="15"
+							height="15"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<polyline points="5 9 2 12 5 15" />
+							<polyline points="9 5 12 2 15 5" />
+							<polyline points="15 19 12 22 9 19" />
+							<polyline points="19 9 22 12 19 15" />
+							<line x1="2" y1="12" x2="22" y2="12" />
+							<line x1="12" y1="2" x2="12" y2="22" />
+						</svg>
+						{editor.editMode ? 'Editando...' : 'Mover/Redimensionar'}
+					</button>
 					<button
 						class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
 						onclick={goBack}
@@ -293,46 +403,127 @@
 					{:else}
 						<div class="space-y-3">
 							{#each editor.polygons as poly (poly.id)}
+								{@const color = poly.color ?? defaultColorForSentido(poly.sentido)}
 								<div
-									class="glass-surface p-3 rounded-lg flex justify-between items-center transition-all border"
+									class="glass-surface p-3 rounded-lg transition-all border"
 									class:border-green-400={poly.sentido === 'Entrada'}
 									class:border-red-400={poly.sentido === 'Salida'}
+									class:border-white-30={poly.sentido === 'Excluida'}
+									class:ring-2={poly.id === editor.selectedId}
+									class:ring-white={poly.id === editor.selectedId}
+									class:ring-opacity-50={poly.id === editor.selectedId}
 									out:fly={{ y: -10, opacity: 0, duration: 250, easing: quintOut }}
 								>
-									<div>
-										<p class="font-semibold text-base">{poly.via}</p>
-										<p
-											class="text-sm"
-											class:text-green-300={poly.sentido === 'Entrada'}
-											class:text-red-300={poly.sentido === 'Salida'}
+									<div class="flex items-center gap-2">
+										<label
+											class="cursor-pointer flex-shrink-0"
+											title="Cambiar color de la zona"
+											aria-label="Cambiar color"
 										>
-											{poly.sentido}
-										</p>
-									</div>
-									<button
-										onclick={() => editor.removePolygon(poly.id)}
-										class="glass-button btn-danger"
-										aria-label="Eliminar vía"
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="20"
-											height="20"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										>
-											<polyline points="3 6 5 6 21 6" />
-											<path
-												d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+											<div
+												class="w-5 h-5 rounded-full border border-white/40 flex-shrink-0"
+												style="background-color: {color};"
+											></div>
+											<input
+												type="color"
+												class="sr-only"
+												value={color}
+												oninput={(e) => editor.setPolygonColor(poly.id, e.currentTarget.value)}
 											/>
-											<line x1="10" y1="11" x2="10" y2="17" />
-											<line x1="14" y1="11" x2="14" y2="17" />
-										</svg>
-									</button>
+										</label>
+										<div class="flex-1 min-w-0">
+											{#if editingId === poly.id}
+												<input
+													id="rename-input-{poly.id}"
+													class="glass-input text-sm py-0.5 px-2 w-full"
+													bind:value={editValue}
+													onblur={() => commitRename(poly.id)}
+													onkeydown={(e) => handleRenameKeydown(e, poly.id)}
+												/>
+											{:else}
+												<p class="font-semibold text-base truncate" title={poly.via}>{poly.via}</p>
+											{/if}
+										</div>
+										<div class="flex items-center gap-1 flex-shrink-0">
+											<button
+												onclick={() => startRename(poly.id, poly.via)}
+												class="glass-button p-1.5"
+												title="Renombrar"
+												aria-label="Renombrar vía"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="14"
+													height="14"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"
+												>
+													<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+													<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+												</svg>
+											</button>
+											<button
+												onclick={() => editor.duplicatePolygon(poly.id)}
+												class="glass-button p-1.5"
+												title="Duplicar zona"
+												aria-label="Duplicar vía"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="14"
+													height="14"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"
+												>
+													<rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+													<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+												</svg>
+											</button>
+											<button
+												onclick={() => editor.removePolygon(poly.id)}
+												class="glass-button btn-danger p-1.5"
+												aria-label="Eliminar vía"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="14"
+													height="14"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"
+												>
+													<polyline points="3 6 5 6 21 6" />
+													<path
+														d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+													/>
+													<line x1="10" y1="11" x2="10" y2="17" />
+													<line x1="14" y1="11" x2="14" y2="17" />
+												</svg>
+											</button>
+										</div>
+									</div>
+									<p
+										class="text-sm mt-1 ml-7"
+										class:text-green-300={poly.sentido === 'Entrada'}
+										class:text-red-300={poly.sentido === 'Salida'}
+										class:text-white-60={poly.sentido === 'Excluida'}
+									>
+										{poly.sentido}
+									</p>
 								</div>
 							{/each}
 						</div>
@@ -378,13 +569,17 @@
 				{:else}
 					<div
 						class="canvas-container glass-card overflow-hidden shadow-2xl"
+						style="cursor: {editor.cursor};"
 						onclick={handleCanvasClick}
+						onmousedown={handleCanvasMouseDown}
 						role="button"
 						tabindex="0"
 						onkeydown={() => {}}
-						aria-label={editor.excludedMode
-							? 'Definir zona excluída en la imagen'
-							: 'Definir entrada/salida en la imagen'}
+						aria-label={editor.editMode
+							? 'Seleccionar y editar zona en la imagen'
+							: editor.excludedMode
+								? 'Definir zona excluída en la imagen'
+								: 'Definir entrada/salida en la imagen'}
 					>
 						<img
 							src={imageSrc}

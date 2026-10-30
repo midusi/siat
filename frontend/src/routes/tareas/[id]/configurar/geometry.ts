@@ -6,6 +6,7 @@ export type Polygon = {
 	via: string;
 	sentido: Sentido;
 	vertices: Array<Coordinates>;
+	color?: string;
 };
 export type Sentido = 'Entrada' | 'Excluida' | 'Salida';
 export type Size = { width: number; height: number };

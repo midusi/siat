@@ -20,7 +20,6 @@
 .configurar-page .canvas-container {
 	position: relative;
 	width: 100%;
-	cursor: crosshair;
 	line-height: 0;
 }
 .configurar-page canvas {

@@ -1,10 +1,14 @@
 import { apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
+import { buildFrameMotionMap } from '$lib/camera-motion';
+
+import type { CameraMotionData, MotionMatrix } from '$lib/camera-motion';
 
 export type Appearance = { frame: string; boundingBox: BoundingBox };
 export type AppearingBox = { trackId: string; bbox: BoundingBox };
 export type BoundingBox = [string, string, string, string];
 export type Bounds = { width: number; height: number };
+export type CameraMotion = Map<number, MotionMatrix>;
 export type Box = [number, number, number, number];
 export type ConteoVehiculos = { [vehiculo: string]: number };
 export type DisplayableBBox = {
@@ -40,6 +44,7 @@ type RawIndeterminado = Omit<Indeterminado, 'labels'> & {
 };
 type RawIndeterminados = Record<string, RawIndeterminado>;
 type RawTaskReview = {
+	cameraMotionUrl?: string;
 	data_obj_history_url?: string;
 	dataObjHistoryUrl?: string;
 	determinados?: RawIndeterminados;
@@ -75,6 +80,7 @@ export type TaskReview = {
 	determinados: Indeterminados;
 	history: History;
 	historyUrl: string | null;
+	cameraMotionUrl: string | null;
 };
 export type TaskReviewChanges = {
 	rutas: Rutas;
@@ -121,12 +127,25 @@ export const fetchTaskReview = async (taskId: string): Promise<TaskReview> => {
 		indeterminados: normalizeLabels(data.indeterminados),
 		determinados: normalizeLabels(data.determinados),
 		history: data.history ?? {},
-		historyUrl: data.dataObjHistoryUrl || data.data_obj_history_url || data.historyUrl || null
+		historyUrl: data.dataObjHistoryUrl || data.data_obj_history_url || data.historyUrl || null,
+		cameraMotionUrl: data.cameraMotionUrl ?? null
 	};
 };
 
+const withCacheBust = (url: string): string =>
+	`${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
+
+export const fetchCameraMotion = async (url: string): Promise<CameraMotion | null> => {
+	const res: Response = await fetch(withCacheBust(url));
+	if (!res.ok) {
+		throw new Error(`Error al obtener camera_motion.json: ${res.status}`);
+	}
+	const data: CameraMotionData = await res.json();
+	return Array.isArray(data?.frames) ? buildFrameMotionMap(data.frames) : null;
+};
+
 export const fetchTrackHistory = async (url: string): Promise<TrackHistory> => {
-	const res: Response = await fetch(`${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`);
+	const res: Response = await fetch(withCacheBust(url));
 	if (!res.ok) {
 		throw new Error('Error al obtener data_obj_history.json');
 	}

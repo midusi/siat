@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getFrameMatrix } from '$lib/camera-motion';
 	import { onMount, untrack } from 'svelte';
 	import { RESERVED_COLORS } from '$lib/colors';
 	import * as review from './review';
@@ -6,9 +7,12 @@
 	import { videoClicks } from '$lib/actions/videoClicks';
 	import ZonesOverlay from './ZonesOverlay.svelte';
 
+	import type { MotionMatrix } from '$lib/camera-motion';
+
 	type DataFrames = { first: number; last: number };
 	type Props = {
 		activeTrackId?: string | null;
+		cameraMotion: review.CameraMotion | null;
 		excludedZones: Array<Array<review.Vertex>>;
 		height?: number;
 		indeterminados: review.Indeterminados;
@@ -27,10 +31,12 @@
 
 	const ROUTE_ANIMATION_MS: number = 320;
 	const ROUTE_FADE_MS: number = 500;
+	const DEFAULT_FPS: number = 30;
 	const SEEK_BACK_TOLERANCE_S: number = 0.05;
 
 	let {
 		activeTrackId = $bindable(null),
+		cameraMotion,
 		excludedZones,
 		height = $bindable(0),
 		indeterminados,
@@ -46,6 +52,7 @@
 		videoWidth
 	}: Props = $props();
 
+	let currentFrame: number = $state(0);
 	let generalDisplayBBoxes: Array<review.GeneralBBox> = $state([]);
 	let hideOtherBBoxes: boolean = $state(false);
 	let isFullscreen: boolean = $state(false);
@@ -72,6 +79,7 @@
 	let videoContainerEl: HTMLDivElement | null = $state(null);
 	let videoDuration: number = $state(0);
 	let videoElement: HTMLVideoElement | null = $state(null);
+	let videoFrameCallbackId: number | null = null;
 	let wasPlaying: boolean = false;
 
 	const activePlaybackBoxes: Array<review.DisplayableBBox> = $derived(
@@ -91,6 +99,7 @@
 		}
 		return showExcluded ? 'Ocultar zonas excluidas' : 'Mostrar zonas excluidas';
 	});
+	const zoneMatrix: MotionMatrix = $derived(getFrameMatrix(cameraMotion, currentFrame));
 	const indeterminadosByFrame: Map<number, Array<review.AppearingBox>> = $derived(
 		review.groupByFirstAppearance(indeterminados)
 	);
@@ -250,6 +259,9 @@
 				playbackBoundingBoxes = [];
 			}
 			lastVideoTime = currentTime;
+			if (videoFrameCallbackId === null) {
+				zoneFrame(currentFrame);
+			}
 			updateOverlaysForFrame(currentFrame);
 		}
 
@@ -281,9 +293,47 @@
 			cancelAnimationFrame(overlayFrameId);
 			overlayFrameId = null;
 		}
+		stopFrameCallback();
+	};
+
+	const zoneFrame = (frame: number): void => {
+		currentFrame = frame;
+	};
+
+	const onVideoFrame = (_now: number, metadata: VideoFrameCallbackMetadata): void => {
+		if (!videoElement || videoElement.paused) {
+			videoFrameCallbackId = null;
+			return;
+		}
+		const frame: number = Math.round(metadata.mediaTime * (videoFps || DEFAULT_FPS)) + 1;
+		zoneFrame(dataFrames ? Math.max(dataFrames.first, Math.min(frame, dataFrames.last)) : frame);
+		videoFrameCallbackId = videoElement.requestVideoFrameCallback(onVideoFrame);
+	};
+
+	const startFrameCallback = (): void => {
+		if (videoFrameCallbackId !== null || !videoElement) {
+			return;
+		}
+		if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) {
+			return;
+		}
+		videoFrameCallbackId = videoElement.requestVideoFrameCallback(onVideoFrame);
+	};
+
+	const stopFrameCallback = (): void => {
+		if (videoFrameCallbackId !== null && videoElement) {
+			videoElement.cancelVideoFrameCallback(videoFrameCallbackId);
+		}
+		videoFrameCallbackId = null;
+	};
+
+	const onVideoPlay = (): void => {
+		startOverlayLoop();
+		startFrameCallback();
 	};
 
 	const onVideoPause = (): void => {
+		stopFrameCallback();
 		anchorPausedClock();
 		startOverlayLoop();
 	};
@@ -324,7 +374,9 @@
 		if (!videoElement) {
 			return;
 		}
-		updateOverlaysForFrame(computeCurrentFrameFromTime(videoElement.currentTime));
+		const frame: number = computeCurrentFrameFromTime(videoElement.currentTime);
+		zoneFrame(frame);
+		updateOverlaysForFrame(frame);
 	};
 
 	const isBlack = (color: string): boolean => color.toLowerCase() === RESERVED_COLORS.black;
@@ -472,7 +524,7 @@
 				updateSelectedTrackRoute(computeCurrentFrameFromTime(videoElement.currentTime));
 			}
 		}}
-		onplay={startOverlayLoop}
+		onplay={onVideoPlay}
 		onpause={onVideoPause}
 		onseeking={() => onVideoSeek(true)}
 		onseeked={() => onVideoSeek(false)}
@@ -500,6 +552,7 @@
 		{roadsIn}
 		{roadsOut}
 		excludedZones={showExcluded ? excludedZones : []}
+		matrix={zoneMatrix}
 		scale={videoScale}
 	/>
 
