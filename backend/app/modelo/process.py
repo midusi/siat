@@ -27,8 +27,11 @@ MotionCompensator = _mc_mod.MotionCompensator
 
 # Camera motion compensation: on by default, can be disabled via env var.
 _COMPENSATION_ENABLED: bool = os.getenv("CAMERA_MOTION_COMPENSATION", "true").lower() not in ("0", "false", "no")
-_COMPENSATION_DEADBAND_PX: float = float(os.getenv("CAMERA_MOTION_DEADBAND_PX", "2.0"))
 _COMPENSATION_SCALE: float = float(os.getenv("CAMERA_MOTION_SCALE", "0.5"))
+# Smoothing sigma (frames) for the zero-phase Gaussian filter in pre_compute.
+_COMPENSATION_SMOOTH_SIGMA: float = float(os.getenv("CAMERA_MOTION_SMOOTH_SIGMA", "1.5"))
+# Re-anchor interval: match ORB features back to reference every N frames.
+_COMPENSATION_ANCHOR_INTERVAL: int = int(os.getenv("CAMERA_MOTION_ANCHOR_INTERVAL", "30"))
 
 # Importar torch para la detección de GPU
 try:
@@ -170,13 +173,14 @@ class ObjectTracker:
 
         # Camera motion compensation state.
         self.compensation_enabled: bool = compensation_enabled
-        # Initialized on the first frame of run() (the reference frame).
+        # Populated by pre_compute() before the main video loop.
         self._compensator: Optional[MotionCompensator] = None
-        # Current-frame → reference-frame affine transform (updated each frame).
-        self._current_motion_transform: np.ndarray = np.eye(2, 3, dtype=np.float64)
-        # Reference-frame → current-frame affine transform (inverse of above).
-        # Used to draw zone polygons (defined on the reference frame) on the current frame.
-        self._current_ref_to_cur_transform: np.ndarray = np.eye(2, 3, dtype=np.float64)
+        # Current-frame → reference-frame homography (3x3, updated each frame).
+        # Used by _get_zone_index to remap bbox centers to reference-frame coords.
+        self._current_motion_transform: np.ndarray = np.eye(3, dtype=np.float64)
+        # Reference-frame → current-frame homography (3x3, inverse of above).
+        # Used by _draw_zones_in_out and _apply_exclusion_mask.
+        self._current_ref_to_cur_transform: np.ndarray = np.eye(3, dtype=np.float64)
         # Per-frame motion metrics written to camera_motion.json at the end.
         self.motion_log: List[Dict] = []
 
@@ -247,16 +251,33 @@ class ObjectTracker:
         """
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1
-        color = ZONE_COLORS.colors[zone_type.value].as_bgr() # Utiliza el valor del Enum como índice
-        
+        color = ZONE_COLORS.colors[zone_type.value].as_bgr()
+
+        # Subpixel rendering (shift=4 → 1/16 px precision) with antialiased lines.
+        _SHIFT = 4
+        pts = polygon.reshape(-1, 1, 2).astype(np.float32)
+        pts_shifted = np.round(pts * (1 << _SHIFT)).astype(np.int32)
         cv2.polylines(
-            annotated_frame, [polygon], isClosed=True, color=color, thickness=thickness
+            annotated_frame,
+            [pts_shifted],
+            isClosed=True,
+            color=color,
+            thickness=thickness,
+            lineType=cv2.LINE_AA,
+            shift=_SHIFT,
         )
-        
-        zone_center = sv.get_polygon_center(polygon=polygon)
-        # Asegura que las coordenadas sean enteros para cv2.putText
-        cv2.putText(annotated_frame, name_polygon, (int(zone_center.x), int(zone_center.y)), font, font_scale, color, thickness=thickness)
-        
+
+        zone_center = sv.get_polygon_center(polygon=polygon.reshape(-1, 2))
+        cv2.putText(
+            annotated_frame,
+            name_polygon,
+            (int(zone_center.x), int(zone_center.y)),
+            font,
+            font_scale,
+            color,
+            thickness=thickness,
+        )
+
         return annotated_frame
 
     def _draw_zones_in_out(self, annotated_frame: np.ndarray, thickness: int) -> np.ndarray:
@@ -276,7 +297,10 @@ class ObjectTracker:
             np.ndarray: Frame con todas las zonas dibujadas.
         """
         ref_to_cur = self._current_ref_to_cur_transform
-        needs_warp = not np.allclose(ref_to_cur, np.eye(2, 3))
+        if ref_to_cur.shape == (3, 3):
+            needs_warp = not np.allclose(ref_to_cur, np.eye(3))
+        else:
+            needs_warp = not np.allclose(ref_to_cur, np.eye(2, 3))
 
         for i, (zone_in, zone_out) in enumerate(zip(self.zone_in_polygons, self.zone_out_polygons)):
             poly_in = zone_in["polygon"]
@@ -302,7 +326,10 @@ class ObjectTracker:
             return frame
         overlay = frame.copy()
         ref_to_cur = self._current_ref_to_cur_transform
-        needs_warp = not np.allclose(ref_to_cur, np.eye(2, 3))
+        if ref_to_cur.shape == (3, 3):
+            needs_warp = not np.allclose(ref_to_cur, np.eye(3))
+        else:
+            needs_warp = not np.allclose(ref_to_cur, np.eye(2, 3))
         for poly in self.excluded_polygons:
             if needs_warp:
                 pts = MotionCompensator.transform_polygon(poly, ref_to_cur)
@@ -606,6 +633,33 @@ class ObjectTracker:
             display_video (bool): Si es True, muestra la ventana del video. Por defecto: True.
         """
             
+        # --- Phase 1: pre-compute camera motion (first video pass, no YOLO) ---
+        # This reads the video at reduced resolution, chains frame-to-frame
+        # homographies with periodic ORB re-anchoring, then applies zero-phase
+        # Gaussian smoothing to eliminate estimation noise before the YOLO pass.
+        if self.compensation_enabled:
+            try:
+                print("Camera motion pre-compute: starting first video pass …")
+                self._compensator = MotionCompensator.pre_compute(
+                    video_path,
+                    scale=_COMPENSATION_SCALE,
+                    smooth_sigma=_COMPENSATION_SMOOTH_SIGMA,
+                    anchor_interval=_COMPENSATION_ANCHOR_INTERVAL,
+                    max_frames=max_frames,
+                )
+                n_frames_precomputed = len(self._compensator._homographies or {})
+                print(
+                    f"Camera motion pre-compute: done "
+                    f"({n_frames_precomputed} frames, "
+                    f"scale={_COMPENSATION_SCALE}, "
+                    f"smooth_sigma={_COMPENSATION_SMOOTH_SIGMA}, "
+                    f"anchor_interval={_COMPENSATION_ANCHOR_INTERVAL})"
+                )
+            except Exception as e:
+                print(f"Warning: motion pre-compute failed ({e}). Compensation disabled.")
+                self._compensator = None
+                self.compensation_enabled = False
+
         cap = cv2.VideoCapture(video_path)
 
         if not cap.isOpened():
@@ -671,17 +725,7 @@ class ObjectTracker:
 
             act_frame += 1
 
-            # Initialize the motion compensator on the first frame (= reference frame).
-            if act_frame == 1 and self.compensation_enabled:
-                self._compensator = MotionCompensator(
-                    frame,
-                    scale=_COMPENSATION_SCALE,
-                    deadband_px=_COMPENSATION_DEADBAND_PX,
-                )
-                print(
-                    f"Camera motion compensation: ON "
-                    f"(scale={_COMPENSATION_SCALE}, deadband={_COMPENSATION_DEADBAND_PX}px)"
-                )
+            # (Compensator already pre-computed before this loop.)
 
             # Mostrar progreso en la terminal
             if progress_enabled:
@@ -708,29 +752,25 @@ class ObjectTracker:
             masked_for_inference = self._apply_exclusion_mask(frame)
             results = self.model.track(masked_for_inference, conf=0.3, iou=0.6, persist=True, verbose=False, agnostic_nms=True, imgsz=infer_imgsz, tracker=self.tracker_path)
 
-            # Estimate camera motion and update the compensation transforms.
+            # Look up the pre-computed smoothed homography for this frame.
             # This must happen BEFORE process_frame so _register_zone_entry_exit
             # and the zone-drawing functions use the up-to-date transforms.
             if self._compensator is not None:
-                vehicle_boxes: Optional[np.ndarray] = None
-                if results and results[0].boxes.id is not None:
-                    vehicle_boxes = results[0].boxes.xyxy.cpu().numpy()
-                # transform: current-frame → reference-frame (used for zone membership tests)
-                transform, metrics = self._compensator.estimate(frame, vehicle_boxes)
-                self._current_motion_transform = transform
-                # Inverse: reference-frame → current-frame (used to draw reference polygons
-                # on the current frame so zone overlays track the physical road).
-                if np.allclose(transform, np.eye(2, 3)):
-                    self._current_ref_to_cur_transform = np.eye(2, 3, dtype=np.float64)
-                else:
-                    self._current_ref_to_cur_transform = cv2.invertAffineTransform(transform)
+                # H_ref_to_cur: reference-frame → current-frame (for drawing)
+                H_ref_to_cur, metrics = self._compensator.get_transform(act_frame)
+                self._current_ref_to_cur_transform = H_ref_to_cur
+                # H_cur_to_ref: current-frame → reference-frame (for zone membership)
+                try:
+                    self._current_motion_transform = np.linalg.inv(H_ref_to_cur)
+                except np.linalg.LinAlgError:
+                    self._current_motion_transform = np.eye(3, dtype=np.float64)
                 self.motion_log.append({
                     "frame": act_frame,
                     **metrics,
-                    # Full 2×3 affine matrix (reference → current).  The frontend
-                    # uses this to warp zone polygons onto the video for each frame.
-                    # Convention: p_current = M @ [px, py, 1]^T
-                    "matrix_ref_to_cur": self._current_ref_to_cur_transform.tolist(),
+                    # 3×3 homography (reference → current).  The frontend uses
+                    # this to warp zone polygon SVG overlays for each video frame.
+                    # Convention: p_current = H @ [px_ref, py_ref, 1]^T
+                    "matrix_ref_to_cur": H_ref_to_cur.tolist(),
                 })
 
             # Procesar el frame (dibujar zonas, BBs, etc.)
@@ -905,19 +945,23 @@ if __name__ == "__main__":
         json.dump({
             "compensation_enabled": _COMPENSATION_ENABLED,
             "scale": _COMPENSATION_SCALE,
-            "deadband_px": _COMPENSATION_DEADBAND_PX,
+            "smooth_sigma": _COMPENSATION_SMOOTH_SIGMA,
+            "anchor_interval": _COMPENSATION_ANCHOR_INTERVAL,
+            # Signals to the frontend that matrix_ref_to_cur is 3x3 homography.
+            # Old files (lacking this key or having a 2-row matrix) use the 2x3
+            # affine path in camera-motion.ts for backward compatibility.
+            "matrix_format": "homography_3x3",
             # Convention for matrix_ref_to_cur (present in each frame entry):
-            #   p_current = M @ [px_ref, py_ref, 1]^T
-            # That is: apply this 2x3 matrix to any point defined in the reference
-            # frame (frame 1) to get its position in the current frame.
-            # The identity matrix means no camera movement (or motion below deadband).
-            # Rotation centre: image origin (top-left), consistent with cv2.warpAffine.
+            #   p_current = H @ [px_ref, py_ref, 1]^T   (homogeneous, divide by w)
+            # Apply this 3x3 matrix to any reference-frame point to obtain its
+            # position in the current frame.  Identity = no camera movement.
             "convention": (
-                "matrix_ref_to_cur maps reference-frame coordinates to current-frame "
-                "coordinates. Apply it to zone polygon vertices (defined on frame 1) "
-                "to draw them correctly on each video frame. "
-                "p_current = M @ [px_ref, py_ref, 1]^T. "
-                "Identity when motion is absent or below the deadband."
+                "matrix_ref_to_cur is a 3x3 projective homography mapping "
+                "reference-frame coordinates to current-frame coordinates. "
+                "Apply it to zone polygon vertices (defined on frame 1) to draw "
+                "them correctly on each video frame. "
+                "p_current = H @ [px_ref, py_ref, 1]^T (divide by third component). "
+                "Identity when motion estimation produced no valid result."
             ),
             "frames": tracker.motion_log,
         }, f, ensure_ascii=False, indent=2)
