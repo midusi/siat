@@ -41,7 +41,7 @@ El procesamiento se hace en **dos pasadas** sobre el video (el procesamiento es 
 2. **Seguimiento frame a frame:** se detectan puntos característicos (`goodFeaturesToTrack`) y se siguen al frame siguiente con flujo óptico piramidal de Lucas-Kanade. Como el desplazamiento entre frames consecutivos es pequeño, la estimación es precisa.
 3. Con esas correspondencias se ajusta una homografía con **RANSAC** (`findHomography`). RANSAC descarta como valores atípicos los puntos que se mueven distinto del fondo, como los vehículos, que funcionan así como una máscara implícita.
 4. Las homografías entre frames consecutivos se **encadenan** (producto de matrices) para obtener la transformación referencia → frame `t`.
-5. **Re-anclaje periódico:** cada `CAMERA_MOTION_ANCHOR_INTERVAL` frames (30 por defecto) se vuelve a estimar la transformación directamente contra el frame de referencia con ORB, para cortar la deriva acumulada del encadenamiento.
+5. **Re-anclaje periódico con corrección distribuida:** cada `CAMERA_MOTION_ANCHOR_INTERVAL` frames (30 por defecto) se vuelve a estimar la transformación directamente contra el frame de referencia con ORB. La cadena **no se reemplaza** por esa estimación: se registra el desvío entre ambas (en las 4 esquinas del cuadro) y, terminada la pasada, se reparte linealmente sobre los frames que acumularon esa deriva. El desvío vale cero en el frame de referencia y después del último ancla se mantiene constante. Así se elimina la deriva sin un salto en el frame del ancla. Solo si el seguimiento se pierde en ese frame se adopta directamente la estimación ORB.
 6. **Suavizado temporal de fase cero:** se proyectan las 4 esquinas del cuadro con cada homografía, se suavizan sus trayectorias con un filtro gaussiano (σ = 1,5 frames) aplicado hacia adelante y hacia atrás, y se recalcula la homografía a partir de las esquinas suavizadas (`getPerspectiveTransform`). Al ser de fase cero, no introduce retraso respecto del movimiento real.
 7. Las matrices se reescalan a resolución completa: `H_full = S⁻¹ · H_scaled · S`, con `S = diag(s, s, 1)`.
 
@@ -141,7 +141,22 @@ Las zonas cercanas a los bordes del cuadro eran las que más temblaban en V0. Es
   4. Los vértices se redondeaban a píxel entero al dibujar.
 - **V1 (descartada).** El encadenamiento frame a frame redujo el temblor, pero después de cada re-anclaje ORB el frame previo se reiniciaba al de referencia en lugar del frame actual. Así, el paso siguiente estimaba referencia → `t+1` y lo encadenaba sobre referencia → `t`, duplicando el desplazamiento cada 30 frames. Corregido usando siempre el frame actual como previo.
 - **V2 (reemplazada).** Cumple el objetivo de precisión (≤ 3 px), pero suaviza cada coeficiente de la matriz por separado, lo que no es geométricamente válido para homografías.
-- **V3 (final).** Suaviza las trayectorias de las esquinas y recalcula la homografía. En este video da los mismos números que V2 porque las matrices están cerca de la identidad, pero sigue siendo correcto con movimientos grandes o lentes de gran angular.
+- **V3 (reemplazada).** Suaviza las trayectorias de las esquinas y recalcula la homografía. En este video da los mismos números que V2 porque las matrices están cerca de la identidad, pero sigue siendo correcto con movimientos grandes o lentes de gran angular.
+- **V4 (final).** Corrige un defecto que las métricas anteriores no capturaban; se describe a continuación.
+
+**V4: saltos periódicos en el re-anclaje.** Al revisar V3 en el navegador se observó que las zonas se desplazaban levemente y volvían, sin regresar del todo a su lugar, con un vaivén apenas perceptible. Las métricas de la tabla no lo mostraban porque miden la suavidad de la trayectoria de la zona (temblor) y el error contra la referencia en unos pocos frames (precisión), pero no el movimiento *relativo* entre la zona y la calle frame a frame.
+
+Para medirlo se definió una métrica adicional, el **residual frame a frame**: cada frame se estabiliza con la inversa de su homografía (actual → referencia) y se mide, por correlación de fase, el desplazamiento del recorte de calle bajo cada zona respecto del frame anterior. Con una compensación perfecta, el recorte estabilizado no se mueve. Se informa la mediana entre las 7 zonas, que es robusta a los vehículos que cruzan una zona.
+
+Agrupando ese residual según la posición del frame dentro del intervalo de anclaje (frame mod 30) apareció la causa:
+
+| Posición en el intervalo | V3 | V4 |
+|--------------------------|----|----|
+| Frames alejados del ancla (3–27) | ~0,35 px | ~0,30 px |
+| Frames junto al ancla (28, 29, 0, 1, 2) | 0,64–1,57 px | **0,26–0,33 px** |
+| Media general | 0,473 px | **0,304 px** (−36 %) |
+
+En V3, cada re-anclaje reemplazaba la cadena por la estimación ORB y corregía en un solo frame la deriva acumulada durante los 30 anteriores. El suavizado (σ = 1,5) solo distribuía ese salto en unos 5 frames, y el resultado era un pequeño escalón cada segundo. V4 reparte la corrección a lo largo de todo el intervalo (ver paso 5 del algoritmo) y el escalón desaparece. Como efecto secundario, el desvío respecto del frame 1 también baja: por ejemplo, la mediana de la zona out_3 pasa de 1,71 px a 0,79 px. El costo de la primera pasada no cambia.
 
 ### 1.8 Limitaciones
 
