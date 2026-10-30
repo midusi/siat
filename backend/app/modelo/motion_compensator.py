@@ -215,6 +215,10 @@ class MotionCompensator:
         if not cap.isOpened():
             raise RuntimeError(f"MotionCompensator.pre_compute: cannot open {video_path!r}")
 
+        # Full-resolution dimensions — needed later to define smoothing corners.
+        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
         raw_Hs: list[np.ndarray] = []
         frame_indices: list[int] = []
 
@@ -314,17 +318,50 @@ class MotionCompensator:
         inv_s = 1.0 / scale
         full_Hs = [_scale_homography(H, inv_s) for H in raw_Hs]
 
-        # --- Zero-phase Gaussian smoothing across all frames ---
+        # --- Zero-phase Gaussian smoothing (geometrically valid) ---
+        #
+        # Smoothing raw H[i,j] entries independently is NOT valid: those entries
+        # have no isolated geometric meaning and their averages produce matrices
+        # that are not geometrically meaningful averages of the transformations.
+        #
+        # Correct approach:
+        #   1. Warp the 4 frame corners through each raw H — this gives the actual
+        #      pixel displacement of known points over time.
+        #   2. Apply Gaussian smoothing to each corner's (x, y) trajectory.
+        #   3. Refit a new H from the 4 smoothed src→dst pairs using
+        #      getPerspectiveTransform (exact DLT — 4 points determine H uniquely).
         n = len(full_Hs)
-        H_arr = np.array(full_Hs, dtype=np.float64)  # (n, 3, 3)
-        H_smooth = np.empty_like(H_arr)
-        for i in range(3):
-            for j in range(3):
-                H_smooth[:, i, j] = _gaussian_smooth_1d(H_arr[:, i, j], smooth_sigma)
+        corners_ref = np.array(
+            [
+                [0.0,           0.0          ],
+                [frame_w - 1.0, 0.0          ],
+                [frame_w - 1.0, frame_h - 1.0],
+                [0.0,           frame_h - 1.0],
+            ],
+            dtype=np.float64,
+        )
+
+        warped = np.zeros((n, 4, 2), dtype=np.float64)
+        for k, H in enumerate(full_Hs):
+            pts = corners_ref.reshape(-1, 1, 2).astype(np.float32)
+            w = cv2.perspectiveTransform(pts, H.astype(np.float32))
+            warped[k] = w.reshape(-1, 2)
+
+        warped_sm = np.empty_like(warped)
+        for ci in range(4):
+            for d in range(2):
+                warped_sm[:, ci, d] = _gaussian_smooth_1d(warped[:, ci, d], smooth_sigma)
+
+        src_corners = corners_ref.astype(np.float32)
+        smooth_Hs: list[np.ndarray] = []
+        for k in range(n):
+            dst_corners = warped_sm[k].astype(np.float32)
+            H_fit = cv2.getPerspectiveTransform(src_corners, dst_corners)
+            smooth_Hs.append(H_fit if H_fit is not None else full_Hs[k])
 
         # --- Store indexed by 1-based frame number ---
         for k, fidx in enumerate(frame_indices):
-            instance._homographies[fidx] = H_smooth[k]
+            instance._homographies[fidx] = smooth_Hs[k]
 
         return instance
 

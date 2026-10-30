@@ -233,6 +233,9 @@
 
 	// ID del bucle de animación para poder cancelarlo
 	let animationFrameId: number | null = null;
+	// ID del callback requestVideoFrameCallback (frame-accurate zone warping).
+	// null when rVFC is not scheduled (unsupported browser, paused, or stopped).
+	let videoFrameCallbackId: number | null = null;
 	// Para no volver a procesar el mismo frame en el bucle
 	let lastProcessedFrame = -1;
 	// CAMBIO 2: Renombramos la constante para que sea más claro que es la duración del desvanecimiento.
@@ -363,8 +366,12 @@
 
 		const currentTime = videoElement.currentTime;
 		const currentFrame = computeCurrentFrameFromTime(currentTime);
-		// Keep currentVideoFrame in sync so polygon warp rerenders on frame change.
-		currentVideoFrame = currentFrame;
+		// Only update currentVideoFrame from the RAF path when requestVideoFrameCallback
+		// is NOT active. When rVFC is running it sets currentVideoFrame with
+		// frame-accurate mediaTime, which is more precise than currentTime rounding.
+		if (videoFrameCallbackId === null) {
+			currentVideoFrame = currentFrame;
+		}
 
 		// Detectar loop (el tiempo se resetea de fin a inicio sin pausa)
 		if (currentTime + 0.05 < lastVideoTime) {
@@ -447,6 +454,9 @@
 		if (!videoElement) return;
 		const currentTime = videoElement.currentTime;
 		const currentFrame = computeCurrentFrameFromTime(currentTime);
+		// Keep currentVideoFrame in sync so scaledPolygonPointsWarped uses the
+		// correct frame when paused or after a seek (rVFC does not fire while paused).
+		currentVideoFrame = currentFrame;
 		// BBoxes generales del frame actual
 		generalDisplayBBoxes = generalBBoxesByFrame.get(currentFrame) ?? [];
 		// Rect del bbox seleccionado si existe en este frame
@@ -488,6 +498,7 @@
 			}
 
 			animationFrameId = requestAnimationFrame(animationLoop);
+			startVideoFrameCallback();
 		}
 	}
 
@@ -495,6 +506,48 @@
 		if (animationFrameId !== null) {
 			cancelAnimationFrame(animationFrameId);
 			animationFrameId = null;
+		}
+		stopVideoFrameCallback();
+	}
+
+	/**
+	 * Start a requestVideoFrameCallback chain to set currentVideoFrame with
+	 * frame-accurate mediaTime rather than the coarser currentTime rounding
+	 * used by the RAF path.
+	 *
+	 * Convention: backend frame 1 = reference = first decoded frame
+	 *   (mediaTime ≈ 0 s).  Frame index = round(mediaTime × fps) + 1.
+	 *
+	 * Falls back silently when the browser does not support rVFC — in that
+	 * case the RAF path continues to update currentVideoFrame via currentTime.
+	 */
+	function startVideoFrameCallback() {
+		if (videoFrameCallbackId !== null || !videoElement) return;
+		if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return;
+
+		const fps = videoFps > 0 ? videoFps : 30;
+		const cb = (_now: number, metadata: { mediaTime: number }) => {
+			if (!videoElement || videoElement.paused) {
+				videoFrameCallbackId = null;
+				return;
+			}
+			// Round to nearest integer frame (avoids off-by-one at frame boundaries).
+			// Clamp to the known data range when available.
+			const fi = Math.round(metadata.mediaTime * fps) + 1;
+			currentVideoFrame =
+				dataFrameFirst !== null
+					? Math.max(dataFrameFirst, Math.min(fi, dataFrameLast ?? fi))
+					: Math.max(1, fi);
+			// Re-register for the next frame.
+			videoFrameCallbackId = (videoElement as any).requestVideoFrameCallback(cb);
+		};
+		videoFrameCallbackId = (videoElement as any).requestVideoFrameCallback(cb);
+	}
+
+	function stopVideoFrameCallback() {
+		if (videoFrameCallbackId !== null && videoElement) {
+			(videoElement as any).cancelVideoFrameCallback(videoFrameCallbackId);
+			videoFrameCallbackId = null;
 		}
 	}
 
