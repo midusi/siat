@@ -287,14 +287,17 @@ class MotionCompensator:
                     if verbose:
                         print(f"  [motion] frame {frame_idx}: re-anchored via ORB")
                     H_cumulative = H_anchor
-                    # Reset prev to reference so next step is from a clean base.
-                    prev_gray = ref_gray.copy() if ref_gray is not None else curr_gray.copy()
-                    prev_kps = ref_kps.copy() if ref_kps is not None else None
+                    # Continue chaining FROM curr (not from ref!).
+                    # If we set prev=ref here, the next H_step would map ref→t+1
+                    # and we'd chain H_ref_to_t1 @ H_ref_to_t — wrong.
+                    # Setting prev=curr means H_step next iteration = H_t_to_t+1,
+                    # so H_cumulative = H_t_to_t+1 @ H_anchor = H_ref_to_t+1 ✓
                 else:
                     if verbose:
                         print(f"  [motion] frame {frame_idx}: ORB re-anchor failed, replenishing")
-                    prev_gray = curr_gray.copy()
-                    prev_kps = instance._detect_features(curr_gray)
+                # Either way, continue tracking from current frame.
+                prev_gray = curr_gray.copy()
+                prev_kps = instance._detect_features(curr_gray)
             elif prev_kps is None or len(prev_kps) < min_features:
                 # Replenish sparse point set
                 prev_kps = instance._detect_features(curr_gray)
