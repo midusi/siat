@@ -22,9 +22,9 @@ export type AffineMatrix = [[number, number, number], [number, number, number]];
 
 /** A 3×3 projective homography stored row-major. */
 export type HomographyMatrix = [
-    [number, number, number],
-    [number, number, number],
-    [number, number, number],
+	[number, number, number],
+	[number, number, number],
+	[number, number, number]
 ];
 
 /** Either a 2×3 affine (legacy) or a 3×3 homography (current). */
@@ -32,56 +32,61 @@ export type MotionMatrix = AffineMatrix | HomographyMatrix;
 
 /** Per-frame entry from camera_motion.json. */
 export interface FrameMotion {
-    frame: number;
-    dx: number;
-    dy: number;
-    angle_deg: number;
-    magnitude_px: number;
-    matrix_ref_to_cur: MotionMatrix;
+	frame: number;
+	dx: number;
+	dy: number;
+	angle_deg: number;
+	magnitude_px: number;
+	matrix_ref_to_cur: MotionMatrix;
 }
 
 /** Full camera_motion.json structure. */
 export interface CameraMotionData {
-    compensation_enabled: boolean;
-    scale: number;
-    /** Present in files produced by the 3x3 homography code. */
-    matrix_format?: string;
-    /** Present in legacy files; not used by the frontend logic. */
-    deadband_px?: number;
-    smooth_sigma?: number;
-    anchor_interval?: number;
-    convention?: string;
-    frames: FrameMotion[];
+	compensation_enabled: boolean;
+	scale: number;
+	/** Present in files produced by the 3x3 homography code. */
+	matrix_format?: string;
+	/** Present in legacy files; not used by the frontend logic. */
+	deadband_px?: number;
+	smooth_sigma?: number;
+	anchor_interval?: number;
+	convention?: string;
+	frames: FrameMotion[];
 }
 
-const IDENTITY_2X3: AffineMatrix = [
-    [1, 0, 0],
-    [0, 1, 0],
-];
-
 const IDENTITY_3X3: HomographyMatrix = [
-    [1, 0, 0],
-    [0, 1, 0],
-    [0, 0, 1],
+	[1, 0, 0],
+	[0, 1, 0],
+	[0, 0, 1]
 ];
 
 function isAffine(m: MotionMatrix): m is AffineMatrix {
-    return m.length === 2;
+	return m.length === 2;
 }
 
 function isIdentity(m: MotionMatrix): boolean {
-    if (isAffine(m)) {
-        return (
-            m[0][0] === 1 && m[0][1] === 0 && m[0][2] === 0 &&
-            m[1][0] === 0 && m[1][1] === 1 && m[1][2] === 0
-        );
-    }
-    const h = m as HomographyMatrix;
-    return (
-        h[0][0] === 1 && h[0][1] === 0 && h[0][2] === 0 &&
-        h[1][0] === 0 && h[1][1] === 1 && h[1][2] === 0 &&
-        h[2][0] === 0 && h[2][1] === 0 && h[2][2] === 1
-    );
+	if (isAffine(m)) {
+		return (
+			m[0][0] === 1 &&
+			m[0][1] === 0 &&
+			m[0][2] === 0 &&
+			m[1][0] === 0 &&
+			m[1][1] === 1 &&
+			m[1][2] === 0
+		);
+	}
+	const h = m as HomographyMatrix;
+	return (
+		h[0][0] === 1 &&
+		h[0][1] === 0 &&
+		h[0][2] === 0 &&
+		h[1][0] === 0 &&
+		h[1][1] === 1 &&
+		h[1][2] === 0 &&
+		h[2][0] === 0 &&
+		h[2][1] === 0 &&
+		h[2][2] === 1
+	);
 }
 
 /**
@@ -90,12 +95,12 @@ function isIdentity(m: MotionMatrix): boolean {
  * Returns the transformed point (not rounded — caller decides precision).
  */
 export function applyAffine(
-    point: readonly [number, number],
-    matrix: AffineMatrix,
+	point: readonly [number, number],
+	matrix: AffineMatrix
 ): [number, number] {
-    const [x, y] = point;
-    const [[a, b, c], [d, e, f]] = matrix;
-    return [a * x + b * y + c, d * x + e * y + f];
+	const [x, y] = point;
+	const [[a, b, c], [d, e, f]] = matrix;
+	return [a * x + b * y + c, d * x + e * y + f];
 }
 
 /**
@@ -105,17 +110,17 @@ export function applyAffine(
  * pixel space.  Returns the transformed point (not rounded).
  */
 export function applyHomography(
-    point: readonly [number, number],
-    matrix: HomographyMatrix,
+	point: readonly [number, number],
+	matrix: HomographyMatrix
 ): [number, number] {
-    const [x, y] = point;
-    const [[a, b, c], [d, e, f], [g, h, i]] = matrix;
-    const w = g * x + h * y + i;
-    if (Math.abs(w) < 1e-10) {
-        // Degenerate: return point unchanged rather than Infinity
-        return [x, y];
-    }
-    return [(a * x + b * y + c) / w, (d * x + e * y + f) / w];
+	const [x, y] = point;
+	const [[a, b, c], [d, e, f], [g, h, i]] = matrix;
+	const w = g * x + h * y + i;
+	if (Math.abs(w) < 1e-10) {
+		// Degenerate: return point unchanged rather than Infinity
+		return [x, y];
+	}
+	return [(a * x + b * y + c) / w, (d * x + e * y + f) / w];
 }
 
 /**
@@ -125,13 +130,13 @@ export function applyHomography(
  * need to know which format the camera_motion.json was produced with.
  */
 export function applyTransform(
-    point: readonly [number, number],
-    matrix: MotionMatrix,
+	point: readonly [number, number],
+	matrix: MotionMatrix
 ): [number, number] {
-    if (isAffine(matrix)) {
-        return applyAffine(point, matrix);
-    }
-    return applyHomography(point, matrix as HomographyMatrix);
+	if (isAffine(matrix)) {
+		return applyAffine(point, matrix);
+	}
+	return applyHomography(point, matrix as HomographyMatrix);
 }
 
 /**
@@ -143,11 +148,11 @@ export function applyTransform(
  * @returns       New polygon array in current-frame coordinates.
  */
 export function warpPolygon(
-    poly: ReadonlyArray<readonly [number, number]>,
-    matrix: MotionMatrix,
+	poly: ReadonlyArray<readonly [number, number]>,
+	matrix: MotionMatrix
 ): [number, number][] {
-    if (isIdentity(matrix)) return poly.map(([x, y]) => [x, y]);
-    return poly.map((pt) => applyTransform(pt, matrix));
+	if (isIdentity(matrix)) return poly.map(([x, y]) => [x, y]);
+	return poly.map((pt) => applyTransform(pt, matrix));
 }
 
 /**
@@ -155,14 +160,12 @@ export function warpPolygon(
  * camera_motion.json.  Frames absent from the file are not in the map;
  * callers should fall back to identity when not found.
  */
-export function buildFrameMotionMap(
-    frames: FrameMotion[],
-): Map<number, MotionMatrix> {
-    const map = new Map<number, MotionMatrix>();
-    for (const entry of frames) {
-        map.set(entry.frame, entry.matrix_ref_to_cur);
-    }
-    return map;
+export function buildFrameMotionMap(frames: FrameMotion[]): Map<number, MotionMatrix> {
+	const map = new Map<number, MotionMatrix>();
+	for (const entry of frames) {
+		map.set(entry.frame, entry.matrix_ref_to_cur);
+	}
+	return map;
 }
 
 /**
@@ -174,10 +177,7 @@ export function buildFrameMotionMap(
  *
  * The returned matrix can be passed directly to warpPolygon().
  */
-export function getFrameMatrix(
-    map: Map<number, MotionMatrix> | null,
-    frame: number,
-): MotionMatrix {
-    if (!map || map.size === 0) return IDENTITY_3X3;
-    return map.get(frame) ?? IDENTITY_3X3;
+export function getFrameMatrix(map: Map<number, MotionMatrix> | null, frame: number): MotionMatrix {
+	if (!map || map.size === 0) return IDENTITY_3X3;
+	return map.get(frame) ?? IDENTITY_3X3;
 }

@@ -10,7 +10,7 @@
 		buildFrameMotionMap,
 		getFrameMatrix,
 		warpPolygon,
-		type AffineMatrix,
+		type MotionMatrix,
 		type CameraMotionData,
 	} from '$lib/camera-motion';
 
@@ -108,7 +108,7 @@
 
 	// Camera motion compensation — zone polygon warping.
 	// Populated in background when the task has a cameraMotionUrl.
-	let cameraMotionMap = $state<Map<number, AffineMatrix> | null>(null);
+	let cameraMotionMap = $state<Map<number, MotionMatrix> | null>(null);
 	// Current video frame tracked for polygon warping (updated by the animation loop).
 	let currentVideoFrame = $state(0);
 	let rutas = $state<Rutas>({});
