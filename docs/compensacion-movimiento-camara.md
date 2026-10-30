@@ -76,7 +76,17 @@ La variable `CAMERA_MOTION_DEADBAND_PX` de la primera versión ya no se usa.
 - **Precisión:** error de reproyección mediano, en píxeles, de correspondencias independientes entre el frame de referencia y el frame `t`. Se obtienen con SIFT, test de razón de Lowe (r = 0,75) y RANSAC (umbral 3 px), y se usan solo los inliers, es decir, el fondo estático. Se informa por regiones del cuadro, incluidos los bordes.
 - **Costo:** milisegundos por frame de la estimación de movimiento, en CPU.
 
-> **Nota metodológica.** Una primera versión de la métrica de precisión usaba todas las correspondencias ORB, incluidas las de vehículos en movimiento. Eso inflaba el error (34–57 px) y lo hacía inconsistente entre corridas. Restringirla a inliers de fondo estático con SIFT dio valores estables y comparables entre variantes.
+> **Nota metodológica.** Una primera versión de la métrica de precisión usaba la media del error de todas las correspondencias ORB, incluidas las de vehículos en movimiento y los falsos emparejamientos. Eso inflaba el error (34–57 px) y lo hacía inconsistente entre corridas. Para comprobarlo se evaluaron tres métricas sobre exactamente las mismas transformaciones (V0) y los mismos frames:
+>
+> | Métrica | Error V0 |
+> |---------|----------|
+> | M1: ORB, todas las correspondencias, media | 122,2 px |
+> | M2: ORB, todas las correspondencias, mediana | 6,78 px |
+> | M3: SIFT + test de razón + RANSAC, solo inliers, mediana | 4,45 px |
+>
+> El 37 % de las correspondencias de M1 eran atípicas, con un error medio de 170,7 px. Todos los resultados de este documento usan M3.
+>
+> De forma análoga, el valor absoluto del temblor depende de qué vértices se miden: las zonas cerca de los bordes muestran más movimiento aparente. Por eso se informa la media sobre las 7 zonas reales. La reducción relativa entre variantes fue consistente (91–94 %) en todas las corridas.
 
 ### 1.7 Experimentos y resultados
 
@@ -90,6 +100,17 @@ La variable `CAMERA_MOTION_DEADBAND_PX` de la primera versión ya no se usa.
 V3 frente a V0: **−91,4 % de temblor** y **−69,0 % de error de precisión**, con el mismo costo computacional.
 
 ![Temblor medio por variante](img/camera-motion/jitter_summary_bar.png)
+
+**Precisión por región del cuadro** (métrica M3, error mediano de todas las correspondencias de la región):
+
+| Región | V0 (afín) | V3 (homografía) | Mejora |
+|--------|-----------|-----------------|--------|
+| Centro | 5,338 px | 1,289 px | −75,9 % |
+| Borde derecho | 17,320 px | 2,105 px | −87,8 % |
+| Borde inferior | 28,991 px | 2,094 px | −92,8 % |
+| **Global** | **4,446 px** | **1,367 px** | **−69,2 %** |
+
+El error del modelo afín crece fuertemente hacia los bordes porque no puede representar la perspectiva. La homografía mantiene todas las regiones por debajo de 3 px. La tabla de variantes de arriba informa el promedio de las medianas por región (1,476 px); esta tabla informa la mediana global (1,367 px).
 
 ![Precisión por región del cuadro (V3)](img/camera-motion/accuracy_by_region.png)
 
