@@ -62,6 +62,47 @@ def _gaussian_smooth_1d(arr: np.ndarray, sigma: float) -> np.ndarray:
     return np.convolve(padded, kernel, mode="valid")
 
 
+def _distribute_anchor_corrections(
+    chain_corners: np.ndarray,
+    anchors: Dict[int, np.ndarray],
+) -> np.ndarray:
+    """
+    Remove chained-tracking drift by spreading each re-anchor correction over
+    the frames that accumulated it, instead of applying it in a single frame.
+
+    Snapping the chain to the anchor estimate produces a visible jump every
+    anchor interval (the drift accumulated since the previous anchor is
+    corrected in one frame). Because the pass is offline, the correction can
+    be distributed retroactively: the corner offset (anchor - chain) is known
+    at every anchor frame, is zero at the reference frame, and is linearly
+    interpolated in between. After the last anchor the offset is held.
+
+    Parameters
+    ----------
+    chain_corners:
+        (n, 4, 2) frame-corner trajectories from the continuous LK chain.
+    anchors:
+        Mapping from 0-based frame index to the (4, 2) corner positions
+        given by the drift-free reference match at that frame.
+    """
+    if not anchors:
+        return chain_corners.copy()
+    n = len(chain_corners)
+    idx = sorted(k for k in anchors if 0 < k < n)
+    if not idx:
+        return chain_corners.copy()
+    knots = np.array([0] + idx, dtype=np.float64)
+    offsets = np.stack(
+        [np.zeros_like(chain_corners[0])] + [anchors[k] - chain_corners[k] for k in idx]
+    )
+    frames = np.arange(n, dtype=np.float64)
+    out = chain_corners.copy()
+    for ci in range(chain_corners.shape[1]):
+        for d in range(chain_corners.shape[2]):
+            out[:, ci, d] += np.interp(frames, knots, offsets[:, ci, d])
+    return out
+
+
 def _scale_homography(H: np.ndarray, inv_scale: float) -> np.ndarray:
     """
     Convert a homography estimated at scaled resolution back to full resolution.
@@ -221,6 +262,8 @@ class MotionCompensator:
 
         raw_Hs: list[np.ndarray] = []
         frame_indices: list[int] = []
+        # Drift-free reference matches, keyed by position in raw_Hs.
+        anchor_Hs: Dict[int, np.ndarray] = {}
 
         ref_gray: Optional[np.ndarray] = None
         ref_kps: Optional[np.ndarray] = None
@@ -290,12 +333,20 @@ class MotionCompensator:
                 if H_anchor is not None:
                     if verbose:
                         print(f"  [motion] frame {frame_idx}: re-anchored via ORB")
-                    H_cumulative = H_anchor
+                    # The anchor is recorded, not snapped to: the drift it reveals
+                    # is spread over the preceding frames after the pass (see
+                    # _distribute_anchor_corrections). Snapping here would make
+                    # the zones jump once per anchor interval. Only when the
+                    # chain itself broke (LK failed) is the anchor adopted
+                    # directly, since there is no valid chained estimate.
+                    if not stepped:
+                        H_cumulative = H_anchor
+                    anchor_Hs[len(raw_Hs)] = H_anchor
                     # Continue chaining FROM curr (not from ref!).
                     # If we set prev=ref here, the next H_step would map ref→t+1
                     # and we'd chain H_ref_to_t1 @ H_ref_to_t — wrong.
                     # Setting prev=curr means H_step next iteration = H_t_to_t+1,
-                    # so H_cumulative = H_t_to_t+1 @ H_anchor = H_ref_to_t+1 ✓
+                    # so H_cumulative = H_t_to_t+1 @ H_ref_to_t = H_ref_to_t+1 ✓
                 else:
                     if verbose:
                         print(f"  [motion] frame {frame_idx}: ORB re-anchor failed, replenishing")
@@ -341,11 +392,18 @@ class MotionCompensator:
             dtype=np.float64,
         )
 
-        warped = np.zeros((n, 4, 2), dtype=np.float64)
-        for k, H in enumerate(full_Hs):
-            pts = corners_ref.reshape(-1, 1, 2).astype(np.float32)
-            w = cv2.perspectiveTransform(pts, H.astype(np.float32))
-            warped[k] = w.reshape(-1, 2)
+        pts = corners_ref.reshape(-1, 1, 2)
+
+        def _corners(H: np.ndarray) -> np.ndarray:
+            return cv2.perspectiveTransform(pts, H).reshape(-1, 2)
+
+        warped = np.stack([_corners(H) for H in full_Hs])
+
+        # Remove chain drift gradually between anchors (no per-anchor jump).
+        anchor_corners = {
+            k: _corners(_scale_homography(H, inv_s)) for k, H in anchor_Hs.items()
+        }
+        warped = _distribute_anchor_corrections(warped, anchor_corners)
 
         warped_sm = np.empty_like(warped)
         for ci in range(4):

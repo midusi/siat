@@ -324,3 +324,47 @@ class TestSubpixelDraw:
         rx, ry = MotionCompensator.transform_point((100, 200), H)
         assert rx == 110
         assert ry == 195
+
+
+# ---------------------------------------------------------------------------
+# Anchor correction distribution (no step at re-anchor frames)
+# ---------------------------------------------------------------------------
+
+from app.modelo.motion_compensator import _distribute_anchor_corrections
+
+
+class TestDistributeAnchorCorrections:
+    """Re-anchoring must remove drift without a visible jump at the anchor frame."""
+
+    @staticmethod
+    def _drifting_chain(n: int = 91, drift_per_frame: float = 0.1):
+        true = np.zeros((n, 4, 2))
+        true[:, :, 0] = np.linspace(0, 40, n)[:, None]  # smooth camera pan
+        chain = true + drift_per_frame * np.arange(n)[:, None, None]
+        return true, chain
+
+    def test_no_anchors_returns_chain_unchanged(self):
+        _, chain = self._drifting_chain()
+        out = _distribute_anchor_corrections(chain, {})
+        np.testing.assert_allclose(out, chain)
+
+    def test_matches_anchor_exactly_at_anchor_frames(self):
+        true, chain = self._drifting_chain()
+        anchors = {30: true[30], 60: true[60], 90: true[90]}
+        out = _distribute_anchor_corrections(chain, anchors)
+        for k, v in anchors.items():
+            np.testing.assert_allclose(out[k], v, atol=1e-9)
+
+    def test_linear_drift_fully_removed_without_steps(self):
+        true, chain = self._drifting_chain()
+        anchors = {30: true[30], 60: true[60], 90: true[90]}
+        out = _distribute_anchor_corrections(chain, anchors)
+        np.testing.assert_allclose(out, true, atol=1e-9)
+        # A hard snap would produce a 3 px jump (30 frames * 0.1 px) at each anchor.
+        steps = np.abs(np.diff(out[:, 0, 1]))
+        assert steps.max() < 1e-9
+
+    def test_offset_held_after_last_anchor(self):
+        true, chain = self._drifting_chain()
+        out = _distribute_anchor_corrections(chain, {30: true[30]})
+        np.testing.assert_allclose(out[31:] - chain[31:], np.broadcast_to(true[30] - chain[30], out[31:].shape))
