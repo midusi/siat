@@ -1,11 +1,22 @@
 [project]
 name = "train"
 version = "0.1.0"
-description = "Add your description here"
+description = "Traffic analysis training with YOLO"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
-    "ruff>=0.11.10",
+    "torch",
+    "torchvision",
     "ultralytics>=8.3.0",
+    "ruff>=0.11.10",
     "jupytext>=1.16.0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }

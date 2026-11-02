@@ -1,8 +1,11 @@
 import os
 #import wandb
 from ultralytics import YOLO
+from pathlib import Path
 
 FROM_SCRATCH = True
+
+BASE_DIR = Path(__file__).resolve().parent
 
 config = {
     # Trazabilidad
@@ -12,14 +15,14 @@ config = {
 
     # Modelo y Dataset
     "from_scratch": FROM_SCRATCH,
-    "model_base": "yolo11m.pt" if FROM_SCRATCH else "yolo11m.yaml", 
+    "model_base": "yolo11s.pt" if FROM_SCRATCH else "yolo11m.yaml", 
 
 
-    "data": "../../dataset/process/test_finetune1/data.yaml",
+    "data": "../../dataset/process/test1/data.yaml",
     "epochs": 300 if FROM_SCRATCH else 100,
     "imgsz": 1280,
-    "batch": 8,
-    "device": "cpu", # 0 GPU, "cpu" CPU
+    "batch": 4, # 2 o 4 para GPU con poca VRAM; 8 si mas; -1 auto
+    "device": 0, # 0 GPU, "cpu" CPU
 
     "patience": 15,
     
@@ -31,7 +34,8 @@ config = {
     "mixup":0.5,
 
     #"freeze": 0 if FROM_SCRATCH else 10
-    "project": "runs",
-    "output_figures_dir": "../../reports/figures",
-    "output_result_dir": "../../reports/models"
+    "project": str(BASE_DIR / "runs"),
+    "output_figures_dir": str(BASE_DIR / "reports/figures"),
+    "output_result_dir": str(BASE_DIR / "reports/models")
+
 }
