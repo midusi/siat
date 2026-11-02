@@ -31,6 +31,63 @@ export const sortVertices = (points: Array<Coordinates>): Array<Coordinates> => 
 		.map(({ x, y }) => ({ x, y }));
 };
 
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const clampPoint = (point: Coordinates): Coordinates => ({
+	x: clamp01(point.x),
+	y: clamp01(point.y)
+});
+
+export const movePolygon = (
+	vertices: Array<Coordinates>,
+	dx: number,
+	dy: number
+): Array<Coordinates> => vertices.map((v) => clampPoint({ x: v.x + dx, y: v.y + dy }));
+
+export const moveVertex = (
+	vertices: Array<Coordinates>,
+	index: number,
+	target: Coordinates
+): Array<Coordinates> => vertices.map((v, i) => (i === index ? clampPoint(target) : v));
+
+export const isPointInPolygon = (point: Coordinates, vertices: Array<Coordinates>): boolean => {
+	let inside: boolean = false;
+	for (
+		let current = 0, previous = vertices.length - 1;
+		current < vertices.length;
+		previous = current++
+	) {
+		const start: Coordinates = vertices[current];
+		const end: Coordinates = vertices[previous];
+		const crossesRay: boolean =
+			start.y > point.y !== end.y > point.y &&
+			point.x < ((end.x - start.x) * (point.y - start.y)) / (end.y - start.y) + start.x;
+		if (crossesRay) {
+			inside = !inside;
+		}
+	}
+	return inside;
+};
+
+export const nearestVertexIndex = (
+	point: Coordinates,
+	vertices: Array<Coordinates>,
+	radius: Coordinates
+): number => {
+	let nearest: number = -1;
+	let nearestDistance: number = 1;
+	vertices.forEach((v, index) => {
+		const dx: number = (v.x - point.x) / radius.x;
+		const dy: number = (v.y - point.y) / radius.y;
+		const distance: number = dx * dx + dy * dy;
+		if (distance < nearestDistance) {
+			nearest = index;
+			nearestDistance = distance;
+		}
+	});
+	return nearest;
+};
+
 export const toCanvasPx = (points: Array<Coordinates>, target: Size): Array<Coordinates> =>
 	points.map((p) => ({ x: p.x * target.width, y: p.y * target.height }));
 

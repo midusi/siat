@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Icon from './Icon.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	import type { Snippet } from 'svelte';
 
@@ -19,9 +19,10 @@
 		value = $bindable('')
 	}: Props = $props();
 
-	const id = $props.id();
-	const errorId = `${id}-error`;
-	let visible = $state(false);
+	const id: string = $props.id();
+	const errorId: string = `${id}-error`;
+
+	let visible: boolean = $state(false);
 </script>
 
 <div>

@@ -186,8 +186,7 @@
 		const confirmed: boolean = await showConfirm({
 			message: DELETE_MESSAGE,
 			variant: 'danger',
-			confirmText: 'Eliminar',
-			cancelText: 'Cancelar'
+			confirmText: 'Eliminar'
 		});
 		if (!confirmed) {
 			return;

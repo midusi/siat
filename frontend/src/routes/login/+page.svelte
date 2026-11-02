@@ -12,7 +12,8 @@
 	let password: string = $state('');
 	let username: string = $state('');
 
-	const handleLogin = async (): Promise<void> => {
+	const handleLogin = async (event: SubmitEvent): Promise<void> => {
+		event.preventDefault();
 		error = null;
 		isSubmitting = true;
 		try {
@@ -36,13 +37,7 @@
 			</h1>
 		</div>
 
-		<form
-			class="space-y-4 glass-card p-6 border"
-			onsubmit={(e) => {
-				e.preventDefault();
-				void handleLogin();
-			}}
-		>
+		<form class="space-y-4 glass-card p-6 border" onsubmit={handleLogin}>
 			{#if error}
 				<div class="alert-danger p-2" role="alert">{error}</div>
 			{/if}

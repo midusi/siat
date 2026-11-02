@@ -1,7 +1,7 @@
-import { ApiError, apiError } from './errors';
+import { ApiError, apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
 
-export type UploadProgress = {
+type UploadProgress = {
 	loaded: number;
 	total: number;
 	percentage: number;

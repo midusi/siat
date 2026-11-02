@@ -1,4 +1,4 @@
-import { apiError } from './errors';
+import { apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
 
 import type { NewUser, User } from '$lib/types/user';
@@ -63,18 +63,4 @@ export const changeUserStatus = async (id: number, wantedStatus: boolean): Promi
 	}
 	const data: UserResponse | null = await res.json().catch((): null => null);
 	return data?.user ?? null;
-};
-
-export const resetUserPassword = async (
-	id: number,
-	new_password: string,
-	confirm_password: string
-): Promise<void> => {
-	const res: Response = await apiFetch(`${ADMIN_USER_API}/${id}/reset-password`, {
-		method: 'POST',
-		body: JSON.stringify({ new_password, confirm_password })
-	});
-	if (!res.ok) {
-		throw await apiError(res, 'No se pudo cambiar la contraseña del usuario');
-	}
 };

@@ -19,13 +19,13 @@ export type ChangePasswordErrors = {
 	general: string;
 };
 
-const MIN_PASSWORD_LENGTH: number = 6;
+export const MIN_PASSWORD_LENGTH: number = 6;
 const REQUIRED_MESSAGE: string = 'Requerido';
 const PASSWORD_MISMATCH_MESSAGE: string = 'Las contraseñas no coinciden';
 
 const required = (value: string): string => (value.trim() ? '' : REQUIRED_MESSAGE);
 
-export const validatePassword = (pwd: string): string => {
+const validatePassword = (pwd: string): string => {
 	if (pwd.length < MIN_PASSWORD_LENGTH) {
 		return `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`;
 	}

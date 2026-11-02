@@ -36,7 +36,11 @@
 			onclick={() => ontoggle(user)}
 			aria-busy={toggling}
 			disabled={toggling}
-			class={`glass-button px-2 py-1 text-xs ${user.active ? 'btn-success' : 'btn-danger'} ${toggling ? 'opacity-50 cursor-not-allowed' : ''}`}
+			class={[
+				'glass-button px-2 py-1 text-xs',
+				user.active ? 'btn-success' : 'btn-danger',
+				toggling && 'opacity-50 cursor-not-allowed'
+			]}
 		>
 			{user.active ? 'Activo' : 'Inactivo'}
 		</button>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getFrameMatrix } from '$lib/camera-motion';
+	import { getFrameMatrix } from './camera-motion';
 	import { onMount, untrack } from 'svelte';
 	import { RESERVED_COLORS } from '$lib/colors';
 	import * as review from './review';
@@ -7,12 +7,12 @@
 	import { videoClicks } from '$lib/actions/videoClicks';
 	import ZonesOverlay from './ZonesOverlay.svelte';
 
-	import type { MotionMatrix } from '$lib/camera-motion';
+	import type { FrameMotionMap, MotionMatrix } from './camera-motion';
 
 	type DataFrames = { first: number; last: number };
 	type Props = {
 		activeTrackId?: string | null;
-		cameraMotion: review.CameraMotion | null;
+		cameraMotion: FrameMotionMap | null;
 		excludedZones: Array<Array<review.Vertex>>;
 		height?: number;
 		indeterminados: review.Indeterminados;
@@ -29,9 +29,9 @@
 	};
 	type Timer = ReturnType<typeof setTimeout>;
 
+	const DEFAULT_FPS: number = 30;
 	const ROUTE_ANIMATION_MS: number = 320;
 	const ROUTE_FADE_MS: number = 500;
-	const DEFAULT_FPS: number = 30;
 	const SEEK_BACK_TOLERANCE_S: number = 0.05;
 
 	let {
@@ -166,7 +166,7 @@
 	};
 
 	const getFrameRange = (): review.FrameRange | null => {
-		const dur: number = videoElement?.duration ?? videoDuration ?? 0;
+		const dur: number = videoElement?.duration ?? videoDuration;
 		if (dur <= 0 || !dataFrames) {
 			return null;
 		}
@@ -216,12 +216,12 @@
 		}
 	};
 
-	const addAppearingBoxes = (currentFrame: number): void => {
-		if (currentFrame <= lastProcessedFrame) {
+	const addAppearingBoxes = (upToFrame: number): void => {
+		if (upToFrame <= lastProcessedFrame) {
 			return;
 		}
 		const added: Array<review.DisplayableBBox> = [];
-		for (let frame = lastProcessedFrame + 1; frame <= currentFrame; frame++) {
+		for (let frame = lastProcessedFrame + 1; frame <= upToFrame; frame++) {
 			for (const info of indeterminadosByFrame.get(frame) ?? []) {
 				added.push({
 					id: info.trackId,
@@ -250,19 +250,19 @@
 		}
 		wasPlaying = playing;
 
-		let currentFrame: number = lastProcessedFrame;
+		let tickFrame: number = lastProcessedFrame;
 		if (playing) {
 			const currentTime: number = videoElement.currentTime;
-			currentFrame = computeCurrentFrameFromTime(currentTime);
+			tickFrame = computeCurrentFrameFromTime(currentTime);
 			if (currentTime + SEEK_BACK_TOLERANCE_S < lastVideoTime) {
-				lastProcessedFrame = currentFrame - 1;
+				lastProcessedFrame = tickFrame - 1;
 				playbackBoundingBoxes = [];
 			}
 			lastVideoTime = currentTime;
 			if (videoFrameCallbackId === null) {
-				zoneFrame(currentFrame);
+				zoneFrame(tickFrame);
 			}
-			updateOverlaysForFrame(currentFrame);
+			updateOverlaysForFrame(tickFrame);
 		}
 
 		if (playbackBoundingBoxes.length > 0) {
@@ -274,8 +274,8 @@
 		}
 
 		if (playing) {
-			addAppearingBoxes(currentFrame);
-			lastProcessedFrame = currentFrame;
+			addAppearingBoxes(tickFrame);
+			lastProcessedFrame = tickFrame;
 		}
 
 		overlayFrameId =
@@ -440,7 +440,7 @@
 		routeFadeTimer = setTimeout(clearSelection, ROUTE_FADE_MS);
 	};
 
-	const updateSelectedTrackRoute = (currentFrame: number): void => {
+	const updateSelectedTrackRoute = (frame: number): void => {
 		if (!selectedTrackId) {
 			return;
 		}
@@ -451,12 +451,8 @@
 			return;
 		}
 		const toXY = (p: review.TrackPoint): review.Point => review.boxCenterScaled(p.box, videoScale);
-		const pastPts: Array<review.Point> = trackPoints
-			.filter((p) => p.frame <= currentFrame)
-			.map(toXY);
-		const futurePts: Array<review.Point> = trackPoints
-			.filter((p) => p.frame > currentFrame)
-			.map(toXY);
+		const pastPts: Array<review.Point> = trackPoints.filter((p) => p.frame <= frame).map(toXY);
+		const futurePts: Array<review.Point> = trackPoints.filter((p) => p.frame > frame).map(toXY);
 		routePastSegments = review.clipPolyline(pastPts, selectedBoxRect);
 		routeFutureSegments = review.clipPolyline(futurePts, selectedBoxRect);
 	};
@@ -469,11 +465,9 @@
 			return;
 		}
 		selectTrack(box.id);
-		const currentFrame: number = videoElement
-			? computeCurrentFrameFromTime(videoElement.currentTime)
-			: 0;
+		const frame: number = videoElement ? computeCurrentFrameFromTime(videoElement.currentTime) : 0;
 		selectedBoxRect = toScreenRect(box.box);
-		updateSelectedTrackRoute(currentFrame);
+		updateSelectedTrackRoute(frame);
 		onbboxclick(box.id);
 	};
 

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { RESERVED_COLORS } from '$lib/colors';
 	import * as review from './review';
-	import { warpPolygon } from '$lib/camera-motion';
+	import { warpPolygon } from './camera-motion';
 
-	import type { MotionMatrix } from '$lib/camera-motion';
+	import type { MotionMatrix } from './camera-motion';
 
 	type Props = {
 		excludedZones: Array<Array<review.Vertex>>;

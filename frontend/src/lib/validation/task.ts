@@ -42,7 +42,7 @@ export const TaskFormSchema = z.object({
 		.instanceof(File, { message: FILE_REQUIRED_MESSAGE })
 		.or(z.null())
 		.refine((file: File | null): boolean => file !== null, { message: FILE_REQUIRED_MESSAGE })
-		.refine((file: File | null): boolean => file !== null && isAllowedVideo(file), {
+		.refine((file: File | null): boolean => file === null || isAllowedVideo(file), {
 			message: INVALID_VIDEO_MESSAGE
 		})
 });

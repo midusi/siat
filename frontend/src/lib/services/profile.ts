@@ -1,4 +1,4 @@
-import { apiError } from './errors';
+import { apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
 
 const PROFILE_API: string = '/user/me';

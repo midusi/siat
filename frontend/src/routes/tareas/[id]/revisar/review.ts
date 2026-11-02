@@ -1,16 +1,15 @@
 import { apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
-import { buildFrameMotionMap } from '$lib/camera-motion';
+import { buildFrameMotionMap } from './camera-motion';
 
-import type { CameraMotionData, MotionMatrix } from '$lib/camera-motion';
+import type { CameraMotionData, FrameMotionMap } from './camera-motion';
 
-export type Appearance = { frame: string; boundingBox: BoundingBox };
+type Appearance = { frame: string; boundingBox: BoundingBox };
 export type AppearingBox = { trackId: string; bbox: BoundingBox };
-export type BoundingBox = [string, string, string, string];
-export type Bounds = { width: number; height: number };
-export type CameraMotion = Map<number, MotionMatrix>;
+type BoundingBox = [string, string, string, string];
+type Bounds = { width: number; height: number };
 export type Box = [number, number, number, number];
-export type ConteoVehiculos = { [vehiculo: string]: number };
+type ConteoVehiculos = { [vehiculo: string]: number };
 export type DisplayableBBox = {
 	id: string;
 	bbox: BoundingBox;
@@ -18,14 +17,13 @@ export type DisplayableBBox = {
 	opacity: number;
 	fadeRemoveAtMs?: number;
 };
-export type FilaTabla = {
+type FilaTabla = {
 	tipo: string;
 	__key?: string;
 	[key: string]: string | number | undefined;
 };
 export type FrameRange = { dur: number; first: number; last: number };
 export type GeneralBBox = { id: string; box: Box };
-export type History = { [trackId: string]: Appearance & { class: string } };
 export type Indeterminado = {
 	first_appearance: Appearance;
 	last_appearance: Appearance;
@@ -39,19 +37,12 @@ export type Labels = { in: string; out: string };
 type ObjHistory = Record<string, Array<ObjHistoryEntry>>;
 type ObjHistoryEntry = { act_frame: number; box: Box };
 export type Point = { x: number; y: number };
-type RawIndeterminado = Omit<Indeterminado, 'labels'> & {
-	labels: Labels | [string, string];
-};
-type RawIndeterminados = Record<string, RawIndeterminado>;
 type RawTaskReview = {
 	cameraMotionUrl?: string;
-	data_obj_history_url?: string;
-	dataObjHistoryUrl?: string;
-	determinados?: RawIndeterminados;
+	determinados?: Indeterminados;
 	excludedZones?: unknown;
-	history?: History;
 	historyUrl?: string;
-	indeterminados?: RawIndeterminados;
+	indeterminados?: Indeterminados;
 	roadsIn?: unknown;
 	roadsOut?: unknown;
 	rutas?: Rutas;
@@ -64,7 +55,6 @@ export type Rect = { x: number; y: number; width: number; height: number };
 export type RoadPoly = { id: number; name: string; direction: string; polygon: Array<Vertex> };
 export type Rutas = { [entrada: string]: { [salida: string]: ConteoVehiculos } };
 export type Scale = { x: number; y: number };
-export type SelectOption = { value: string; label: string };
 export type Tabla = { columnas: Array<string>; datos: Array<FilaTabla>; total: FilaTabla };
 export type TablaPorEntrada = Tabla & { nombreEntrada: string };
 export type TaskReview = {
@@ -78,11 +68,10 @@ export type TaskReview = {
 	rutas: Rutas;
 	indeterminados: Indeterminados;
 	determinados: Indeterminados;
-	history: History;
 	historyUrl: string | null;
 	cameraMotionUrl: string | null;
 };
-export type TaskReviewChanges = {
+type TaskReviewChanges = {
 	rutas: Rutas;
 	indeterminados: Indeterminados;
 	determinados: Indeterminados;
@@ -93,19 +82,8 @@ export type TrackPoint = { frame: number; box: Box };
 export type Vertex = [number, number];
 
 export const FADE_OUT_DURATION_SECONDS: number = 1.0;
-export const OPACITY_TRANSITION_MS: number = 500;
+const OPACITY_TRANSITION_MS: number = 500;
 const TASK_API: string = '/task';
-
-const normalizeLabels = (items: RawIndeterminados | null | undefined): Indeterminados => {
-	const out: Indeterminados = {};
-	for (const [id, it] of Object.entries(items ?? {})) {
-		const labels: Labels = Array.isArray(it.labels)
-			? { in: it.labels[0] ?? '', out: it.labels[1] ?? '' }
-			: it.labels;
-		out[id] = { ...it, labels };
-	}
-	return out;
-};
 
 const asArray = <T>(value: unknown): Array<T> => (Array.isArray(value) ? value : []);
 
@@ -124,10 +102,9 @@ export const fetchTaskReview = async (taskId: string): Promise<TaskReview> => {
 		roadsOut: asArray(data.roadsOut),
 		excludedZones: asArray(data.excludedZones),
 		rutas: data.rutas ?? {},
-		indeterminados: normalizeLabels(data.indeterminados),
-		determinados: normalizeLabels(data.determinados),
-		history: data.history ?? {},
-		historyUrl: data.dataObjHistoryUrl || data.data_obj_history_url || data.historyUrl || null,
+		indeterminados: data.indeterminados ?? {},
+		determinados: data.determinados ?? {},
+		historyUrl: data.historyUrl ?? null,
 		cameraMotionUrl: data.cameraMotionUrl ?? null
 	};
 };
@@ -135,7 +112,7 @@ export const fetchTaskReview = async (taskId: string): Promise<TaskReview> => {
 const withCacheBust = (url: string): string =>
 	`${url}${url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
 
-export const fetchCameraMotion = async (url: string): Promise<CameraMotion | null> => {
+export const fetchCameraMotion = async (url: string): Promise<FrameMotionMap | null> => {
 	const res: Response = await fetch(withCacheBust(url));
 	if (!res.ok) {
 		throw new Error(`Error al obtener camera_motion.json: ${res.status}`);
@@ -455,8 +432,8 @@ export const mergeIndeterminados = (keep: Indeterminado, remove: Indeterminado):
 	return {
 		...keep,
 		labels: {
-			in: pickLabel(keep.labels.in, remove.labels.in) ?? '',
-			out: pickLabel(keep.labels.out, remove.labels.out) ?? ''
+			in: pickLabel(keep.labels.in, remove.labels.in),
+			out: pickLabel(keep.labels.out, remove.labels.out)
 		},
 		first_appearance: keepFirst <= removeFirst ? keep.first_appearance : remove.first_appearance,
 		last_appearance: keepLast >= removeLast ? keep.last_appearance : remove.last_appearance
@@ -466,11 +443,9 @@ export const mergeIndeterminados = (keep: Indeterminado, remove: Indeterminado):
 export const getTrackClass = (
 	trackId: string,
 	determinados: Indeterminados,
-	indeterminados: Indeterminados,
-	history: History
+	indeterminados: Indeterminados
 ): string | null => {
-	const cls: string | undefined =
-		determinados[trackId]?.class || indeterminados[trackId]?.class || history[trackId]?.class;
+	const cls: string | undefined = determinados[trackId]?.class || indeterminados[trackId]?.class;
 	return cls ? String(cls) : null;
 };
 

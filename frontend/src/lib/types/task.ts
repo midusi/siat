@@ -1,11 +1,6 @@
-export type ActionType =
-	| 'configurar'
-	| 'revisar'
-	| 'exportar'
-	| 'cancelar'
-	| 'archivar'
-	| 'eliminar'
-	| 'desarchivar';
+export type ActionType = 'configurar' | 'revisar' | 'archivar' | 'eliminar' | 'desarchivar';
+
+export type BusyActions = Record<number, ActionType>;
 
 export type TaskStatusId =
 	| 'VIDEO_UPLOADED'

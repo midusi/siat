@@ -1,6 +1,6 @@
-import type { Action } from 'svelte/action';
+import type { Action, ActionReturn } from 'svelte/action';
 
-export const portal: Action<HTMLElement> = (node: HTMLElement): { destroy: () => void } => {
+export const portal: Action<HTMLElement> = (node: HTMLElement): ActionReturn => {
 	document.body.appendChild(node);
 	return {
 		destroy: (): void => node.remove()

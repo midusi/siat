@@ -1,9 +1,9 @@
-import { ApiError, apiError } from './errors';
+import { ApiError, apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
 
 import type { FirstFrameInfo, TaskConfigPayload, TaskResponse } from '$lib/types/task';
 
-export type NewTask = {
+type NewTask = {
 	name: string;
 	localityId: number;
 	date: string;

@@ -1,11 +1,10 @@
 import {
-	duplicatePolygon as offsetVertices,
 	isPointInPolygon,
 	movePolygon,
 	moveVertex,
-	nearestVertexIndex
-} from '$lib/polygon-utils';
-import { sortVertices } from './geometry';
+	nearestVertexIndex,
+	sortVertices
+} from './geometry';
 
 import type { Coordinates, Polygon, Sentido } from './geometry';
 
@@ -41,6 +40,7 @@ type Drag =
 	| { type: 'move'; polygonId: number; start: Coordinates; original: Array<Coordinates> }
 	| { type: 'vertex'; polygonId: number; vertexIndex: number };
 
+const DUPLICATE_OFFSET: number = 0.03;
 const MIN_EXCLUDED_VERTICES: number = 3;
 export const OPCIONES_SENTIDO: Array<Sentido> = ['Entrada', 'Salida'];
 const ROAD_VERTICES: number = 4;
@@ -136,11 +136,11 @@ export const createPolygonEditor = (): PolygonEditor => {
 		if (!selected) {
 			return -1;
 		}
-		return nearestVertexIndex(point.x, point.y, selected.vertices, handleRadius.x, handleRadius.y);
+		return nearestVertexIndex(point, selected.vertices, handleRadius);
 	};
 
 	const polygonAt = (point: Coordinates): Polygon | undefined =>
-		polygons.findLast((p) => isPointInPolygon(point.x, point.y, p.vertices));
+		polygons.findLast((p) => isPointInPolygon(point, p.vertices));
 
 	const hoverCursor = (point: Coordinates, handleRadius: Coordinates): EditorCursor => {
 		if (point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) {
@@ -192,7 +192,7 @@ export const createPolygonEditor = (): PolygonEditor => {
 		poly.vertices =
 			drag.type === 'move'
 				? movePolygon(drag.original, point.x - drag.start.x, point.y - drag.start.y)
-				: moveVertex(poly.vertices, drag.vertexIndex, point.x, point.y);
+				: moveVertex(poly.vertices, drag.vertexIndex, point);
 	};
 
 	const pointerUp = (): void => {
@@ -211,7 +211,7 @@ export const createPolygonEditor = (): PolygonEditor => {
 		addPolygon({
 			via: `${poly.via} (copia)`,
 			sentido: poly.sentido,
-			vertices: offsetVertices(poly.vertices),
+			vertices: movePolygon(poly.vertices, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
 			color: poly.color
 		});
 	};

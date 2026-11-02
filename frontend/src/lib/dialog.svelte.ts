@@ -7,18 +7,18 @@ type BaseDialog = {
 	variant: Variant;
 };
 
-export type AlertDialogState = BaseDialog & {
+type AlertDialogState = BaseDialog & {
 	type: 'alert';
 	resolve: () => void;
 };
 
-export type ConfirmDialogState = BaseDialog & {
+type ConfirmDialogState = BaseDialog & {
 	type: 'confirm';
 	cancelText: string;
 	resolve: (confirmed: boolean) => void;
 };
 
-export type DialogState = AlertDialogState | ConfirmDialogState;
+type DialogState = AlertDialogState | ConfirmDialogState;
 
 type AlertOptions = {
 	title?: string;

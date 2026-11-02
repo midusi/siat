@@ -1,7 +1,7 @@
 import { centroid, toCanvasPx } from './geometry';
-import { defaultColorForSentido, hexToRgba } from '$lib/polygon-utils';
+import { hexToRgba, RESERVED_COLORS } from '$lib/colors';
 
-import type { Coordinates, Polygon } from './geometry';
+import type { Coordinates, Polygon, Sentido } from './geometry';
 
 type InProgressStyle = { line: string; point: string };
 export type Scene = {
@@ -13,6 +13,11 @@ export type Scene = {
 	selectedId: number | null;
 };
 
+const DEFAULT_COLORS: Record<Sentido, string> = {
+	Entrada: '#4ade80',
+	Excluida: RESERVED_COLORS.black,
+	Salida: '#f87171'
+};
 const EXCLUDED_COLOR: string = 'rgba(0, 0, 0, 1)';
 const FILL_ALPHA: number = 0.3;
 const HANDLE_RADIUS: number = 8;
@@ -43,8 +48,8 @@ const drawLabel = (ctx: CanvasRenderingContext2D, text: string, at: Coordinates)
 	ctx.shadowBlur = 0;
 };
 
-const polygonHex = (poly: Omit<Polygon, 'id'>): string =>
-	poly.color ?? defaultColorForSentido(poly.sentido);
+export const polygonColor = (poly: Omit<Polygon, 'id'>): string =>
+	poly.color ?? DEFAULT_COLORS[poly.sentido];
 
 const drawPolygon = (
 	ctx: CanvasRenderingContext2D,
@@ -54,7 +59,7 @@ const drawPolygon = (
 ): void => {
 	const vertices: Array<Coordinates> = toCanvasPx(poly.vertices, ctx.canvas);
 	const excluded: boolean = poly.sentido === 'Excluida';
-	const hex: string = polygonHex(poly);
+	const hex: string = polygonColor(poly);
 	tracePath(ctx, vertices);
 	ctx.closePath();
 	ctx.fillStyle = excluded
@@ -81,7 +86,7 @@ const drawPolygon = (
 };
 
 const drawVertexHandles = (ctx: CanvasRenderingContext2D, poly: Polygon): void => {
-	ctx.strokeStyle = polygonHex(poly);
+	ctx.strokeStyle = polygonColor(poly);
 	ctx.lineWidth = 2;
 	for (const v of toCanvasPx(poly.vertices, ctx.canvas)) {
 		ctx.beginPath();

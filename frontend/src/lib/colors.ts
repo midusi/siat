@@ -2,6 +2,10 @@ type HueBand = [number, number];
 
 type ReservedColor = 'red' | 'green' | 'black' | 'white';
 
+type Rgb = { red: number; green: number; blue: number };
+
+const HEX_COLOR_PATTERN: RegExp = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i;
+
 const ANCHOR_COLORS: Array<string> = [
 	'#3b82f6',
 	'#f59e0b',
@@ -55,14 +59,31 @@ const hslToHex = (hue: number, saturation: number, lightness: number): string =>
 	return `#${red}${green}${blue}`;
 };
 
-const hexToHue = (hex: string): number | null => {
-	const match: RegExpExecArray | null = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);
+const parseHex = (hex: string): Rgb | null => {
+	const match: RegExpExecArray | null = HEX_COLOR_PATTERN.exec(hex);
 	if (!match) {
 		return null;
 	}
-	const red: number = parseInt(match[1], 16) / 255;
-	const green: number = parseInt(match[2], 16) / 255;
-	const blue: number = parseInt(match[3], 16) / 255;
+	return {
+		red: parseInt(match[1], 16),
+		green: parseInt(match[2], 16),
+		blue: parseInt(match[3], 16)
+	};
+};
+
+export const hexToRgba = (hex: string, alpha: number): string => {
+	const rgb: Rgb | null = parseHex(hex);
+	return rgb ? `rgba(${rgb.red},${rgb.green},${rgb.blue},${alpha})` : `rgba(0,0,0,${alpha})`;
+};
+
+const hexToHue = (hex: string): number | null => {
+	const rgb: Rgb | null = parseHex(hex);
+	if (!rgb) {
+		return null;
+	}
+	const red: number = rgb.red / 255;
+	const green: number = rgb.green / 255;
+	const blue: number = rgb.blue / 255;
 	const max: number = Math.max(red, green, blue);
 	const min: number = Math.min(red, green, blue);
 	const chroma: number = max - min;

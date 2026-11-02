@@ -4,11 +4,20 @@ import { formatDate, formatDuration } from '$lib/format';
 import { showConfirm } from '$lib/dialog.svelte';
 import { showError } from '$lib/toast.svelte';
 
-import type { ActionType, TaskResponse, TaskRow, TaskStatusId } from '$lib/types/task';
+import type { ActionType, BusyActions, TaskResponse, TaskRow, TaskStatusId } from '$lib/types/task';
 
 export type ActionDispatch = (action: ActionType, taskId: number) => void;
-export type ActionHandlers = Partial<Record<ActionType, (taskId: number) => void>>;
-export type TaskList = ReturnType<typeof createTaskList>;
+
+export type TaskList = {
+	readonly busy: BusyActions;
+	readonly loading: boolean;
+	readonly rows: Array<TaskRow>;
+	confirmDelete: (taskId: number) => Promise<void>;
+	load: () => Promise<void>;
+	run: (taskId: number, action: ActionType, request: () => Promise<void>) => Promise<void>;
+};
+
+type ActionHandlers = Partial<Record<ActionType, (taskId: number) => void>>;
 
 type StatusMeta = {
 	badgeClass: string;
@@ -72,12 +81,12 @@ const toTaskRow = (task: TaskResponse): TaskRow => {
 	};
 };
 
-export const createTaskList = (fetcher: () => Promise<TaskResponse[]>) => {
-	let rows = $state<TaskRow[]>([]);
-	let loading = $state(false);
-	const busy = $state<Record<number, ActionType | true>>({});
+export const createTaskList = (fetcher: () => Promise<Array<TaskResponse>>): TaskList => {
+	let rows: Array<TaskRow> = $state([]);
+	let loading: boolean = $state(false);
+	const busy: BusyActions = $state({});
 
-	const load = async () => {
+	const load = async (): Promise<void> => {
 		loading = true;
 		try {
 			rows = (await fetcher()).map(toTaskRow);
@@ -88,7 +97,11 @@ export const createTaskList = (fetcher: () => Promise<TaskResponse[]>) => {
 		}
 	};
 
-	const run = async (taskId: number, action: ActionType, request: () => Promise<void>) => {
+	const run = async (
+		taskId: number,
+		action: ActionType,
+		request: () => Promise<void>
+	): Promise<void> => {
 		busy[taskId] = action;
 		try {
 			await request();
@@ -100,12 +113,11 @@ export const createTaskList = (fetcher: () => Promise<TaskResponse[]>) => {
 		}
 	};
 
-	const confirmDelete = async (taskId: number) => {
-		const confirmed = await showConfirm({
+	const confirmDelete = async (taskId: number): Promise<void> => {
+		const confirmed: boolean = await showConfirm({
 			message: DELETE_MESSAGE,
 			variant: 'danger',
-			confirmText: 'Eliminar',
-			cancelText: 'Cancelar'
+			confirmText: 'Eliminar'
 		});
 		if (!confirmed) {
 			return;
@@ -114,17 +126,17 @@ export const createTaskList = (fetcher: () => Promise<TaskResponse[]>) => {
 	};
 
 	return {
-		get rows() {
-			return rows;
-		},
-		get loading() {
-			return loading;
-		},
-		get busy() {
+		get busy(): BusyActions {
 			return busy;
 		},
+		get loading(): boolean {
+			return loading;
+		},
+		get rows(): Array<TaskRow> {
+			return rows;
+		},
+		confirmDelete,
 		load,
-		run,
-		confirmDelete
+		run
 	};
 };

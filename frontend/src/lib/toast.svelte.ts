@@ -1,6 +1,6 @@
 import type { Variant } from '$lib/types/variant';
 
-export type Toast = {
+type Toast = {
 	id: number;
 	duration: number;
 	message: string;
@@ -54,15 +54,8 @@ const createToastStore = (): ToastStore => {
 
 export const toasts: ToastStore = createToastStore();
 
-export const showSuccess = (message: string, duration?: number) => {
-	return toasts.showToast({ message, duration, variant: 'success' });
-}
-export const showError = (message: string, duration?: number) => {
-	return toasts.showToast({ message, duration, variant: 'danger' });
-}
-export const showInfo = (message: string, duration?: number) => {
-	return toasts.showToast({ message, duration, variant: 'info' });
-}
-export const showWarning = (message: string, duration?: number) => {
-	return toasts.showToast({ message, duration, variant: 'warning' });
-}
+export const showSuccess = (message: string, duration?: number): number =>
+	toasts.showToast({ message, duration, variant: 'success' });
+
+export const showError = (message: string, duration?: number): number =>
+	toasts.showToast({ message, duration, variant: 'danger' });

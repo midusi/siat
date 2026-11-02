@@ -2,10 +2,12 @@
 	import FormField from '$lib/components/FormField.svelte';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
+	import { ROLE_LABELS } from '$lib/roles';
 	import Switch from '$lib/components/Switch.svelte';
 
 	import type { FormErrors, UserForm } from '$lib/validation/user';
 	import type { Role } from '$lib/types/user';
+	import type { SelectItem } from '$lib/types/select';
 
 	type Props = {
 		errors: FormErrors;
@@ -15,12 +17,10 @@
 		onsubmit: (event: SubmitEvent) => void;
 		submitting: boolean;
 	};
-	type RoleItem = { value: Role; label: string };
 
-	const ROLE_ITEMS: Array<RoleItem> = [
-		{ value: 'ROLE_ADMIN', label: 'Admin' },
-		{ value: 'ROLE_OPERADOR', label: 'Operador' }
-	];
+	const ROLE_ITEMS: Array<SelectItem<Role>> = (Object.keys(ROLE_LABELS) as Array<Role>).map(
+		(role: Role): SelectItem<Role> => ({ value: role, label: ROLE_LABELS[role] })
+	);
 
 	let { errors, form = $bindable(), isEditing, oncancel, onsubmit, submitting }: Props = $props();
 </script>
@@ -29,22 +29,32 @@
 	<div class="grid grid-cols-2 gap-3">
 		<FormField
 			id="first_name"
+			autocomplete="off"
 			label="Nombre"
 			bind:value={form.first_name}
 			error={errors.first_name}
 		/>
 		<FormField
 			id="last_name"
+			autocomplete="off"
 			label="Apellido"
 			bind:value={form.last_name}
 			error={errors.last_name}
 		/>
 	</div>
 
-	<FormField id="email" label="Email" type="email" bind:value={form.email} error={errors.email} />
+	<FormField
+		id="email"
+		label="Email"
+		type="email"
+		autocomplete="off"
+		bind:value={form.email}
+		error={errors.email}
+	/>
 
 	<FormField
 		id="username"
+		autocomplete="off"
 		label="Usuario"
 		bind:value={form.username}
 		disabled={isEditing}

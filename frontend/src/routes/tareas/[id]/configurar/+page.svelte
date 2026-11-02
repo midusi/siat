@@ -3,16 +3,16 @@
 	import { buildConfigPayload, centroid, toCanvasPx } from './geometry';
 	import { calculatePopoverPosition } from './popover';
 	import { createPolygonEditor, OPCIONES_SENTIDO } from './editor.svelte';
-	import { defaultColorForSentido } from '$lib/polygon-utils';
 	import { errorMessage as apiErrorMessage } from '$lib/services/errors';
 	import { fade, fly } from 'svelte/transition';
 	import { fetchFirstFrame, saveTaskConfig } from '$lib/services/tasks';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
+	import Icon from '$lib/components/Icon.svelte';
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
+	import { polygonColor, redraw } from './draw';
 	import { quintOut } from 'svelte/easing';
-	import { redraw } from './draw';
 	import ScrollArea from '$lib/components/ScrollArea.svelte';
 	import { showAlert } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -21,8 +21,21 @@
 	import type { FirstFrameInfo } from '$lib/types/task';
 	import type { PolygonEditor } from './editor.svelte';
 	import type { PopoverPosition } from './popover';
+	import type { SelectItem } from '$lib/types/select';
+	import type { Snippet } from 'svelte';
+
+	type HintMode = 'edit' | 'excluded' | 'road';
+	type SentidoStyle = { border: string; text: string };
 
 	const HANDLE_HIT_RADIUS_PX: number = 15;
+	const SENTIDO_ITEMS: Array<SelectItem<Sentido>> = OPCIONES_SENTIDO.map(
+		(sentido: Sentido): SelectItem<Sentido> => ({ value: sentido, label: sentido })
+	);
+	const SENTIDO_STYLES: Record<Sentido, SentidoStyle> = {
+		Entrada: { border: 'border-green-400', text: 'text-green-300' },
+		Excluida: { border: 'border-white/30', text: 'text-white/60' },
+		Salida: { border: 'border-red-400', text: 'text-red-300' }
+	};
 
 	const editor: PolygonEditor = createPolygonEditor();
 
@@ -47,6 +60,9 @@
 
 	const canSubmit: boolean = $derived(
 		editor.entradasCount > 0 && editor.salidasCount > 0 && !isSubmitting
+	);
+	const hintMode: HintMode = $derived(
+		editor.editMode ? 'edit' : editor.excludedMode ? 'excluded' : 'road'
 	);
 	const taskId: number = $derived(Number(page.params.id));
 
@@ -219,11 +235,41 @@
 			{ width: window.innerWidth, height: window.innerHeight }
 		);
 	};
-
-	const goBack = (): void => {
-		goto('/');
-	};
 </script>
+
+{#snippet editHint()}
+	Clic en una zona para seleccionarla. Arrastre para moverla. Arrastre un vértice (círculo blanco)
+	para redimensionarla. <kbd class="key-kbd">Esc</kbd> para deseleccionar.
+{/snippet}
+
+{#snippet roadHint()}
+	Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
+	<kbd class="key-kbd">Backspace</kbd> para deshacer o <kbd class="key-kbd">Esc</kbd> para cancelar.
+{/snippet}
+
+{#snippet excludedHint()}
+	Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para confirmar una
+	zona excluída (mín. 3 puntos). Use <kbd class="key-kbd">Backspace</kbd> para deshacer o
+	<kbd class="key-kbd">Esc</kbd> para cancelar.
+{/snippet}
+
+{#snippet swapHint(mode: HintMode, content: Snippet)}
+	<span class="swap-container">
+		<span class="swap-measure">{@render content()}</span>
+		{#key mode}
+			<span class="swap-layer" transition:fade={{ duration: 210 }}>{@render content()}</span>
+		{/key}
+	</span>
+{/snippet}
+
+{#snippet swapLabel(text: string)}
+	<span class="swap-container">
+		<span class="swap-measure">{text}</span>
+		{#key text}
+			<span class="swap-layer" transition:fade={{ duration: 210 }}>{text}</span>
+		{/key}
+	</span>
+{/snippet}
 
 <svelte:window
 	onkeydown={handleKeyDown}
@@ -238,42 +284,10 @@
 			<h1 class="heading-1">Asignar Vías</h1>
 			<div class="mt-2 flex items-center justify-between gap-4 flex-wrap">
 				<p class="text-white/70 text-sm m-0">
-					<span class="swap-container">
-						<span class="swap-measure">
-							{#if editor.editMode}
-								Clic en una zona para seleccionarla. Arrastre para moverla. Arrastre un vértice
-								(círculo blanco) para redimensionarla. <kbd class="key-kbd">Esc</kbd> para deseleccionar.
-							{:else if !editor.excludedMode}
-								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							{:else}
-								Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para
-								confirmar una zona excluída (mín. 3 puntos). Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							{/if}
-						</span>
-						{#if editor.editMode}
-							<span class="swap-layer" transition:fade={{ duration: 210 }}>
-								Clic en una zona para seleccionarla. Arrastre para moverla. Arrastre un vértice
-								(círculo blanco) para redimensionarla. <kbd class="key-kbd">Esc</kbd> para deseleccionar.
-							</span>
-						{:else if !editor.excludedMode}
-							<span class="swap-layer" transition:fade={{ duration: 210 }}>
-								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							</span>
-						{:else}
-							<span class="swap-layer" transition:fade={{ duration: 210 }}>
-								Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para
-								confirmar una zona excluída (mín. 3 puntos). Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							</span>
-						{/if}
-					</span>
+					{@render swapHint(
+						hintMode,
+						hintMode === 'edit' ? editHint : hintMode === 'excluded' ? excludedHint : roadHint
+					)}
 				</p>
 				<div class="flex items-center gap-2 flex-wrap">
 					<div
@@ -284,7 +298,10 @@
 						class:pointer-events-none={editor.editMode}
 					>
 						<div
-							class={`mode-indicator ${editor.excludedMode ? 'right bg-excluded' : 'left bg-inout'}`}
+							class={[
+								'mode-indicator',
+								editor.excludedMode ? 'right bg-excluded' : 'left bg-inout'
+							]}
 							aria-hidden="true"
 						></div>
 						<button
@@ -294,24 +311,9 @@
 							onclick={() => editor.setExcludedMode(false)}
 							title="Dibujar entradas/salidas"
 						>
-							<span class="swap-container">
-								<span class="swap-measure">
-									{#if !editor.excludedMode}
-										Dibujando entradas/salidas...
-									{:else}
-										Dibujar entradas/salidas
-									{/if}
-								</span>
-								{#if !editor.excludedMode}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujando entradas/salidas...</span
-									>
-								{:else}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujar entradas/salidas</span
-									>
-								{/if}
-							</span>
+							{@render swapLabel(
+								editor.excludedMode ? 'Dibujar entradas/salidas' : 'Dibujando entradas/salidas...'
+							)}
 						</button>
 						<button
 							class="mode-option right"
@@ -320,68 +322,34 @@
 							onclick={() => editor.setExcludedMode(true)}
 							title="Dibujar zonas excluidas (confirme con Enter)"
 						>
-							<span class="swap-container">
-								<span class="swap-measure">
-									{#if editor.excludedMode}
-										Dibujando zonas excluidas...
-									{:else}
-										Dibujar zonas excluidas
-									{/if}
-								</span>
-								{#if editor.excludedMode}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujando zonas excluidas...</span
-									>
-								{:else}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujar zonas excluidas</span
-									>
-								{/if}
-							</span>
+							{@render swapLabel(
+								editor.excludedMode ? 'Dibujando zonas excluidas...' : 'Dibujar zonas excluidas'
+							)}
 						</button>
 					</div>
 					<button
-						class="glass-button px-3 py-2 flex items-center gap-1.5 border-white/20"
-						class:bg-blue-500={editor.editMode}
-						class:bg-opacity-30={editor.editMode}
-						class:border-blue-400={editor.editMode}
-						class:border-opacity-60={editor.editMode}
-						class:bg-white-10={!editor.editMode}
-						class:hover-bg-white-20={!editor.editMode}
+						class={[
+							'glass-button px-3 py-2 flex items-center gap-1.5',
+							editor.editMode
+								? 'bg-blue-500/30 border-blue-400/60'
+								: 'border-white/20 bg-white/10 hover:bg-white/20'
+						]}
 						onclick={() => editor.setEditMode(!editor.editMode)}
 						title={editor.editMode
 							? 'Salir del modo edición'
 							: 'Mover y redimensionar zonas existentes'}
 						aria-pressed={editor.editMode}
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="15"
-							height="15"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<polyline points="5 9 2 12 5 15" />
-							<polyline points="9 5 12 2 15 5" />
-							<polyline points="15 19 12 22 9 19" />
-							<polyline points="19 9 22 12 19 15" />
-							<line x1="2" y1="12" x2="22" y2="12" />
-							<line x1="12" y1="2" x2="12" y2="22" />
-						</svg>
+						<Icon name="move" class="h-[15px] w-[15px]" />
 						{editor.editMode ? 'Editando...' : 'Mover/Redimensionar'}
 					</button>
-					<button
-						class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
-						onclick={goBack}
-						aria-label="Volver"
+					<a
+						href="/"
+						class="glass-button px-3 py-2 flex items-center gap-1.5 border-white/20 bg-white/10 hover:bg-white/20"
 					>
-						← Volver
-					</button>
+						<Icon name="arrow-left" class="h-4 w-4" />
+						Volver
+					</a>
 				</div>
 			</div>
 		</div>
@@ -395,7 +363,7 @@
 				<div class="flex items-center justify-between mb-4 gap-2">
 					<h2 class="heading-2">Vías Definidas ({editor.polygons.length})</h2>
 				</div>
-				<ScrollArea orientation="y" className="flex-1 min-h-0 pr-1" autoHide>
+				<ScrollArea class="flex-1 min-h-0 pr-1" autoHide>
 					{#if editor.polygons.length === 0}
 						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
@@ -403,15 +371,13 @@
 					{:else}
 						<div class="space-y-3">
 							{#each editor.polygons as poly (poly.id)}
-								{@const color = poly.color ?? defaultColorForSentido(poly.sentido)}
+								{@const color = polygonColor(poly)}
 								<div
-									class="glass-surface p-3 rounded-lg transition-all border"
-									class:border-green-400={poly.sentido === 'Entrada'}
-									class:border-red-400={poly.sentido === 'Salida'}
-									class:border-white-30={poly.sentido === 'Excluida'}
-									class:ring-2={poly.id === editor.selectedId}
-									class:ring-white={poly.id === editor.selectedId}
-									class:ring-opacity-50={poly.id === editor.selectedId}
+									class={[
+										'glass-surface p-3 rounded-lg transition-all border',
+										SENTIDO_STYLES[poly.sentido].border,
+										poly.id === editor.selectedId && 'ring-2 ring-white/50'
+									]}
 									out:fly={{ y: -10, opacity: 0, duration: 250, easing: quintOut }}
 								>
 									<div class="flex items-center gap-2">
@@ -451,21 +417,7 @@
 												title="Renombrar"
 												aria-label="Renombrar vía"
 											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="14"
-													height="14"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"
-												>
-													<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-													<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-												</svg>
+												<Icon name="edit" class="h-3.5 w-3.5" />
 											</button>
 											<button
 												onclick={() => editor.duplicatePolygon(poly.id)}
@@ -473,55 +425,18 @@
 												title="Duplicar zona"
 												aria-label="Duplicar vía"
 											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="14"
-													height="14"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"
-												>
-													<rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-													<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-												</svg>
+												<Icon name="copy" class="h-3.5 w-3.5" />
 											</button>
 											<button
 												onclick={() => editor.removePolygon(poly.id)}
 												class="glass-button btn-danger p-1.5"
 												aria-label="Eliminar vía"
 											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="14"
-													height="14"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"
-												>
-													<polyline points="3 6 5 6 21 6" />
-													<path
-														d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-													/>
-													<line x1="10" y1="11" x2="10" y2="17" />
-													<line x1="14" y1="11" x2="14" y2="17" />
-												</svg>
+												<Icon name="trash" class="h-3.5 w-3.5" />
 											</button>
 										</div>
 									</div>
-									<p
-										class="text-sm mt-1 ml-7"
-										class:text-green-300={poly.sentido === 'Entrada'}
-										class:text-red-300={poly.sentido === 'Salida'}
-										class:text-white-60={poly.sentido === 'Excluida'}
-									>
+									<p class={['text-sm mt-1 ml-7', SENTIDO_STYLES[poly.sentido].text]}>
 										{poly.sentido}
 									</p>
 								</div>
@@ -567,6 +482,7 @@
 						{errorMessage}
 					</div>
 				{:else}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<div
 						class="canvas-container glass-card overflow-hidden shadow-2xl"
 						style="cursor: {editor.cursor};"
@@ -574,7 +490,6 @@
 						onmousedown={handleCanvasMouseDown}
 						role="button"
 						tabindex="0"
-						onkeydown={() => {}}
 						aria-label={editor.editMode
 							? 'Seleccionar y editar zona en la imagen'
 							: editor.excludedMode
@@ -585,10 +500,7 @@
 							src={imageSrc}
 							alt="Imagen base"
 							bind:this={imageRef}
-							onload={() => {
-								setupCanvas();
-								isLoading = false;
-							}}
+							onload={setupCanvas}
 							class="w-full h-auto opacity-100 prevent-drag"
 							draggable="false"
 						/>
@@ -624,7 +536,7 @@
 					<label for="sentido-select" class="block mb-1 text-sm text-white/80">Sentido:</label>
 					<GlassSelect
 						id="sentido-select"
-						items={OPCIONES_SENTIDO.map((s) => ({ value: s, label: s }))}
+						items={SENTIDO_ITEMS}
 						value={editor.pending.sentido}
 						onChange={(v) => (editor.pending!.sentido = String(v) as Sentido)}
 					/>

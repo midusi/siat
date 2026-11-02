@@ -1,4 +1,4 @@
-import { apiError } from './errors';
+import { apiError } from '$lib/services/errors';
 import { apiFetch } from '$lib/api';
 
 const AUTH_API: string = '/auth';
@@ -13,6 +13,7 @@ export const login = async (username: string, password: string): Promise<void> =
 	}
 };
 
-export const logout = async (): Promise<void> => {
-	await apiFetch(`${AUTH_API}/logout`, { method: 'POST' });
+export const logout = async (): Promise<boolean> => {
+	const res: Response = await apiFetch(`${AUTH_API}/logout`, { method: 'POST' });
+	return res.ok;
 };

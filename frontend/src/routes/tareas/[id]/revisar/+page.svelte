@@ -10,13 +10,15 @@
 	import Spinner from '$lib/components/Spinner.svelte';
 	import VideoPanel from './VideoPanel.svelte';
 
+	import type { FrameMotionMap } from './camera-motion';
+	import type { SelectItem } from '$lib/types/select';
+
 	let activeIndeterminateId: string | null = $state(null);
-	let cameraMotion: review.CameraMotion | null = $state.raw(null);
+	let cameraMotion: FrameMotionMap | null = $state.raw(null);
 	let determinados: review.Indeterminados = $state({});
 	let error: string | null = $state(null);
 	let excludedZones: Array<Array<review.Vertex>> = $state([]);
 	let generalReady: boolean = $state(false);
-	let history: review.History = $state({});
 	let indeterminados: review.Indeterminados = $state({});
 	let liveIds: Set<string> = $state(new Set());
 	let loading: boolean = $state(true);
@@ -38,10 +40,10 @@
 	const taskId: string = $derived(page.params.id);
 	const vehicleTypes: Array<string> = $derived(review.getVehicleTypes(rutas, indeterminados));
 	const categoryColors: Map<string, string> = $derived(getCategoryColorMap(vehicleTypes));
-	const vehicleItems: Array<review.SelectOption> = $derived(
+	const vehicleItems: Array<SelectItem<string>> = $derived(
 		vehicleTypes.map((v) => ({ value: v, label: review.getVehicleName(v) }))
 	);
-	const zoneItems: Array<review.SelectOption> = $derived([
+	const zoneItems: Array<SelectItem<string>> = $derived([
 		{ value: '', label: 'Seleccionar…' },
 		...review.getZoneIds(rutas).map((z) => ({ value: z, label: `Zona ${z}` }))
 	]);
@@ -90,7 +92,6 @@
 			rutas = data.rutas;
 			indeterminados = data.indeterminados;
 			determinados = data.determinados;
-			history = data.history;
 			sortedIndeterminados = review.sortIndeterminados(indeterminados);
 			loadTrackHistory(data.historyUrl);
 			loadCameraMotion(data.cameraMotionUrl);
@@ -126,7 +127,7 @@
 	const classColor = (cls: string): string => getCategoryColor(cls, categoryColors);
 
 	const trackColor = (trackId: string): string => {
-		const cls: string | null = review.getTrackClass(trackId, determinados, indeterminados, history);
+		const cls: string | null = review.getTrackClass(trackId, determinados, indeterminados);
 		return cls ? classColor(cls) : RESERVED_COLORS.white;
 	};
 
