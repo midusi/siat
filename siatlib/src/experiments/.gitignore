@@ -1,4 +1,13 @@
-**/dataset/
-**/models/
-**/reports/
+# Ignorar contenido de las carpetas
+**/dataset/process/*
+**/dataset/raw/*
+**/reports/figures/*
+**/scripts/models/*
+
+# Mantener los archivos .gitkeep para que Git preserve la estructura de carpetas
+!**/.gitkeep
+
+# Pesos y ejecuciones
 *.pt
+**/runs/
+*:Zone.Identifier

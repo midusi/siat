@@ -138,8 +138,3 @@ minio/
 *.mp4
 .vscode
 
-
-# Datasets
-src/experiments/dataset/*
-siatlib/src/experiments/dataset/*
-**/dataset/*

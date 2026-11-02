@@ -35,10 +35,11 @@ def main():
         auto_augment='randaugment', # política de auto-augmentation
 
         # --- Organización ---
-        project='runs',
-        name='traffic-v5b-y11m-1280px-100e-aug',
+        project=config["project"],
+        name=config["run_id"],
         exist_ok=True,
       )
+    # FINE-TUNING
     else:
       results = model.train(
             data=config["data"],
@@ -57,9 +58,9 @@ def main():
             mixup=config["mixup"],
             auto_augment='randaugment',
             project=config["project"],
-            name=config["run_name"],
+            name=config["run_id"],
             exist_ok=True,
-            output_dir=config["output_result_dir"],
+            #output_dir=config["output_result_dir"],
         )
 
     print("Entrenamiento finalizado.")
