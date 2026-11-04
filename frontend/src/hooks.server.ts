@@ -1,30 +1,29 @@
-// src/hooks.server.ts
-import type { Handle, HandleFetch } from '@sveltejs/kit';
+import { BACKEND_URL, BUCKET_URL } from '$lib/constants';
 
-// Hydrate locals.user by querying backend via same-origin proxy /api/auth/me
+import type { Handle } from '@sveltejs/kit';
+import type { User } from '$lib/types/user';
+
+const SKIP_AUTH_PREFIXES: Array<string> = [BACKEND_URL, BUCKET_URL];
+
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
-	// Avoid recursion: skip hydration when the current request already targets the /api proxy
-	if (event.url.pathname.startsWith('/api')) {
+	const pathname: string = event.url.pathname;
+
+	const excludeAuth: boolean = SKIP_AUTH_PREFIXES.some(
+		(exclude) => pathname.startsWith(`${exclude}/`) || pathname === exclude
+	);
+
+	if (excludeAuth) {
 		return resolve(event);
 	}
+
 	try {
-		const res = await event.fetch('/api/auth/me', {
-			credentials: 'include'
-		} as RequestInit);
+		const res: Response = await event.fetch(`${BACKEND_URL}/auth/me`);
 		if (res.ok) {
-			const data = await res.json();
-			event.locals.user = (data.user ?? data) as App.Locals['user'];
+			event.locals.user = (await res.json()) as User;
 		}
-	} catch {
-		// Ignore errors -> treat as unauthenticated
+	} catch (e) {
+		console.error('No se pudo obtener el usuario actual', e);
 	}
 	return resolve(event);
-};
-
-// Forward cookies to the backend in server-side fetches
-export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
-	const cookie = event.request.headers.get('cookie');
-	if (cookie) request.headers.set('cookie', cookie);
-	return fetch(request);
 };

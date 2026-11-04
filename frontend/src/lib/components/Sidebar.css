@@ -1,0 +1,22 @@
+.sidebar-rail {
+	position: absolute;
+	left: 0;
+	width: 2px;
+	background: rgba(252, 211, 77, 0.95);
+	box-shadow:
+		0 0 6px rgba(252, 211, 77, 0.75),
+		0 0 12px rgba(252, 211, 77, 0.55),
+		0 0 18px rgba(252, 211, 77, 0.35);
+	border-radius: 2px;
+	transition:
+		top 220ms ease,
+		height 220ms ease;
+	pointer-events: none;
+}
+
+a.sidebar-link {
+	transition:
+		color 220ms ease,
+		opacity 220ms ease,
+		background-color 220ms ease;
+}

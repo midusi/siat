@@ -1,70 +1,54 @@
-import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
+import { error } from '@sveltejs/kit';
 
-const BACKEND_BASE = env.BACKEND_URL || 'http://127.0.0.1:8000';
+import type { RequestEvent, RequestHandler } from './$types';
 
-async function proxy(event: Parameters<RequestHandler>[0]): Promise<Response> {
-	const { request, params } = event;
-	const targetPath = params.path as string; // catch-all
-	const url = `${BACKEND_BASE}/${targetPath}`;
+type ProxyRequestInit = RequestInit & { duplex: 'half' };
 
-	const headers = new Headers(request.headers);
-	// Ensure cookies are forwarded
-	const cookie = request.headers.get('cookie');
-	if (cookie) headers.set('cookie', cookie);
+const proxy = async ({ request, params }: RequestEvent): Promise<Response> => {
+	if (!env.BACKEND_URL) {
+		console.error('BACKEND_URL no está definida');
+		error(500, 'Proxy mal configurado');
+	}
+	const url: string = `${env.BACKEND_URL}/${params.path}`;
 
-	const body = ['GET', 'HEAD'].includes(request.method) ? undefined : request.body;
+	const headers: Headers = new Headers(request.headers);
+	headers.delete('host');
+	headers.delete('connection');
+	const body: ReadableStream | null | undefined = ['GET', 'HEAD'].includes(request.method)
+		? undefined
+		: request.body;
 
-	const res = await globalThis.fetch(url, {
+	const init: ProxyRequestInit = {
 		method: request.method,
 		headers,
 		body,
 		redirect: 'manual',
-		// @ts-ignore
+		signal: request.signal,
 		duplex: 'half'
-	});
+	};
 
-	// Build response and forward Set-Cookie headers
-	const responseHeaders = new Headers(res.headers);
-	// Remove content-encoding if any to avoid issues
+	let res: Response;
+	try {
+		res = await fetch(url, init);
+	} catch (e) {
+		if (request.signal.aborted) {
+			return new Response(null, { status: 499 });
+		}
+		console.error(`Proxy error: ${request.method} ${url}`, e);
+		error(502, 'Backend no disponible');
+	}
+
+	const responseHeaders: Headers = new Headers(res.headers);
 	responseHeaders.delete('content-encoding');
+	responseHeaders.delete('content-length');
+	responseHeaders.delete('set-cookie');
 
-	// Forward multiple Set-Cookie headers with wide compatibility
-	// 1) undici provides getSetCookie()
-	const anyHeaders = res.headers as any;
-	let setCookies: string[] | undefined = anyHeaders?.getSetCookie?.();
-	// 2) node-fetch style raw()
-	if (!setCookies) {
-		const raw = anyHeaders?.raw?.();
-		if (raw && Array.isArray(raw['set-cookie'])) {
-			setCookies = raw['set-cookie'];
-		}
-	}
-	// 3) Fallback: single header
-	if (!setCookies) {
-		const single = res.headers.get('set-cookie');
-		if (single) setCookies = [single];
-	}
-	if (setCookies && setCookies.length) {
-		responseHeaders.delete('set-cookie');
-		for (let sc of setCookies) {
-			// Strip Domain attribute so cookie is set for frontend host
-			sc = sc.replace(/;\s*Domain=[^;]+/i, '');
-			responseHeaders.append('set-cookie', sc);
-		}
+	for (const sc of res.headers.getSetCookie()) {
+		responseHeaders.append('set-cookie', sc.replace(/;\s*Domain=[^;]+/i, ''));
 	}
 
-	const status = res.status;
-	// For 204/304, do not include a body
-	if (status === 204 || status === 304) {
-		return new Response(null, { status, headers: responseHeaders });
-	}
+	return new Response(res.body, { status: res.status, headers: responseHeaders });
+};
 
-	return new Response(res.body, { status, headers: responseHeaders });
-}
-
-export const GET: RequestHandler = async (e) => proxy(e);
-export const POST: RequestHandler = async (e) => proxy(e);
-export const PUT: RequestHandler = async (e) => proxy(e);
-export const PATCH: RequestHandler = async (e) => proxy(e);
-export const DELETE: RequestHandler = async (e) => proxy(e);
+export const fallback: RequestHandler = proxy;

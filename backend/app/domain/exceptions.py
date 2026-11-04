@@ -11,8 +11,9 @@ class NotFoundError(AppError):
 
 
 class ValidationError(AppError):
-    def __init__(self, detail: str):
+    def __init__(self, detail: str, field: str | None = None):
         super().__init__(400, detail)
+        self.field = field
 
 
 class UnauthorizedError(AppError):

@@ -1,63 +1,78 @@
-import { z } from 'zod';
+export type ActionType = 'configurar' | 'revisar' | 'archivar' | 'eliminar' | 'desarchivar';
 
-export interface Task {
+export type BusyActions = Record<number, ActionType>;
+
+export type TaskStatusId =
+	| 'VIDEO_UPLOADED'
+	| 'CONFIGURED'
+	| 'READY_TO_PROCESS'
+	| 'PROCESSING'
+	| 'PROCESSED'
+	| 'APPROVED'
+	| 'ARCHIVED';
+
+type District = {
+	id: number;
+	name: string;
+};
+
+type Locality = {
+	id: number;
+	name: string;
+	district: District;
+};
+
+type TaskStatus = {
+	id: TaskStatusId;
+	name: string;
+};
+
+export type TaskResponse = {
+	id: number;
+	name: string;
+	locality: Locality;
+	name_video: string;
+	duration: number;
+	status: TaskStatus;
+	date: string | Date;
+	created_at: string;
+	progress?: number;
+};
+
+export type TaskRow = {
 	id: number;
 	fecha: string;
+	nombre: string;
 	localidad: string;
-	vias: string;
-	estado: 'Subido' | 'Procesando' | 'Revisión' | 'Aprobado';
+	estadoNombre: string;
+	estadoId: TaskStatusId;
+	estadoBadgeClass: string;
 	detalle: string;
-	acciones: Array<'asignar' | 'archivar' | 'cancelar' | 'exportar' | 'revisar'>;
-}
+	progreso: number;
+	acciones: Array<ActionType>;
+};
 
-const allowedExtensions = ['.mp4', '.avi', '.mov'];
+export type TaskEvent = {
+	task_id: number;
+	status?: TaskStatusId;
+	progress?: number;
+};
 
-export const TaskFormSchema = z.object({
-	name: z.string().min(1, 'El nombre es obligatorio'),
-	date: z
-		.string()
-		.min(1, 'La fecha es obligatoria')
-		.refine(
-			(val) => {
-				const today = new Date();
-				const inputDate = new Date(val);
-				today.setHours(0, 0, 0, 0);
-				inputDate.setHours(0, 0, 0, 0);
-				return inputDate < today;
-			},
-			{ message: 'La fecha no puede ser mayor a hoy' }
-		),
-	selectedProvince: z
-		.number()
-		.nullable()
-		.refine((val) => val !== null, { message: 'Seleccione una provincia' }),
-	selectedDistrict: z
-		.number()
-		.nullable()
-		.refine((val) => val !== null, { message: 'Seleccione un distrito' }),
-	selectedLocality: z
-		.number()
-		.nullable()
-		.refine((val) => val !== null, { message: 'Seleccione una localidad' }),
-	file: z
-		.instanceof(File, { message: 'Debe seleccionar un archivo' })
-		.or(z.null())
-		.refine((file) => !!file, { message: 'Debe seleccionar un archivo' })
-		.refine(
-			(file) => {
-				if (!file) return false;
-				const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-				return allowedExtensions.includes(ext);
-			},
-			{ message: 'El archivo debe ser .mp4, .avi o .mov' }
-		)
-});
+export type FirstFrameInfo = {
+	width: number;
+	height: number;
+	image_b64: string;
+};
 
-export type TaskForm = {
+export type AbsolutePoint = [number, number];
+
+export type Road = {
 	name: string;
-	date: string;
-	selectedProvince: number | null;
-	selectedDistrict: number | null;
-	selectedLocality: number | null;
-	file: File | null;
+	polygon: Array<AbsolutePoint>;
+};
+
+export type TaskConfigPayload = {
+	roads_in: Array<Road>;
+	roads_out: Array<Road>;
+	excluded_zones: Array<Array<AbsolutePoint>>;
 };

@@ -1,60 +1,65 @@
-<script module lang="ts">
-	export type ActionType =
-		| 'configurar'
-		| 'revisar'
-		| 'exportar'
-		| 'cancelar'
-		| 'archivar'
-		| 'eliminar'
-		| 'desarchivar';
-
-	export interface TaskRow {
-		id: number;
-		fecha: string;
-		nombre: string;
-		localidad: string;
-		estadoNombre: string;
-		estadoId: string;
-		estadoBadgeClass: string;
-		detalle: string;
-		progreso: number;
-		acciones: ActionType[];
-	}
-</script>
-
 <script lang="ts">
+	import Icon from '$lib/components/Icon.svelte';
+	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	type ActionType = import('./TaskTable.svelte').ActionType;
-	type TaskRow = import('./TaskTable.svelte').TaskRow;
-	let {
-		title,
-		rows = [],
-		loading = false,
-		onAction,
-		rightButtonLabel,
-		onRightButtonClick,
-		busy = {}
-	} = $props<{
-		title: string;
-		rows: TaskRow[];
+
+	import type { ActionType, BusyActions, TaskRow } from '$lib/types/task';
+
+	type Props = {
+		busy?: BusyActions;
 		loading?: boolean;
 		onAction: (action: ActionType, id: number) => void;
-		rightButtonLabel?: string;
 		onRightButtonClick?: () => void;
-		busy?: Record<number, ActionType | true>;
-	}>();
+		rightButtonLabel?: string;
+		rows?: Array<TaskRow>;
+		title: string;
+	};
 
 	const ACTION_STYLES: Record<ActionType, string> = {
 		configurar: 'border-indigo-400/40 bg-indigo-300/12 hover:bg-indigo-300/20 text-indigo-100',
 		revisar: 'border-sky-400/40 bg-sky-300/12 hover:bg-sky-300/20 text-sky-100',
-		exportar: 'border-violet-400/40 bg-violet-300/12 hover:bg-violet-300/20 text-violet-100',
 		archivar: 'border-amber-400/40 bg-amber-300/12 hover:bg-amber-300/20 text-amber-100',
-		cancelar: 'border-orange-500/40 bg-orange-400/12 hover:bg-orange-400/20 text-orange-100',
 		eliminar: 'border-red-600/50 bg-red-600/15 hover:bg-red-600/25 text-red-100',
 		desarchivar: 'border-green-500/40 bg-green-400/12 hover:bg-green-400/20 text-green-100'
 	};
 
-	let filter = $state('');
+	const BUSY_LABELS: Partial<Record<ActionType, string>> = {
+		archivar: 'Archivando...',
+		desarchivar: 'Desarchivando...',
+		eliminar: 'Eliminando...'
+	};
+
+	const COLUMNS: Array<string> = [
+		'ID',
+		'Fecha',
+		'Nombre',
+		'Localidad',
+		'Estado',
+		'Detalle',
+		'Acciones'
+	];
+
+	let {
+		busy = {},
+		loading = false,
+		onAction,
+		onRightButtonClick,
+		rightButtonLabel,
+		rows = [],
+		title
+	}: Props = $props();
+
+	let filter: string = $state('');
+
+	const visibleRows: Array<TaskRow> = $derived.by((): Array<TaskRow> => {
+		const query: string = filter.trim().toLowerCase();
+		return rows
+			.filter(
+				(row: TaskRow): boolean =>
+					row.nombre.toLowerCase().includes(query) || row.localidad.toLowerCase().includes(query)
+			)
+			.sort((a: TaskRow, b: TaskRow): number => b.id - a.id);
+	});
 </script>
 
 <div class="h-full">
@@ -62,20 +67,7 @@
 	<div class="glass-card px-4 py-3 mb-4 border glass-divider">
 		<div class="flex justify-between items-center">
 			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="h-6 w-6 text-blue-500"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-					/>
-				</svg>
+				<Icon name="document" class="h-6 w-6 text-blue-500" />
 				<h1 class="heading-1" style="color: hsl(var(--foreground));">
 					{title}
 				</h1>
@@ -90,62 +82,31 @@
 
 	<!-- Filter -->
 	<div class="page-container px-0">
-		<div class="relative">
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				class="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-white/60 pointer-events-none"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke="currentColor"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-				/>
-			</svg>
-			<input
-				type="text"
-				placeholder="Filtrar por nombre o localidad..."
-				bind:value={filter}
-				class="glass-input !pl-10"
-			/>
-		</div>
+		<SearchInput bind:value={filter} placeholder="Filtrar por nombre o localidad..." />
 	</div>
 
 	<!-- Table -->
-	<div class="overflow-x-auto page-container px-0">
-		<div class="glass-card border glass-divider overflow-hidden">
+	<div class="page-container px-0">
+		<div class="glass-card border glass-divider overflow-x-auto">
 			<table class="w-full border-collapse text-sm">
 				<thead>
 					<tr
 						class="glass-surface"
 						style="background-image: linear-gradient(0deg, hsl(var(--accent1) / 0.06), transparent);"
 					>
-						<th class="p-3 text-left font-medium">ID</th>
-						<th class="p-3 text-left font-medium">Fecha</th>
-						<th class="p-3 text-left font-medium">Nombre</th>
-						<th class="p-3 text-left font-medium">Localidad</th>
-						<th class="p-3 text-left font-medium">Estado</th>
-						<th class="p-3 text-left font-medium">Detalle</th>
-						<th class="p-3 text-left font-medium">Acciones</th>
+						{#each COLUMNS as column (column)}
+							<th class="p-3 text-left font-medium">{column}</th>
+						{/each}
 					</tr>
 				</thead>
 				<tbody>
 					{#if loading}
 						<tr>
-							<td colspan="7" class="p-6 text-center opacity-80">Cargando...</td>
+							<td colspan={COLUMNS.length} class="p-6 text-center opacity-80">Cargando...</td>
 						</tr>
 					{:else}
-						{#each rows
-							.filter((r: TaskRow) => (filter.trim() === '' ? true : r.nombre
-											.toLowerCase()
-											.includes(filter.toLowerCase()) || r.localidad
-											.toLowerCase()
-											.includes(filter.toLowerCase())))
-							// Ordenar por ID de forma descendente para mostrar las tareas más recientes primero
-							.sort((a: TaskRow, b: TaskRow) => b.id - a.id) as task}
+						{#each visibleRows as task (task.id)}
+							{@const busyAction = busy[task.id]}
 							<tr class="border-b glass-divider">
 								<td class="p-3"><span class="font-medium opacity-90">#{task.id}</span></td>
 								<td class="p-3">{task.fecha}</td>
@@ -154,8 +115,10 @@
 								<td class="p-3">
 									<div class="flex min-w-[9rem] flex-col gap-1.5">
 										<span
-											class={`w-fit px-2 py-1 rounded-md text-xs font-medium border ${task.estadoBadgeClass}`}
-											>{task.estadoNombre}</span
+											class={[
+												'w-fit px-2 py-1 rounded-md text-xs font-medium border',
+												task.estadoBadgeClass
+											]}>{task.estadoNombre}</span
 										>
 										{#if task.estadoId === 'PROCESSING'}
 											<div
@@ -164,7 +127,7 @@
 												aria-valuemin={0}
 												aria-valuemax={100}
 												aria-valuenow={task.progreso}
-												aria-label={`Avance de ${task.nombre}`}
+												aria-label="Avance de {task.nombre}"
 											>
 												<div
 													class="h-full rounded-full bg-blue-400/80 transition-[width] duration-300"
@@ -178,23 +141,15 @@
 								<td class="p-3">{task.detalle}</td>
 								<td class="p-3">
 									<div class="flex gap-2">
-										{#each task.acciones as accion}
-											{@const isBusy = !!busy[task.id]}
-											{@const activeAction = busy[task.id] as ActionType | true}
+										{#each task.acciones as accion (accion)}
 											<button
-												onclick={() => !isBusy && onAction(accion as ActionType, task.id)}
-												class={`glass-button ${ACTION_STYLES[accion as ActionType] ?? ''} text-sm py-1 px-3`}
-												disabled={isBusy}
+												onclick={() => onAction(accion, task.id)}
+												class={['glass-button text-sm py-1 px-3', ACTION_STYLES[accion]]}
+												disabled={busyAction !== undefined}
 											>
-												{#if isBusy && (activeAction === true || activeAction === (accion as ActionType))}
+												{#if busyAction === accion}
 													<Spinner size={14} />
-													{accion === 'archivar'
-														? 'Archivando...'
-														: accion === 'eliminar'
-															? 'Eliminando...'
-															: accion === 'desarchivar'
-																? 'Desarchivando...'
-																: 'Procesando...'}
+													{BUSY_LABELS[accion] ?? 'Procesando...'}
 												{:else}
 													{accion.charAt(0).toUpperCase() + accion.slice(1)}
 												{/if}

@@ -1,10 +1,11 @@
-import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
+import { REDIRECT_CODE, safeNext } from '$lib/redirect';
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = ({ locals, url }) => {
 	if (locals.user) {
-		const next = url.searchParams.get('next') ?? '/';
-		throw redirect(302, next);
+		redirect(REDIRECT_CODE, safeNext(url.searchParams.get('next')));
 	}
 	return {};
 };

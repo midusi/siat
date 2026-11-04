@@ -106,6 +106,9 @@ class _Users:
     def get_by_username(self, username: str) -> User | None:
         return next((u for u in self.store.users.values() if u.username == username), None)
 
+    def get_by_email(self, email: str) -> User | None:
+        return next((u for u in self.store.users.values() if u.email == email), None)
+
     def get_by_username_or_email(self, username: str, email: str) -> User | None:
         return next((u for u in self.store.users.values() if u.username == username or u.email == email), None)
 

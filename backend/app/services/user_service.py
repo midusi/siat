@@ -24,9 +24,10 @@ class UserService:
 
     def create(self, user_request: UserCreateRequest) -> UserResponse:
         self._validate_passwords(user_request.password, user_request.confirm_password)
-        existing_user = self.user_exists(user_request.username, user_request.email)
-        if existing_user:
-            raise ValidationError("Ya existe un usuario con el mismo email o username")
+        if self.uow.users.get_by_username(user_request.username):
+            raise ValidationError("Ya existe un usuario con ese nombre de usuario", field="username")
+        if self.uow.users.get_by_email(user_request.email):
+            raise ValidationError("Email ya en uso", field="email")
 
         try:
             user_obj = User(
@@ -36,7 +37,7 @@ class UserService:
                 first_name=user_request.first_name,
                 last_name=user_request.last_name,
                 role=user_request.role,
-                active=True,
+                active=user_request.active,
             )
             self.uow.users.add(user_obj)
             self.uow.commit()
@@ -51,9 +52,11 @@ class UserService:
         user = self.uow.users.get(user_id)
         if not user:
             raise NotFoundError("Usuario no encontrado")
-        if req.email and req.email != user.email and self.user_exists(user.username, req.email):
-            raise ValidationError("Email ya en uso")
+        self._ensure_email_available(req.email, user)
+        if req.password is not None:
+            self._validate_passwords(req.password, req.confirm_password or "")
         old_role = user.role
+        old_active = user.active
         if req.email is not None:
             user.email = req.email
         if req.first_name is not None:
@@ -62,10 +65,19 @@ class UserService:
             user.last_name = req.last_name
         if req.role is not None:
             user.role = req.role
+        if req.active is not None:
+            user.active = req.active
+        if req.password is not None:
+            user.password = self.hash_password(req.password)
+            user.refresh_token_version = (user.refresh_token_version or 0) + 1
         self.uow.commit()
         self.uow.refresh(user)
         if req.role is not None and req.role != old_role:
             logger.info(f"user role changed id={user.id} from={old_role} to={req.role}")
+        if req.active is not None and req.active != old_active:
+            logger.info(f"user {'enabled' if req.active else 'disabled'} id={user.id}")
+        if req.password is not None:
+            logger.info(f"user password reset by admin id={user.id}")
         return UserResponse.model_validate(user)
 
     def get_list(self) -> list[UserResponse]:
@@ -122,8 +134,7 @@ class UserService:
 
     def update_profile(self, user_id: int, req: UserProfileUpdateRequest) -> UserResponse:
         user = self._require(user_id)
-        if req.email and req.email != user.email and self.user_exists(user.username, req.email):
-            raise ValidationError("Email ya en uso")
+        self._ensure_email_available(req.email, user)
         if req.first_name is not None:
             user.first_name = req.first_name
         if req.last_name is not None:
@@ -140,8 +151,12 @@ class UserService:
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         return self.pwd_context.verify(plain_password, hashed_password)
 
-    def user_exists(self, username: str, email: str) -> bool:
-        return self.uow.users.get_by_username_or_email(username, email) is not None
+    def _ensure_email_available(self, email: str | None, user: User) -> None:
+        if not email or email == user.email:
+            return
+        other = self.uow.users.get_by_email(email)
+        if other and other.id != user.id:
+            raise ValidationError("Email ya en uso", field="email")
 
     def _require(self, user_id: int) -> User:
         user = self.uow.users.get(user_id)
@@ -151,11 +166,11 @@ class UserService:
 
     def _validate_passwords(self, p1: str, p2: str):
         if p1 != p2:
-            raise ValidationError("Las contraseñas no coinciden")
+            raise ValidationError("Las contraseñas no coinciden", field="confirm_password")
         self._validate_policy(p1)
 
     def _validate_policy(self, pwd: str):
         if len(pwd) < 6:
-            raise ValidationError("La contraseña debe tener al menos 6 caracteres")
+            raise ValidationError("La contraseña debe tener al menos 6 caracteres", field="password")
         if not any(c.isalpha() for c in pwd) or not any(c.isdigit() for c in pwd):
-            raise ValidationError("La contraseña debe incluir letras y números")
+            raise ValidationError("La contraseña debe incluir letras y números", field="password")

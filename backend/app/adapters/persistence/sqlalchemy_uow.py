@@ -46,6 +46,10 @@ class SqlUserRepository(_Repo):
         orm = user_crud.get_by_username(self.session, username)
         return self._track(map_.user_to_domain(orm), orm) if orm else None
 
+    def get_by_email(self, email: str) -> User | None:
+        orm = user_crud.get_by_email(self.session, email)
+        return self._track(map_.user_to_domain(orm), orm) if orm else None
+
     def get_by_username_or_email(self, username: str, email: str) -> User | None:
         orm = user_crud.get_by_username_or_email(self.session, username, email)
         return self._track(map_.user_to_domain(orm), orm) if orm else None

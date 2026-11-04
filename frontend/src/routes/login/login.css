@@ -1,0 +1,13 @@
+.logo-circle {
+	background:
+		radial-gradient(circle at 30% 30%, hsl(var(--accent1) / 0.35), transparent 60%),
+		radial-gradient(circle at 70% 70%, hsl(var(--accent2) / 0.35), transparent 60%);
+	box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.18);
+}
+
+.logo-gradient-text {
+	background: linear-gradient(90deg, hsl(var(--accent1)), hsl(var(--accent2)));
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
