@@ -13,7 +13,7 @@ from app.services.task_status_service import TaskStatusService
 from app.services.task_status_history_service import TaskStatusHistoryService
 from app.services.road_service import RoadService
 from app.schemas.task import FirstFrameInfoResponse, TaskCreateRequest, TaskResponse, TaskConfigRequest
-from app.schemas.task import TaskUpdateData
+from app.schemas.task import TaskUpdateData, UPLOAD_SOURCE_REQUIRED_DETAIL
 from app.domain.entities import Task, Video, TaskStatusHistory, Road, Inference
 from app.enums.road_direction import RoadDirection
 from app.ports.storage import ObjectStorage
@@ -181,7 +181,7 @@ class TaskService:
             return self.create_from_object_key(task_request, object_key)
         if file and file.filename:
             return self.create(task_request, file)
-        raise ValidationError("Debe proporcionar 'file' o 'object_key'")
+        raise ValidationError(UPLOAD_SOURCE_REQUIRED_DETAIL)
 
     def create(
         self,

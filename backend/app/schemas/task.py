@@ -4,7 +4,9 @@ from app.schemas.locality import LocalityWDistrictResponse
 from app.schemas.task_status import TaskStatusResponse
 from app.schemas.road import RoadRequest
 from datetime import datetime
-    
+
+UPLOAD_SOURCE_REQUIRED_DETAIL = "Debe proporcionar 'file' o 'object_key'"
+
 class TaskCreateRequest(BaseModel):
     name: str
     locality_id: int
