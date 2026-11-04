@@ -67,3 +67,8 @@ def get_password_reset_service(uow: UnitOfWork = Depends(get_uow), email_service
 def get_inference_service(uow: UnitOfWork = Depends(get_uow)):
     from app.services.inference_service import InferenceService
     return InferenceService(uow)
+
+
+def get_observability_service(uow: UnitOfWork = Depends(get_uow)):
+    from app.services.observability_service import ObservabilityService
+    return ObservabilityService(uow)
