@@ -54,9 +54,14 @@ def get_bucket_service():
     return get_object_storage()
 
 
-def get_password_reset_service(uow: UnitOfWork = Depends(get_uow)):
+def get_email_service():
+    from app.services.email_service import EmailService
+    return EmailService()
+
+
+def get_password_reset_service(uow: UnitOfWork = Depends(get_uow), email_service=Depends(get_email_service)):
     from app.services.password_reset_service import PasswordResetService
-    return PasswordResetService(uow)
+    return PasswordResetService(uow, email_service)
 
 
 def get_inference_service(uow: UnitOfWork = Depends(get_uow)):
@@ -64,6 +69,6 @@ def get_inference_service(uow: UnitOfWork = Depends(get_uow)):
     return InferenceService(uow)
 
 
-def get_email_service():
-    from app.services.email_service import EmailService
-    return EmailService()
+def get_observability_service(uow: UnitOfWork = Depends(get_uow)):
+    from app.services.observability_service import ObservabilityService
+    return ObservabilityService(uow)

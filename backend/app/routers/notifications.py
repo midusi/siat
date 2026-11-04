@@ -1,14 +1,9 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from app.schemas.notification import NotificationRequest
 from app.services.notification_service import notification_manager
 
 router = APIRouter(tags=["notifications"])
-
-class NotificationRequest(BaseModel):
-    task_id: int
-    status: str
-    progress: int | None = None
 
 @router.get("/events")
 async def events(request: Request):
