@@ -14,6 +14,8 @@
 		users: Array<User>;
 	};
 
+	const COLUMNS: Array<string> = ['ID', 'Nombre', 'Email', 'Rol', 'Estado', 'Acciones'];
+
 	let {
 		deleting,
 		isFiltering = false,
@@ -26,16 +28,13 @@
 	}: Props = $props();
 </script>
 
-<div class="glass-card overflow-hidden">
+<div class="glass-card overflow-x-auto">
 	<table class="w-full border-collapse">
 		<thead>
 			<tr class="glass-surface text-white/90">
-				<th class="p-3 text-left font-medium">ID</th>
-				<th class="p-3 text-left font-medium">Nombre</th>
-				<th class="p-3 text-left font-medium">Email</th>
-				<th class="p-3 text-left font-medium">Rol</th>
-				<th class="p-3 text-left font-medium">Estado</th>
-				<th class="p-3 text-left font-medium">Acciones</th>
+				{#each COLUMNS as column (column)}
+					<th class="p-3 text-left font-medium">{column}</th>
+				{/each}
 			</tr>
 		</thead>
 		<tbody>
@@ -52,7 +51,7 @@
 
 			{#if users.length === 0}
 				<tr>
-					<td colspan="6" class="p-4 text-center text-white/70">
+					<td colspan={COLUMNS.length} class="p-4 text-center text-white/70">
 						{#if loadError}
 							<span class="text-red-400">{loadError}</span>
 						{:else if isFiltering}

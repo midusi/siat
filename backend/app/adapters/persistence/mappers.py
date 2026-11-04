@@ -83,6 +83,7 @@ def inference_to_domain(orm: m.Inference | None) -> d.Inference | None:
         transition_determined=orm.transition_determined,
         url_data_obj_history=orm.url_data_obj_history,
         url_video_processed=orm.url_video_processed,
+        url_camera_motion=getattr(orm, "url_camera_motion", None),
         inferred_at=orm.inferred_at,
     )
 
@@ -94,6 +95,7 @@ def apply_inference(orm: m.Inference, domain: d.Inference) -> None:
     orm.transition_determined = domain.transition_determined
     orm.url_data_obj_history = domain.url_data_obj_history
     orm.url_video_processed = domain.url_video_processed
+    orm.url_camera_motion = domain.url_camera_motion
     orm.inferred_at = domain.inferred_at
 
 

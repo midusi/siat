@@ -3,9 +3,8 @@
 		ALLOWED_VIDEO_EXTENSIONS,
 		INVALID_VIDEO_MESSAGE,
 		isAllowedVideo,
-		localDateString,
 		TaskFormSchema
-	} from '$lib/types/task';
+	} from '$lib/validation/task';
 	import { createTask } from '$lib/services/tasks';
 	import { errorMessage } from '$lib/services/errors';
 	import {
@@ -18,13 +17,15 @@
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/Icon.svelte';
+	import { localDateString } from '$lib/format';
 	import { onMount } from 'svelte';
-	import { showAlert } from '$lib/dialog';
+	import { showAlert } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { uploadVideoToMinio } from '$lib/services/upload';
 
-	import type { Option, SelectItem } from '$lib/services/locations';
-	import type { TaskForm } from '$lib/types/task';
+	import type { Option } from '$lib/services/locations';
+	import type { SelectItem } from '$lib/types/select';
+	import type { TaskForm } from '$lib/validation/task';
 
 	type TaskValidation = ReturnType<typeof TaskFormSchema.safeParse>;
 
@@ -49,7 +50,7 @@
 	let uploadProgress: number = $state(0);
 
 	const validation: TaskValidation = $derived(TaskFormSchema.safeParse(form));
-	const districtItems: Array<SelectItem> = $derived(toSelectItems(districts));
+	const districtItems: Array<SelectItem<number>> = $derived(toSelectItems(districts));
 	const errors: Record<string, string> = $derived(
 		submitted && !validation.success
 			? Object.fromEntries(
@@ -58,8 +59,8 @@
 			: {}
 	);
 	const isFormValid: boolean = $derived(validation.success);
-	const localityItems: Array<SelectItem> = $derived(toSelectItems(localities));
-	const provinceItems: Array<SelectItem> = $derived(toSelectItems(provinces));
+	const localityItems: Array<SelectItem<number>> = $derived(toSelectItems(localities));
+	const provinceItems: Array<SelectItem<number>> = $derived(toSelectItems(provinces));
 
 	$effect(() => {
 		if (form.selectedProvince) {
@@ -171,7 +172,7 @@
 		<h2 class="heading-2 text-center mb-8">Datos</h2>
 
 		<form class="space-y-8" onsubmit={handleSubmit}>
-			<FormRow label="Nombre *" for="nombre" error={errors.name}>
+			<FormRow label="Nombre" required for="nombre" error={errors.name}>
 				<input
 					type="text"
 					id="nombre"
@@ -181,7 +182,7 @@
 				/>
 			</FormRow>
 
-			<FormRow label="Fecha *" for="fecha" error={errors.date}>
+			<FormRow label="Fecha" required for="fecha" error={errors.date}>
 				<input
 					type="date"
 					id="fecha"
@@ -192,7 +193,7 @@
 			</FormRow>
 
 			<div class="flex flex-col space-y-6">
-				<FormRow label="Provincia *" for="provincia" error={errors.selectedProvince}>
+				<FormRow label="Provincia" required for="provincia" error={errors.selectedProvince}>
 					<GlassSelect
 						id="provincia"
 						ariaLabel="Provincia"
@@ -206,7 +207,7 @@
 					/>
 				</FormRow>
 
-				<FormRow label="Distrito *" for="distrito" error={errors.selectedDistrict}>
+				<FormRow label="Distrito" required for="distrito" error={errors.selectedDistrict}>
 					<GlassSelect
 						id="distrito"
 						ariaLabel="Distrito"
@@ -219,7 +220,7 @@
 					/>
 				</FormRow>
 
-				<FormRow label="Localidad *" for="localidad" error={errors.selectedLocality}>
+				<FormRow label="Localidad" required for="localidad" error={errors.selectedLocality}>
 					<GlassSelect
 						id="localidad"
 						ariaLabel="Localidad"
@@ -232,7 +233,7 @@
 				</FormRow>
 			</div>
 
-			<FormRow label="Archivo de video *" for="video-upload" error={errors.file}>
+			<FormRow label="Archivo de video" required for="video-upload" error={errors.file}>
 				<div class="flex items-center space-x-4">
 					<label
 						for="video-upload"

@@ -37,32 +37,12 @@
 		--background: 0 0% 6%;
 		--foreground: 0 0% 96%;
 
-		--muted: 0 0% 14%;
-		--muted-foreground: 0 0% 70%;
-
 		--border: 0 0% 100% / 0.18;
 		--input: 0 0% 100% / 0.18;
 		--ring: 0 0% 100% / 0.24;
 
-		--primary: 0 0% 96%;
-		--primary-foreground: 0 0% 6%;
-
 		--secondary: 0 0% 100% / 0.08;
-		--secondary-foreground: 0 0% 96%;
-
-		--destructive: 0 84% 60%;
-		--destructive-foreground: 0 0% 98%;
-
-		--accent: 0 0% 100% / 0.08;
-		--accent-foreground: 0 0% 96%;
-
-		--popover: 0 0% 10%;
-		--popover-foreground: 0 0% 96%;
-
 		--card: 0 0% 100% / 0.06;
-		--card-foreground: 0 0% 96%;
-
-		--radius: 14px;
 
 		--accent1: 223 84% 56%;
 		--accent2: 268 72% 60%;
@@ -80,7 +60,7 @@
 	}
 }
 
-@layer utilities {
+@layer components {
 	.app-background {
 		background:
 			radial-gradient(900px 500px at -10% -10%, hsl(var(--accent1) / 0.14), transparent 60%),

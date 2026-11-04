@@ -1,21 +1,24 @@
 <script lang="ts">
 	import { errorMessage } from '$lib/services/errors';
-	import { getCategoryColor } from '$lib/colors';
+	import { getCategoryColor, getCategoryColorMap, RESERVED_COLORS } from '$lib/colors';
 	import IndeterminadosPanel from './IndeterminadosPanel.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import ResumenTablas from './ResumenTablas.svelte';
 	import * as review from './review';
-	import { showError, showSuccess } from '$lib/toast';
+	import { showError, showSuccess } from '$lib/toast.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import VideoPanel from './VideoPanel.svelte';
 
+	import type { FrameMotionMap } from './camera-motion';
+	import type { SelectItem } from '$lib/types/select';
+
 	let activeIndeterminateId: string | null = $state(null);
+	let cameraMotion: FrameMotionMap | null = $state.raw(null);
 	let determinados: review.Indeterminados = $state({});
 	let error: string | null = $state(null);
 	let excludedZones: Array<Array<review.Vertex>> = $state([]);
 	let generalReady: boolean = $state(false);
-	let history: review.History = $state({});
 	let indeterminados: review.Indeterminados = $state({});
 	let liveIds: Set<string> = $state(new Set());
 	let loading: boolean = $state(true);
@@ -36,10 +39,11 @@
 	const hasRutas: boolean = $derived(Object.keys(rutas).length > 0);
 	const taskId: string = $derived(page.params.id);
 	const vehicleTypes: Array<string> = $derived(review.getVehicleTypes(rutas, indeterminados));
-	const vehicleItems: Array<review.SelectOption> = $derived(
+	const categoryColors: Map<string, string> = $derived(getCategoryColorMap(vehicleTypes));
+	const vehicleItems: Array<SelectItem<string>> = $derived(
 		vehicleTypes.map((v) => ({ value: v, label: review.getVehicleName(v) }))
 	);
-	const zoneItems: Array<review.SelectOption> = $derived([
+	const zoneItems: Array<SelectItem<string>> = $derived([
 		{ value: '', label: 'Seleccionar…' },
 		...review.getZoneIds(rutas).map((z) => ({ value: z, label: `Zona ${z}` }))
 	]);
@@ -61,6 +65,17 @@
 		generalReady = true;
 	};
 
+	const loadCameraMotion = async (url: string | null): Promise<void> => {
+		if (!url) {
+			return;
+		}
+		try {
+			cameraMotion = await review.fetchCameraMotion(url);
+		} catch (e) {
+			console.warn('No se pudo cargar el movimiento de cámara, se usan zonas estáticas:', e);
+		}
+	};
+
 	const fetchData = async (): Promise<void> => {
 		loading = true;
 		error = null;
@@ -77,9 +92,9 @@
 			rutas = data.rutas;
 			indeterminados = data.indeterminados;
 			determinados = data.determinados;
-			history = data.history;
 			sortedIndeterminados = review.sortIndeterminados(indeterminados);
 			loadTrackHistory(data.historyUrl);
+			loadCameraMotion(data.cameraMotionUrl);
 		} catch (e) {
 			error = errorMessage(e, 'Error desconocido al cargar los datos.');
 		} finally {
@@ -109,11 +124,11 @@
 		trackHistory = next;
 	};
 
-	const classColor = (cls: string): string => getCategoryColor(cls, vehicleTypes);
+	const classColor = (cls: string): string => getCategoryColor(cls, categoryColors);
 
 	const trackColor = (trackId: string): string => {
-		const cls: string | null = review.getTrackClass(trackId, determinados, indeterminados, history);
-		return cls ? classColor(cls) : '#ffffff';
+		const cls: string | null = review.getTrackClass(trackId, determinados, indeterminados);
+		return cls ? classColor(cls) : RESERVED_COLORS.white;
 	};
 
 	const hideIndeterminado = (trackId: string): void => {
@@ -176,7 +191,7 @@
 		savingById[trackId] = true;
 		hideIndeterminado(trackId);
 
-		const { in: entrada, out: salida } = item.labels;
+		const { in: entrada, out: salida }: review.Labels = item.labels;
 		moveToDeterminados(trackId, entrada, salida);
 
 		if (await saveChanges()) {
@@ -214,7 +229,7 @@
 			}
 
 			const merged: review.Indeterminado = review.mergeIndeterminados(keep, remove);
-			const { in: entrada, out: salida } = merged.labels;
+			const { in: entrada, out: salida }: review.Labels = merged.labels;
 			indeterminados[keepId] = merged;
 			delete indeterminados[removeId];
 
@@ -276,6 +291,7 @@
 						bind:height={videoPanelHeight}
 						bind:liveIds
 						{videoPath}
+						{cameraMotion}
 						{videoFps}
 						{videoWidth}
 						{videoHeight}

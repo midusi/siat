@@ -3,8 +3,10 @@
 	import * as review from './review';
 	import ScrollArea from '$lib/components/ScrollArea.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { showConfirm } from '$lib/dialog';
+	import { showConfirm } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
+
+	import type { SelectItem } from '$lib/types/select';
 
 	type Props = {
 		activeId: string | null;
@@ -19,8 +21,8 @@
 		onmerge: (keepId: string, removeId: string) => Promise<void>;
 		onselect: (trackId: string) => void;
 		savingById: Record<string, boolean>;
-		vehicleItems: Array<review.SelectOption>;
-		zoneItems: Array<review.SelectOption>;
+		vehicleItems: Array<SelectItem<string>>;
+		zoneItems: Array<SelectItem<string>>;
 	};
 
 	let {
@@ -99,8 +101,7 @@
 			title: 'Unir indeterminados',
 			message: `Se unirán los indeterminados ${keepId} y ${removeId}. El ID ${keepId} se mantendrá y el ${removeId} se eliminará.\n¿Desea continuar?`,
 			variant: 'warning',
-			confirmText: 'Unir',
-			cancelText: 'Cancelar'
+			confirmText: 'Unir'
 		});
 		if (proceed) {
 			await onmerge(keepId, removeId);
@@ -121,7 +122,7 @@
 {#snippet select(
 	trackId: string,
 	field: review.IndeterminadoField,
-	options: Array<review.SelectOption>,
+	options: Array<SelectItem<string>>,
 	value: string,
 	label: string
 )}
@@ -148,7 +149,7 @@
 		/>
 	</div>
 
-	<ScrollArea orientation="y" className="flex-1">
+	<ScrollArea class="flex-1">
 		<div class="space-y-3 p-1">
 			{#each visibleItems as [trackId, item] (trackId)}
 				{@const canConfirm =
@@ -156,7 +157,6 @@
 				{@const saving = !!savingById[trackId]}
 				{@const isMergeSource = mergeModeActive && mergeSourceId === trackId}
 				{@const isLive = liveIds.has(trackId) || trackId === activeId}
-				<!-- Click en toda la tarjeta para el mouse; con teclado se usa el botón del ID -->
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					id={`ind-card-${trackId}`}
@@ -183,7 +183,7 @@
 							disabled={saving || mergeModeActive || mergeInProgress}
 						>
 							{#if saving}
-								<Spinner size={14} className="inline-block mr-1" />
+								<Spinner size={14} class="inline-block mr-1" />
 								Eliminando...
 							{:else}
 								Eliminar

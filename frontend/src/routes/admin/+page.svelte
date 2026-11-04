@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ApiError } from '$lib/services/errors';
+	import { ApiError, errorMessage } from '$lib/services/errors';
 	import {
 		changeUserStatus,
 		createUser,
@@ -12,7 +12,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { onMount } from 'svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { showAlert, showConfirm } from '$lib/dialog';
+	import { showAlert, showConfirm } from '$lib/dialog.svelte';
 	import UserEditForm from './UserEditForm.svelte';
 	import UserTable from './UserTable.svelte';
 
@@ -144,7 +144,7 @@
 			}
 			showModal = false;
 		} catch (e) {
-			const message: string = e instanceof Error ? e.message : 'Error de red';
+			const message: string = errorMessage(e, 'Error de red');
 			const field: string | undefined = e instanceof ApiError ? e.field : undefined;
 			if (field && field !== 'general' && field in formErrors) {
 				formErrors[field as keyof FormErrors] = message;
@@ -171,7 +171,7 @@
 		} catch (e) {
 			patchUser(user.id, { active: prev });
 			await showAlert({
-				message: e instanceof Error ? e.message : 'No se pudo actualizar el estado',
+				message: errorMessage(e, 'No se pudo actualizar el estado'),
 				variant: 'danger'
 			});
 		} finally {
@@ -186,8 +186,7 @@
 		const confirmed: boolean = await showConfirm({
 			message: DELETE_MESSAGE,
 			variant: 'danger',
-			confirmText: 'Eliminar',
-			cancelText: 'Cancelar'
+			confirmText: 'Eliminar'
 		});
 		if (!confirmed) {
 			return;
@@ -200,7 +199,7 @@
 		} catch (e) {
 			users = prev;
 			await showAlert({
-				message: e instanceof Error ? e.message : 'Error de red al eliminar usuario',
+				message: errorMessage(e, 'Error de red al eliminar usuario'),
 				variant: 'danger'
 			});
 		} finally {

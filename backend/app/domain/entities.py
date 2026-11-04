@@ -86,6 +86,7 @@ class Inference:
     url_video_processed: str
     inferred_at: datetime
     id: int | None = None
+    url_camera_motion: str | None = None
 
 
 @dataclass

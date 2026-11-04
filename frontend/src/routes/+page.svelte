@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { actionDispatcher, createTaskList } from '$lib/task-list.svelte';
 	import { archiveTask, fetchTasks } from '$lib/services/tasks';
+	import { BACKEND_URL } from '$lib/constants';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import TaskTable from '$lib/components/TaskTable.svelte';
@@ -19,7 +20,7 @@
 
 	onMount(() => {
 		tasks.load();
-		const eventSource: EventSource = new EventSource('/api/events');
+		const eventSource: EventSource = new EventSource(`${BACKEND_URL}/events`);
 		eventSource.onmessage = (event) => {
 			try {
 				const data: TaskEvent = JSON.parse(event.data);

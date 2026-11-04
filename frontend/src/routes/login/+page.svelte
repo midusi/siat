@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './login.css';
-	import { ApiError } from '$lib/services/errors';
+	import { errorMessage } from '$lib/services/errors';
 	import { goto } from '$app/navigation';
 	import { login } from '$lib/services/auth';
 	import { page } from '$app/state';
@@ -12,14 +12,15 @@
 	let password: string = $state('');
 	let username: string = $state('');
 
-	const handleLogin = async (): Promise<void> => {
+	const handleLogin = async (event: SubmitEvent): Promise<void> => {
+		event.preventDefault();
 		error = null;
 		isSubmitting = true;
 		try {
 			await login(username, password);
 			await goto(safeNext(page.url.searchParams.get('next')));
 		} catch (e) {
-			error = e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor';
+			error = errorMessage(e);
 		} finally {
 			isSubmitting = false;
 		}
@@ -36,13 +37,7 @@
 			</h1>
 		</div>
 
-		<form
-			class="space-y-4 glass-card p-6 border"
-			onsubmit={(e) => {
-				e.preventDefault();
-				void handleLogin();
-			}}
-		>
+		<form class="space-y-4 glass-card p-6 border" onsubmit={handleLogin}>
 			{#if error}
 				<div class="alert-danger p-2" role="alert">{error}</div>
 			{/if}

@@ -1,38 +1,30 @@
-# sv
+# SIAT — Frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit 2 + Svelte 5 + Tailwind CSS 4, servido con `adapter-node`.
 
-## Creating a project
+## Desarrollo
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```bash
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Con el backend levantado en Docker (`docker compose up -d` desde la raíz del repo):
 
 ```bash
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+La app queda en `http://localhost:5173` con recarga en caliente. Las URLs del backend y de MinIO se leen de `frontend/.env` (`BACKEND_URL`, `MINIO_URL`).
 
-To create a production version of your app:
+## Verificación
 
 ```bash
-npm run build
+npm run check   # svelte-check
+npm run lint    # prettier + eslint
+npm run format  # aplica prettier
 ```
 
-You can preview the production build with `npm run preview`.
+## Contenedor
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+El servicio `frontend` de `docker-compose.yaml` corre el build de producción (`node build`) en el puerto 3000. No monta el código, así que para ver cambios hay que reconstruirlo:
+
+```bash
+docker compose up -d --build --no-deps frontend
+```

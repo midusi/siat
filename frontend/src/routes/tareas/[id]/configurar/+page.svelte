@@ -1,38 +1,48 @@
 <script lang="ts">
-	import { apiFetch } from '$lib/api';
+	import './configurar.css';
+	import { buildConfigPayload, centroid, toCanvasPx } from './geometry';
+	import { calculatePopoverPosition } from './popover';
+	import { createPolygonEditor, OPCIONES_SENTIDO } from './editor.svelte';
+	import { errorMessage as apiErrorMessage } from '$lib/services/errors';
 	import { fade, fly } from 'svelte/transition';
+	import { fetchFirstFrame, saveTaskConfig } from '$lib/services/tasks';
 	import GlassSelect from '$lib/components/GlassSelect.svelte';
 	import { goto } from '$app/navigation';
+	import Icon from '$lib/components/Icon.svelte';
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
+	import { polygonColor, redraw } from './draw';
 	import { quintOut } from 'svelte/easing';
 	import ScrollArea from '$lib/components/ScrollArea.svelte';
-	import { showAlert } from '$lib/dialog';
+	import { showAlert } from '$lib/dialog.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
-	type AbsolutePoint = [number, number];
-	type Coordinates = { x: number; y: number };
-	type FirstFrameInfo = { width: number; height: number; image_b64: string };
-	type Polygon = {
-		id: number;
-		via: string;
-		sentido: string;
-		vertices: Array<Coordinates>;
-	};
-	type PopoverPosition = { top: number; left: number; transform: string };
-	type Road = { name: string; polygon: Array<AbsolutePoint> };
-	type TaskConfigPayload = {
-		roads_in: Array<Road>;
-		roads_out: Array<Road>;
-		excluded_zones: Array<Array<AbsolutePoint>>;
+	import type { Coordinates, Sentido } from './geometry';
+	import type { FirstFrameInfo } from '$lib/types/task';
+	import type { PolygonEditor } from './editor.svelte';
+	import type { PopoverPosition } from './popover';
+	import type { SelectItem } from '$lib/types/select';
+	import type { Snippet } from 'svelte';
+
+	type HintMode = 'edit' | 'excluded' | 'road';
+	type SentidoStyle = { border: string; text: string };
+
+	const HANDLE_HIT_RADIUS_PX: number = 15;
+	const SENTIDO_ITEMS: Array<SelectItem<Sentido>> = OPCIONES_SENTIDO.map(
+		(sentido: Sentido): SelectItem<Sentido> => ({ value: sentido, label: sentido })
+	);
+	const SENTIDO_STYLES: Record<Sentido, SentidoStyle> = {
+		Entrada: { border: 'border-green-400', text: 'text-green-300' },
+		Excluida: { border: 'border-white/30', text: 'text-white/60' },
+		Salida: { border: 'border-red-400', text: 'text-red-300' }
 	};
 
-	const OPCIONES_SENTIDO: Array<string> = ['Entrada', 'Salida'];
+	const editor: PolygonEditor = createPolygonEditor();
 
-	let _idCounter: number = 0;
 	let canvas: HTMLCanvasElement | null = $state(null);
 	let ctx: CanvasRenderingContext2D | null = $state.raw(null);
-	let currentPoints: Array<Coordinates> = $state([]);
+	let editingId: number | null = $state(null);
+	let editValue: string = $state('');
 	let errorMessage: string | null = $state(null);
 	let frameHeight: number = $state(1080);
 	let frameWidth: number = $state(1920);
@@ -40,10 +50,6 @@
 	let imageSrc: string = $state('');
 	let isLoading: boolean = $state(true);
 	let isSubmitting: boolean = $state(false);
-	let lastSentido: string = OPCIONES_SENTIDO[0];
-	let modoZonaExcluida: boolean = $state(false);
-	let pendingPolygon: Omit<Polygon, 'id'> | null = $state(null);
-	let polygons: Array<Polygon> = $state([]);
 	let popoverEl: HTMLDivElement | null = $state(null);
 	let popoverPosition: PopoverPosition = $state({
 		top: 0,
@@ -52,40 +58,39 @@
 	});
 	let viaInputEl: HTMLInputElement | null = $state(null);
 
-	const taskId: string = $derived(page.params.id);
-	let entradasCount: number = $derived(polygons.filter((p) => p.sentido === 'Entrada').length);
-	let salidasCount: number = $derived(polygons.filter((p) => p.sentido === 'Salida').length);
-	let canSubmit: boolean = $derived(entradasCount > 0 && salidasCount > 0 && !isSubmitting);
+	const canSubmit: boolean = $derived(
+		editor.entradasCount > 0 && editor.salidasCount > 0 && !isSubmitting
+	);
+	const hintMode: HintMode = $derived(
+		editor.editMode ? 'edit' : editor.excludedMode ? 'excluded' : 'road'
+	);
+	const taskId: number = $derived(Number(page.params.id));
 
 	$effect(() => {
 		redrawCanvas();
 	});
 
 	onMount(() => {
-		fetchFirstFrame();
+		loadFirstFrame();
 	});
 
-	const fetchFirstFrame = async (): Promise<void> => {
+	const loadFirstFrame = async (): Promise<void> => {
 		if (!taskId) {
 			return;
 		}
 		try {
 			isLoading = true;
 			errorMessage = null;
-			const response: Response = await apiFetch(`/task/${taskId}/get-first-frame-info`);
-			if (!response.ok) {
-				throw new Error(`Error al obtener información del primer frame: ${response.statusText}`);
-			}
-			const info: FirstFrameInfo = await response.json();
-			if (!info.image_b64) {
-				throw new Error('Respuesta sin imagen base64');
-			}
+			const info: FirstFrameInfo = await fetchFirstFrame(taskId);
 			frameWidth = info.width;
 			frameHeight = info.height;
 			imageSrc = `data:image/jpeg;base64,${info.image_b64}`;
 		} catch (error) {
 			console.error('No se pudo cargar el frame de la tarea:', error);
-			errorMessage = 'No se pudo cargar la imagen. Por favor, recargue la página.';
+			errorMessage = apiErrorMessage(
+				error,
+				'No se pudo cargar la imagen. Por favor, recargue la página.'
+			);
 		} finally {
 			isLoading = false;
 		}
@@ -93,23 +98,7 @@
 
 	const onResize = (): void => {
 		setupCanvas();
-		updatePopoverPositionForCurrentPending();
-	};
-
-	const newId = (): number => {
-		_idCounter += 1;
-		return Date.now() + _idCounter;
-	};
-
-	const setModoZonaExcluida = (flag: boolean): void => {
-		if (modoZonaExcluida === flag) {
-			return;
-		}
-		modoZonaExcluida = flag;
-		currentPoints = [];
-		if (pendingPolygon) {
-			cancelPendingPolygon();
-		}
+		updatePopoverPosition();
 	};
 
 	const setupCanvas = (): void => {
@@ -122,183 +111,86 @@
 		requestAnimationFrame(redrawCanvas);
 	};
 
-	const toCanvasPx = (points: Array<Coordinates>, target: HTMLCanvasElement): Array<Coordinates> =>
-		points.map((p) => ({ x: p.x * target.width, y: p.y * target.height }));
-
-	const ordenarVertices = (points: Array<Coordinates>): Array<Coordinates> => {
-		if (points.length < 3) {
-			return points;
-		}
-		const n: number = points.length;
-		const centro: Coordinates = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), {
-			x: 0,
-			y: 0
-		});
-		centro.x /= n;
-		centro.y /= n;
-		return points
-			.map((point) => ({
-				...point,
-				angle: Math.atan2(point.y - centro.y, point.x - centro.x)
-			}))
-			.sort((a, b) => a.angle - b.angle)
-			.map(({ x, y }) => ({ x, y }));
+	const canvasPoint = (event: MouseEvent, target: HTMLCanvasElement): Coordinates => {
+		const rect: DOMRect = target.getBoundingClientRect();
+		return {
+			x: (event.clientX - rect.left) / target.width,
+			y: (event.clientY - rect.top) / target.height
+		};
 	};
 
-	const calculatePopoverPosition = (
-		polyVerticesCanvasPx: Array<Coordinates>,
-		canvasRect: DOMRect,
-		measuredWidth?: number,
-		measuredHeight?: number
-	): PopoverPosition => {
-		const centro: Coordinates = polyVerticesCanvasPx.reduce(
-			(acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
-			{
-				x: 0,
-				y: 0
-			}
-		);
-		centro.x /= 4;
-		centro.y /= 4;
-
-		const margin: number = 16;
-		const offsetY: number = 15;
-		const width: number = measuredWidth ?? popoverEl?.offsetWidth ?? 288;
-		const height: number = measuredHeight ?? popoverEl?.offsetHeight ?? 230;
-
-		let top: number = centro.y + canvasRect.top + offsetY;
-		let transform: string = 'translate(-50%, 0)';
-
-		if (top + height > window.innerHeight - margin) {
-			top = centro.y + canvasRect.top - offsetY - height;
-			transform = 'translate(-50%, 0)';
-		}
-
-		let left: number = centro.x + canvasRect.left;
-		if (left + width / 2 > window.innerWidth - margin) {
-			left = window.innerWidth - width / 2 - margin;
-		}
-		if (left - width / 2 < margin) {
-			left = width / 2 + margin;
-		}
-
-		return { top, left, transform };
-	};
+	const handleRadius = (target: HTMLCanvasElement): Coordinates => ({
+		x: HANDLE_HIT_RADIUS_PX / target.width,
+		y: HANDLE_HIT_RADIUS_PX / target.height
+	});
 
 	const handleCanvasClick = async (event: MouseEvent): Promise<void> => {
-		if (pendingPolygon || !canvas) {
+		if (!canvas || editor.editMode) {
 			return;
 		}
-		const rect: DOMRect = canvas.getBoundingClientRect();
-		const xCanvas: number = event.clientX - rect.left;
-		const yCanvas: number = event.clientY - rect.top;
-		const xRel: number = xCanvas / canvas.width;
-		const yRel: number = yCanvas / canvas.height;
-		currentPoints.push({ x: xRel, y: yRel });
-
-		if (modoZonaExcluida || currentPoints.length !== 4) {
+		const roadCompleted: boolean = editor.addPoint(canvasPoint(event, canvas));
+		if (!roadCompleted) {
 			return;
 		}
-
-		const verticesOrdenados: Array<Coordinates> = ordenarVertices(currentPoints);
-		pendingPolygon = {
-			vertices: verticesOrdenados,
-			via: '',
-			sentido: lastSentido
-		};
-		currentPoints = [];
-		const verticesCanvas: Array<Coordinates> = toCanvasPx(verticesOrdenados, canvas);
-		popoverPosition = calculatePopoverPosition(verticesCanvas, rect);
-
+		updatePopoverPosition();
 		await tick();
-		const rect2: DOMRect = canvas.getBoundingClientRect();
-		popoverPosition = calculatePopoverPosition(
-			verticesCanvas,
-			rect2,
-			popoverEl?.offsetWidth,
-			popoverEl?.offsetHeight
-		);
+		updatePopoverPosition();
 
 		viaInputEl?.focus();
 		viaInputEl?.select();
 	};
 
-	const handleKeyDown = async (event: KeyboardEvent): Promise<void> => {
-		if (pendingPolygon) {
-			if (event.key === 'Enter') {
-				if (pendingPolygon.via && pendingPolygon.via.trim().length > 0) {
-					confirmPendingPolygon();
-				}
-			}
-			if (event.key === 'Escape') {
-				cancelPendingPolygon();
-			}
+	const handleCanvasMouseDown = (event: MouseEvent): void => {
+		if (!canvas || !editor.editMode) {
 			return;
 		}
+		event.preventDefault();
+		editor.pointerDown(canvasPoint(event, canvas), handleRadius(canvas));
+	};
 
-		if (modoZonaExcluida) {
-			if (event.key === 'Enter') {
-				if (currentPoints.length >= 3) {
-					const verticesOrdenados: Array<Coordinates> = ordenarVertices(currentPoints);
-					const nextIdx: number = polygons.filter((p) => p.sentido === 'Excluida').length + 1;
-					polygons = [
-						...polygons,
-						{
-							id: newId(),
-							via: `Zona excluída ${nextIdx}`,
-							sentido: 'Excluida',
-							vertices: verticesOrdenados
-						}
-					];
-					currentPoints = [];
-				}
-			}
-			if (event.key === 'Escape') {
-				currentPoints = [];
-			}
-			if (event.key === 'Backspace') {
-				currentPoints.pop();
-			}
+	const handleWindowMouseMove = (event: MouseEvent): void => {
+		if (!canvas) {
 			return;
+		}
+		editor.pointerMove(canvasPoint(event, canvas), handleRadius(canvas));
+	};
+
+	const handleKeyDown = (event: KeyboardEvent): void => {
+		editor.handleKey(event.key);
+	};
+
+	const startRename = async (id: number, via: string): Promise<void> => {
+		editValue = via;
+		editingId = id;
+		await tick();
+		const input: HTMLInputElement | null = document.querySelector(`#rename-input-${id}`);
+		input?.focus();
+		input?.select();
+	};
+
+	const commitRename = (id: number): void => {
+		editor.renamePolygon(id, editValue);
+		editingId = null;
+	};
+
+	const cancelRename = (): void => {
+		editingId = null;
+	};
+
+	const handleRenameKeydown = (event: KeyboardEvent, id: number): void => {
+		if (event.key === 'Enter') {
+			commitRename(id);
 		}
 		if (event.key === 'Escape') {
-			currentPoints = [];
+			cancelRename();
 		}
-		if (event.key === 'Backspace') {
-			currentPoints.pop();
-		}
-	};
-
-	const confirmPendingPolygon = (): void => {
-		if (!pendingPolygon) {
-			return;
-		}
-		lastSentido = pendingPolygon.sentido;
-		polygons = [
-			...polygons,
-			{
-				id: newId(),
-				via: pendingPolygon.via.trim(),
-				sentido: pendingPolygon.sentido,
-				vertices: pendingPolygon.vertices
-			}
-		];
-		pendingPolygon = null;
-	};
-
-	const cancelPendingPolygon = (): void => {
-		pendingPolygon = null;
-	};
-
-	const eliminarPoligono = (id: number): void => {
-		polygons = polygons.filter((p) => p.id !== id);
 	};
 
 	const finalizarProceso = async (): Promise<void> => {
 		if (isSubmitting) {
 			return;
 		}
-		if (entradasCount === 0 || salidasCount === 0) {
+		if (editor.entradasCount === 0 || editor.salidasCount === 0) {
 			await showAlert({
 				message: 'Debes configurar al menos una entrada y una salida antes de continuar.',
 				variant: 'warning'
@@ -306,38 +198,17 @@
 			return;
 		}
 		isSubmitting = true;
-
-		const toAbs = (v: Coordinates): AbsolutePoint => [
-			Math.round(v.x * frameWidth),
-			Math.round(v.y * frameHeight)
-		];
-		const payload: TaskConfigPayload = {
-			roads_in: polygons
-				.filter((p) => p.sentido === 'Entrada')
-				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
-			roads_out: polygons
-				.filter((p) => p.sentido === 'Salida')
-				.map((p) => ({ name: p.via.trim(), polygon: p.vertices.map(toAbs) })),
-			excluded_zones: polygons
-				.filter((p) => p.sentido === 'Excluida')
-				.map((p) => p.vertices.map(toAbs))
-		};
-
 		try {
-			const response: Response = await apiFetch(`/task/${taskId}/config`, {
-				method: 'POST',
-				body: JSON.stringify(payload)
-			});
-			if (!response.ok) {
-				throw new Error('Error en el servidor');
-			}
-			await response.json();
+			await saveTaskConfig(
+				taskId,
+				buildConfigPayload(editor.polygons, { width: frameWidth, height: frameHeight })
+			);
 			await showAlert({ message: 'Vías guardadas correctamente.', variant: 'success' });
 			goto('/');
 		} catch (error) {
 			console.error('Fallo al enviar los datos:', error);
 			await showAlert({
-				message: 'Hubo un error al guardar las vías. Inténtalo de nuevo.',
+				message: apiErrorMessage(error, 'Hubo un error al guardar las vías. Inténtalo de nuevo.'),
 				variant: 'danger'
 			});
 		} finally {
@@ -346,218 +217,139 @@
 	};
 
 	const redrawCanvas = (): void => {
-		if (!ctx || !canvas) {
+		if (!ctx) {
 			return;
 		}
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-		polygons
-			.filter((p) => p.sentido !== 'Excluida')
-			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
-		polygons
-			.filter((p) => p.sentido === 'Excluida')
-			.forEach((poly) => drawPolygonRel(poly, { confirmed: true }));
-		if (pendingPolygon) {
-			drawPolygonRel(pendingPolygon, { pending: true });
-		}
-		if (currentPoints.length > 0) {
-			ctx.beginPath();
-			const absPoints: Array<Coordinates> = toCanvasPx(currentPoints, canvas);
-			ctx.moveTo(absPoints[0].x, absPoints[0].y);
-			for (const p of absPoints.slice(1)) {
-				ctx.lineTo(p.x, p.y);
-			}
-			ctx.strokeStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 0.8)';
-			ctx.lineWidth = 2;
-			ctx.setLineDash([6, 6]);
-			ctx.stroke();
-			ctx.setLineDash([]);
-			for (const p of absPoints) {
-				ctx.fillStyle = modoZonaExcluida ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 1)';
-				ctx.beginPath();
-				ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-				ctx.fill();
-			}
-		}
+		redraw(ctx, editor);
 	};
 
-	const updatePopoverPositionForCurrentPending = (): void => {
-		if (!pendingPolygon || !canvas) {
+	const updatePopoverPosition = (): void => {
+		if (!editor.pending || !canvas) {
 			return;
 		}
 		const rect: DOMRect = canvas.getBoundingClientRect();
-		const absVerticesCanvas: Array<Coordinates> = toCanvasPx(pendingPolygon.vertices, canvas);
-		const measured: PopoverPosition = calculatePopoverPosition(
-			absVerticesCanvas,
-			rect,
-			popoverEl?.offsetWidth ?? undefined,
-			popoverEl?.offsetHeight ?? undefined
+		const center: Coordinates = centroid(toCanvasPx(editor.pending.vertices, canvas));
+		popoverPosition = calculatePopoverPosition(
+			{ x: center.x + rect.left, y: center.y + rect.top },
+			popoverEl ? { width: popoverEl.offsetWidth, height: popoverEl.offsetHeight } : null,
+			{ width: window.innerWidth, height: window.innerHeight }
 		);
-		popoverPosition = measured;
-	};
-
-	const drawPolygonRel = (
-		poly: Omit<Polygon, 'id'>,
-		options: { confirmed?: boolean; pending?: boolean }
-	): void => {
-		if (!ctx || !canvas) {
-			return;
-		}
-		const absVertices: Array<Coordinates> = toCanvasPx(poly.vertices, canvas);
-		const isExcluded: boolean = poly.sentido === 'Excluida';
-		const color: string = isExcluded
-			? 'rgba(0,0,0,1)'
-			: poly.sentido === 'Entrada'
-				? 'rgba(74, 222, 128, 1)'
-				: 'rgba(248, 113, 113, 1)';
-		ctx.fillStyle = isExcluded
-			? 'rgba(0,0,0,1)'
-			: color.replace(', 1)', options.pending ? ', 0.5)' : ', 0.3)');
-		ctx.beginPath();
-		ctx.moveTo(absVertices[0].x, absVertices[0].y);
-		for (const v of absVertices.slice(1)) {
-			ctx.lineTo(v.x, v.y);
-		}
-		ctx.closePath();
-		ctx.fill();
-		ctx.strokeStyle = isExcluded ? 'rgba(0,0,0,1)' : color;
-		ctx.lineWidth = options.pending ? 4 : 2;
-		if (options.pending) {
-			ctx.setLineDash([8, 4]);
-		}
-		ctx.stroke();
-		ctx.setLineDash([]);
-		if (!options.confirmed) {
-			return;
-		}
-		const centro: Coordinates = absVertices.reduce(
-			(acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
-			{
-				x: 0,
-				y: 0
-			}
-		);
-		const n: number = absVertices.length || 1;
-		centro.x /= n;
-		centro.y /= n;
-		ctx.font = 'bold 14px sans-serif';
-		ctx.fillStyle = 'white';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.shadowColor = 'black';
-		ctx.shadowBlur = 5;
-		ctx.fillText(`${poly.via}`, centro.x, centro.y);
-		ctx.shadowBlur = 0;
-	};
-
-	const goBack = (): void => {
-		goto('/');
 	};
 </script>
 
-<svelte:window onkeydown={handleKeyDown} onresize={onResize} />
+{#snippet editHint()}
+	Clic en una zona para seleccionarla. Arrastre para moverla. Arrastre un vértice (círculo blanco)
+	para redimensionarla. <kbd class="key-kbd">Esc</kbd> para deseleccionar.
+{/snippet}
 
-<div class="page-container page-vertical">
+{#snippet roadHint()}
+	Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
+	<kbd class="key-kbd">Backspace</kbd> para deshacer o <kbd class="key-kbd">Esc</kbd> para cancelar.
+{/snippet}
+
+{#snippet excludedHint()}
+	Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para confirmar una
+	zona excluída (mín. 3 puntos). Use <kbd class="key-kbd">Backspace</kbd> para deshacer o
+	<kbd class="key-kbd">Esc</kbd> para cancelar.
+{/snippet}
+
+{#snippet swapHint(mode: HintMode, content: Snippet)}
+	<span class="swap-container">
+		<span class="swap-measure">{@render content()}</span>
+		{#key mode}
+			<span class="swap-layer" transition:fade={{ duration: 210 }}>{@render content()}</span>
+		{/key}
+	</span>
+{/snippet}
+
+{#snippet swapLabel(text: string)}
+	<span class="swap-container">
+		<span class="swap-measure">{text}</span>
+		{#key text}
+			<span class="swap-layer" transition:fade={{ duration: 210 }}>{text}</span>
+		{/key}
+	</span>
+{/snippet}
+
+<svelte:window
+	onkeydown={handleKeyDown}
+	onmousemove={handleWindowMouseMove}
+	onmouseup={editor.pointerUp}
+	onresize={onResize}
+/>
+
+<div class="configurar-page page-container page-vertical">
 	<div class="mx-auto flex flex-col flex-1 min-h-0 h-full">
 		<div class="mb-2">
 			<h1 class="heading-1">Asignar Vías</h1>
 			<div class="mt-2 flex items-center justify-between gap-4 flex-wrap">
 				<p class="text-white/70 text-sm m-0">
-					<span class="swap-container">
-						<span class="swap-measure">
-							{#if !modoZonaExcluida}
-								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							{:else}
-								Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para
-								confirmar una zona excluída (mín. 3 puntos). Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							{/if}
-						</span>
-						{#if !modoZonaExcluida}
-							<span class="swap-layer" transition:fade={{ duration: 210 }}>
-								Haga clic 4 veces en la imagen para definir una vía de entrada/salida. Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							</span>
-						{:else}
-							<span class="swap-layer" transition:fade={{ duration: 210 }}>
-								Haga clic para agregar vértices y presione <kbd class="key-kbd">Enter</kbd> para
-								confirmar una zona excluída (mín. 3 puntos). Use
-								<kbd class="key-kbd">Backspace</kbd> para deshacer o
-								<kbd class="key-kbd">Esc</kbd> para cancelar.
-							</span>
-						{/if}
-					</span>
+					{@render swapHint(
+						hintMode,
+						hintMode === 'edit' ? editHint : hintMode === 'excluded' ? excludedHint : roadHint
+					)}
 				</p>
-				<div class="flex items-center gap-2">
-					<div class="mode-toggle" role="group" aria-label="Modo de dibujo">
+				<div class="flex items-center gap-2 flex-wrap">
+					<div
+						class="mode-toggle"
+						role="group"
+						aria-label="Modo de dibujo"
+						class:opacity-50={editor.editMode}
+						class:pointer-events-none={editor.editMode}
+					>
 						<div
-							class={`mode-indicator ${modoZonaExcluida ? 'right bg-excluded' : 'left bg-inout'}`}
+							class={[
+								'mode-indicator',
+								editor.excludedMode ? 'right bg-excluded' : 'left bg-inout'
+							]}
 							aria-hidden="true"
 						></div>
 						<button
 							class="mode-option left"
-							disabled={!modoZonaExcluida}
-							aria-pressed={!modoZonaExcluida}
-							onclick={() => setModoZonaExcluida(false)}
+							disabled={!editor.excludedMode || editor.editMode}
+							aria-pressed={!editor.excludedMode}
+							onclick={() => editor.setExcludedMode(false)}
 							title="Dibujar entradas/salidas"
 						>
-							<span class="swap-container">
-								<span class="swap-measure">
-									{#if !modoZonaExcluida}
-										Dibujando entradas/salidas...
-									{:else}
-										Dibujar entradas/salidas
-									{/if}
-								</span>
-								{#if !modoZonaExcluida}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujando entradas/salidas...</span
-									>
-								{:else}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujar entradas/salidas</span
-									>
-								{/if}
-							</span>
+							{@render swapLabel(
+								editor.excludedMode ? 'Dibujar entradas/salidas' : 'Dibujando entradas/salidas...'
+							)}
 						</button>
 						<button
 							class="mode-option right"
-							disabled={modoZonaExcluida}
-							aria-pressed={modoZonaExcluida}
-							onclick={() => setModoZonaExcluida(true)}
+							disabled={editor.excludedMode || editor.editMode}
+							aria-pressed={editor.excludedMode}
+							onclick={() => editor.setExcludedMode(true)}
 							title="Dibujar zonas excluidas (confirme con Enter)"
 						>
-							<span class="swap-container">
-								<span class="swap-measure">
-									{#if modoZonaExcluida}
-										Dibujando zonas excluidas...
-									{:else}
-										Dibujar zonas excluidas
-									{/if}
-								</span>
-								{#if modoZonaExcluida}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujando zonas excluidas...</span
-									>
-								{:else}
-									<span class="swap-layer" transition:fade={{ duration: 210 }}
-										>Dibujar zonas excluidas</span
-									>
-								{/if}
-							</span>
+							{@render swapLabel(
+								editor.excludedMode ? 'Dibujando zonas excluidas...' : 'Dibujar zonas excluidas'
+							)}
 						</button>
 					</div>
 					<button
-						class="glass-button px-3 py-2 border-white/20 bg-white/10 hover:bg-white/20"
-						onclick={goBack}
-						aria-label="Volver"
+						class={[
+							'glass-button px-3 py-2 flex items-center gap-1.5',
+							editor.editMode
+								? 'bg-blue-500/30 border-blue-400/60'
+								: 'border-white/20 bg-white/10 hover:bg-white/20'
+						]}
+						onclick={() => editor.setEditMode(!editor.editMode)}
+						title={editor.editMode
+							? 'Salir del modo edición'
+							: 'Mover y redimensionar zonas existentes'}
+						aria-pressed={editor.editMode}
 					>
-						← Volver
+						<Icon name="move" class="h-[15px] w-[15px]" />
+						{editor.editMode ? 'Editando...' : 'Mover/Redimensionar'}
 					</button>
+					<a
+						href="/"
+						class="glass-button px-3 py-2 flex items-center gap-1.5 border-white/20 bg-white/10 hover:bg-white/20"
+					>
+						<Icon name="arrow-left" class="h-4 w-4" />
+						Volver
+					</a>
 				</div>
 			</div>
 		</div>
@@ -569,56 +361,84 @@
 				class="flex flex-col h-full max-h-full min-h-0 overflow-hidden glass-card p-4 lg:mr-4 mb-8 lg:mb-0"
 			>
 				<div class="flex items-center justify-between mb-4 gap-2">
-					<h2 class="heading-2">Vías Definidas ({polygons.length})</h2>
+					<h2 class="heading-2">Vías Definidas ({editor.polygons.length})</h2>
 				</div>
-				<ScrollArea orientation="y" className="flex-1 min-h-0 pr-1" autoHide>
-					{#if polygons.length === 0}
+				<ScrollArea class="flex-1 min-h-0 pr-1" autoHide>
+					{#if editor.polygons.length === 0}
 						<p class="text-white/70 text-center py-4 glass-surface rounded-lg">
 							No hay vías definidas.
 						</p>
 					{:else}
 						<div class="space-y-3">
-							{#each polygons as poly (poly.id)}
+							{#each editor.polygons as poly (poly.id)}
+								{@const color = polygonColor(poly)}
 								<div
-									class="glass-surface p-3 rounded-lg flex justify-between items-center transition-all border"
-									class:border-green-400={poly.sentido === 'Entrada'}
-									class:border-red-400={poly.sentido === 'Salida'}
+									class={[
+										'glass-surface p-3 rounded-lg transition-all border',
+										SENTIDO_STYLES[poly.sentido].border,
+										poly.id === editor.selectedId && 'ring-2 ring-white/50'
+									]}
 									out:fly={{ y: -10, opacity: 0, duration: 250, easing: quintOut }}
 								>
-									<div>
-										<p class="font-semibold text-base">{poly.via}</p>
-										<p
-											class="text-sm"
-											class:text-green-300={poly.sentido === 'Entrada'}
-											class:text-red-300={poly.sentido === 'Salida'}
+									<div class="flex items-center gap-2">
+										<label
+											class="cursor-pointer flex-shrink-0"
+											title="Cambiar color de la zona"
+											aria-label="Cambiar color"
 										>
-											{poly.sentido}
-										</p>
-									</div>
-									<button
-										onclick={() => eliminarPoligono(poly.id)}
-										class="glass-button btn-danger"
-										aria-label="Eliminar vía"
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="20"
-											height="20"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										>
-											<polyline points="3 6 5 6 21 6" />
-											<path
-												d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+											<div
+												class="w-5 h-5 rounded-full border border-white/40 flex-shrink-0"
+												style="background-color: {color};"
+											></div>
+											<input
+												type="color"
+												class="sr-only"
+												value={color}
+												oninput={(e) => editor.setPolygonColor(poly.id, e.currentTarget.value)}
 											/>
-											<line x1="10" y1="11" x2="10" y2="17" />
-											<line x1="14" y1="11" x2="14" y2="17" />
-										</svg>
-									</button>
+										</label>
+										<div class="flex-1 min-w-0">
+											{#if editingId === poly.id}
+												<input
+													id="rename-input-{poly.id}"
+													class="glass-input text-sm py-0.5 px-2 w-full"
+													bind:value={editValue}
+													onblur={() => commitRename(poly.id)}
+													onkeydown={(e) => handleRenameKeydown(e, poly.id)}
+												/>
+											{:else}
+												<p class="font-semibold text-base truncate" title={poly.via}>{poly.via}</p>
+											{/if}
+										</div>
+										<div class="flex items-center gap-1 flex-shrink-0">
+											<button
+												onclick={() => startRename(poly.id, poly.via)}
+												class="glass-button p-1.5"
+												title="Renombrar"
+												aria-label="Renombrar vía"
+											>
+												<Icon name="edit" class="h-3.5 w-3.5" />
+											</button>
+											<button
+												onclick={() => editor.duplicatePolygon(poly.id)}
+												class="glass-button p-1.5"
+												title="Duplicar zona"
+												aria-label="Duplicar vía"
+											>
+												<Icon name="copy" class="h-3.5 w-3.5" />
+											</button>
+											<button
+												onclick={() => editor.removePolygon(poly.id)}
+												class="glass-button btn-danger p-1.5"
+												aria-label="Eliminar vía"
+											>
+												<Icon name="trash" class="h-3.5 w-3.5" />
+											</button>
+										</div>
+									</div>
+									<p class={['text-sm mt-1 ml-7', SENTIDO_STYLES[poly.sentido].text]}>
+										{poly.sentido}
+									</p>
 								</div>
 							{/each}
 						</div>
@@ -662,24 +482,25 @@
 						{errorMessage}
 					</div>
 				{:else}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<div
 						class="canvas-container glass-card overflow-hidden shadow-2xl"
+						style="cursor: {editor.cursor};"
 						onclick={handleCanvasClick}
+						onmousedown={handleCanvasMouseDown}
 						role="button"
 						tabindex="0"
-						onkeydown={() => {}}
-						aria-label={modoZonaExcluida
-							? 'Definir zona excluída en la imagen'
-							: 'Definir entrada/salida en la imagen'}
+						aria-label={editor.editMode
+							? 'Seleccionar y editar zona en la imagen'
+							: editor.excludedMode
+								? 'Definir zona excluída en la imagen'
+								: 'Definir entrada/salida en la imagen'}
 					>
 						<img
 							src={imageSrc}
 							alt="Imagen base"
 							bind:this={imageRef}
-							onload={() => {
-								setupCanvas();
-								isLoading = false;
-							}}
+							onload={setupCanvas}
 							class="w-full h-auto opacity-100 prevent-drag"
 							draggable="false"
 						/>
@@ -690,7 +511,7 @@
 		</div>
 	</div>
 
-	{#if pendingPolygon}
+	{#if editor.pending}
 		<div
 			class="popover glass-strong frost frost-polarized p-4 w-72 border shadow-2xl"
 			style="top: {popoverPosition.top}px; left: {popoverPosition.left}px; transform: {popoverPosition.transform};"
@@ -704,7 +525,7 @@
 					<input
 						id="via-input"
 						type="text"
-						bind:value={pendingPolygon.via}
+						bind:value={editor.pending.via}
 						bind:this={viaInputEl}
 						class="glass-input"
 						placeholder="Nombre de la vía"
@@ -715,168 +536,20 @@
 					<label for="sentido-select" class="block mb-1 text-sm text-white/80">Sentido:</label>
 					<GlassSelect
 						id="sentido-select"
-						items={OPCIONES_SENTIDO.map((s) => ({ value: s, label: s }))}
-						value={pendingPolygon.sentido}
-						onChange={(v) => (pendingPolygon!.sentido = String(v))}
+						items={SENTIDO_ITEMS}
+						value={editor.pending.sentido}
+						onChange={(v) => (editor.pending!.sentido = String(v) as Sentido)}
 					/>
 				</div>
 			</div>
 			<div class="flex gap-2 pt-4">
-				<button onclick={cancelPendingPolygon} class="glass-button">Cancelar (Esc)</button>
+				<button onclick={editor.cancelPending} class="glass-button">Cancelar (Esc)</button>
 				<button
-					onclick={() => {
-						if (pendingPolygon?.via && pendingPolygon.via.trim().length > 0) {
-							confirmPendingPolygon();
-						}
-					}}
+					onclick={editor.confirmPending}
 					class="glass-button btn-success"
-					disabled={!pendingPolygon.via || pendingPolygon.via.trim().length === 0}
-					>Confirmar (Enter)</button
+					disabled={!editor.canConfirm}>Confirmar (Enter)</button
 				>
 			</div>
 		</div>
 	{/if}
 </div>
-
-<style>
-	.page-container {
-		max-width: 95% !important;
-		padding-left: 0 !important;
-		padding-right: 0 !important;
-	}
-	.page-container > .mx-auto {
-		margin-left: 0 !important;
-		margin-right: 0 !important;
-		max-width: none !important;
-		width: 95% !important;
-	}
-	.page-vertical {
-		display: flex;
-		flex-direction: column;
-		min-height: calc(
-			100vh - var(--layout-gap, 0px) - var(--header-height, 0px) - var(--layout-gap, 0px) -
-				var(--layout-bottom-gap, 0px) - var(--layout-bottom-gap, 0px) - var(--layout-gap, 0px)
-		);
-	}
-	.canvas-container {
-		position: relative;
-		width: 100%;
-		cursor: crosshair;
-		line-height: 0;
-	}
-	canvas {
-		position: absolute;
-		top: 0;
-		left: 0;
-		pointer-events: none;
-	}
-	.popover {
-		position: fixed;
-		z-index: 50;
-	}
-	.prevent-drag {
-		user-select: none;
-		-webkit-user-drag: none;
-	}
-
-	.key-kbd {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #1f2937;
-		background-color: #f3f4f6;
-		border: 1px solid #e5e7eb;
-		border-radius: 0.5rem;
-	}
-
-	.swap-container {
-		position: relative;
-		display: inline-block;
-		vertical-align: middle;
-	}
-	.swap-measure {
-		visibility: hidden;
-		pointer-events: none;
-	}
-	.swap-layer {
-		position: absolute;
-		top: 0;
-		left: 0;
-		white-space: nowrap;
-	}
-
-	.mode-toggle {
-		position: relative;
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0;
-		align-items: center;
-		background: transparent;
-		border: 1px solid rgba(255, 255, 255, 0.25);
-		border-radius: 12px;
-		overflow: hidden;
-		min-width: 420px;
-		height: 40px;
-	}
-	.mode-option {
-		position: relative;
-		z-index: 1;
-		background: transparent;
-		border: none;
-		outline: none;
-		color: white;
-		font-weight: 600;
-		font-size: 0.9rem;
-		padding: 0 16px;
-		height: 100%;
-		cursor: pointer;
-	}
-	.mode-option:disabled {
-		cursor: default;
-	}
-	.mode-indicator {
-		position: absolute;
-		top: -1px;
-		left: -1px;
-		height: calc(100% + 2px);
-		width: calc(50% + 2px);
-		border: 1px solid rgba(255, 255, 255, 0.65);
-		border-radius: 12px;
-		box-shadow:
-			0 0 0 2px rgba(255, 255, 255, 0.12),
-			0 8px 24px rgba(0, 0, 0, 0.35);
-		transition:
-			transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
-			background 260ms ease;
-		will-change: transform;
-	}
-	.mode-indicator.left {
-		transform: translateX(0%);
-	}
-	.mode-indicator.right {
-		transform: translateX(100%);
-	}
-	.bg-inout {
-		background: linear-gradient(
-			90deg,
-			rgba(74, 222, 128, 0.35) 0%,
-			rgba(74, 222, 128, 0.35) 40%,
-			rgba(248, 113, 113, 0.35) 60%,
-			rgba(248, 113, 113, 0.35) 100%
-		);
-		backdrop-filter: blur(8px) saturate(140%);
-		-webkit-backdrop-filter: blur(8px) saturate(140%);
-		border-color: transparent;
-		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
-	}
-	.bg-excluded {
-		background: rgba(0, 0, 0, 0.9);
-	}
-
-	@media (max-width: 640px) {
-		.mode-toggle {
-			min-width: 300px;
-			font-size: 0.85rem;
-		}
-	}
-</style>

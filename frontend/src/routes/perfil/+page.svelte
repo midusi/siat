@@ -1,17 +1,18 @@
 <script lang="ts">
-	import { ApiError } from '$lib/services/errors';
 	import { changePassword } from '$lib/services/profile';
 	import {
 		emptyChangePasswordErrors,
 		hasErrors,
 		validateChangePassword
 	} from '$lib/validation/user';
+	import { errorMessage } from '$lib/services/errors';
 	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/Icon.svelte';
+	import { LOGIN_PATH } from '$lib/constants';
 	import { logout } from '$lib/services/auth';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import PasswordNewConfirm from '$lib/components/PasswordNewConfirm.svelte';
-	import { showSuccess } from '$lib/toast';
+	import { showSuccess } from '$lib/toast.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
 	import type { ChangePasswordErrors } from '$lib/validation/user';
@@ -37,10 +38,9 @@
 			await changePassword(currentPassword, newPassword, confirmPassword);
 			await logout();
 			showSuccess('Contraseña cambiada con éxito. Vas a ser redirigido al inicio de sesión.');
-			setTimeout(() => goto('/login'), REDIRECT_DELAY_MS);
+			setTimeout(() => goto(LOGIN_PATH), REDIRECT_DELAY_MS);
 		} catch (err) {
-			errors.general =
-				err instanceof ApiError ? err.message : 'No se pudo conectar con el servidor';
+			errors.general = errorMessage(err);
 		} finally {
 			submitting = false;
 		}

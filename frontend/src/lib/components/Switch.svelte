@@ -1,6 +1,6 @@
 <script lang="ts">
 	type Props = {
-		checked: boolean;
+		checked?: boolean;
 		disabled?: boolean;
 		id?: string;
 		labelledby?: string;
@@ -17,7 +17,7 @@
 		onLabel = ''
 	}: Props = $props();
 
-	const text = $derived(checked ? onLabel : offLabel);
+	const text: string = $derived(checked ? onLabel : offLabel);
 </script>
 
 <button
@@ -31,10 +31,16 @@
 	class="inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
 >
 	<span
-		class={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${checked ? 'bg-green-500/40 border-green-400/50' : 'bg-white/10 border-white/25'}`}
+		class={[
+			'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors',
+			checked ? 'bg-green-500/40 border-green-400/50' : 'bg-white/10 border-white/25'
+		]}
 	>
 		<span
-			class={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`}
+			class={[
+				'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform',
+				checked ? 'translate-x-6' : 'translate-x-1'
+			]}
 		></span>
 	</span>
 	{#if text}

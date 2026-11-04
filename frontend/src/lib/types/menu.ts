@@ -1,7 +1,9 @@
-// Definición de tipos para los elementos del menú
-export interface MenuItem {
+import type { IconName } from '$lib/components/Icon.svelte';
+
+export type MenuItem = {
 	id: string;
 	label: string;
 	path: string;
-	icon: string;
-}
+	icon: IconName;
+	adminOnly?: boolean;
+};

@@ -16,6 +16,7 @@ class InferenceService:
         transition_determined: str,
         url_data_obj_history: str,
         url_video_processed: str,
+        url_camera_motion: str | None = None,
     ) -> Inference:
         inference_obj = Inference(
             task_id=task_id,
@@ -24,6 +25,7 @@ class InferenceService:
             transition_determined=transition_determined,
             url_data_obj_history=url_data_obj_history,
             url_video_processed=url_video_processed,
+            url_camera_motion=url_camera_motion,
             inferred_at=datetime.datetime.now(),
         )
         self.uow.inferences.add(inference_obj)

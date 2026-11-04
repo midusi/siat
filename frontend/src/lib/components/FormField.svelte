@@ -1,21 +1,29 @@
 <script lang="ts">
+	import type { FullAutoFill } from 'svelte/elements';
+
 	type Props = {
+		autocomplete?: FullAutoFill;
 		disabled?: boolean;
 		error?: string;
-		id: string;
+		id?: string;
 		label: string;
 		type?: 'text' | 'email';
 		value: string;
 	};
 
+	const generatedId: string = $props.id();
+
 	let {
+		autocomplete,
 		disabled = false,
 		error = '',
-		id,
+		id = generatedId,
 		label,
 		type = 'text',
 		value = $bindable('')
 	}: Props = $props();
+
+	const errorId: string = $derived(`${id}-error`);
 </script>
 
 <div>
@@ -23,12 +31,15 @@
 	<input
 		{type}
 		{id}
+		{autocomplete}
 		bind:value
 		{disabled}
 		class="glass-input disabled:opacity-60 disabled:cursor-not-allowed"
-		class:border-red-500={error}
+		class:input-error={error}
+		aria-invalid={!!error}
+		aria-describedby={error ? errorId : undefined}
 	/>
 	{#if error}
-		<p class="text-red-400 text-xs mt-1">{error}</p>
+		<p id={errorId} class="mt-1 text-sm text-red-400">{error}</p>
 	{/if}
 </div>
