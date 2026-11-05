@@ -1,6 +1,10 @@
 from ultralytics import YOLO
 from config import config
+from dotenv import load_dotenv
 import wandb
+import os
+
+load_dotenv()  # Busca .env en el directorio actual
 
 
 def main():
@@ -9,9 +13,11 @@ def main():
     para el análisis de tráfico desde drones.
     """
 
-    wandb.login()
+    #wandb.login()
+    wandb.login(key=os.getenv("WANDB_API_KEY"))   
 
     run = wandb.init(
+      entity=config["entity_id"],
       project = config["experiment_id"],
       name = f"{config["experiment_id"]}_{config["run_id"]}",
       config = config,
@@ -82,7 +88,9 @@ def main():
       description=f"Pesos de {config["run_id"]} entrenados sobre {config["data"]}"
 
     )
-    artifact.add_file(results.save_dir)
+    artifact.add_file(f"{results.save_dir}/args.yaml")
+    artifact.add_file(f"{results.save_dir}/weights/best.pt")
+    artifact.add_file(f"{results.save_dir}/results.csv")
     run.log_artifact(artifact)
 
     wandb.finish()

@@ -3,6 +3,7 @@
 **/dataset/raw/*
 **/reports/figures/*
 **/scripts/models/*
+**/wandb/*
 
 # Mantener los archivos .gitkeep para que Git preserve la estructura de carpetas
 !**/.gitkeep

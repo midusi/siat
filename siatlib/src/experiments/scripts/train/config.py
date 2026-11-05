@@ -13,6 +13,7 @@ FINETUNING_MODEL_BASE = str(EXPERIMENTS_DIR / "scripts/models/siatv1-v5/y11m-lh-
 
 config = {
     # Trazabilidad
+    "entity_id": "lucassalanitro32-unlp-universidad-nacional-de-la-plata",
     "experiment_id": "SIATLIB-V1",
     "run_id": "traffic-finetuning-y11s-lr001-1280px-aug",
     "seed": 42,
