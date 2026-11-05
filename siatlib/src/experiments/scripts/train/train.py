@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 from config import config
-
+import wandb
 
 
 def main():
@@ -9,7 +9,17 @@ def main():
     para el análisis de tráfico desde drones.
     """
 
-    
+    wandb.login()
+
+    run = wandb.init(
+      project = config["experiment_id"],
+      name = f"{config["experiment_id"]}_{config["run_id"]}",
+      config = config,
+      reinit=True
+    )
+ 
+
+  
     model = YOLO(config["model_base"])  # O yolo11m.yaml, yolo11l.yaml, etc. según la variante
 
     # ENTRENAMIENTO DE MODELO 
@@ -65,6 +75,17 @@ def main():
 
     print("Entrenamiento finalizado.")
     print(f"Los mejores pesos (best.pt) se han guardado en la carpeta: {results.save_dir}")
+
+    artifact = wandb.Artifact(
+      name=f"model-{config["run_id"]}",
+      type="model",
+      description=f"Pesos de {config["run_id"]} entrenados sobre {config["data"]}"
+
+    )
+    artifact.add_file(results.save_dir)
+    run.log_artifact(artifact)
+
+    wandb.finish()
 
 if __name__ == '__main__':
     main()

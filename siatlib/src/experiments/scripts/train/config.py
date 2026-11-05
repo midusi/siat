@@ -37,6 +37,6 @@ config = {
 
     "freeze": 0 if FROM_SCRATCH else 10,
     "project": str(EXPERIMENTS_DIR / "runs"),
-    "output_figures_dir": str(EXPERIMENTS_DIR / "reports/figures"),
-    "output_result_dir": str(EXPERIMENTS_DIR / "reports/models")
+    # "output_figures_dir": str(EXPERIMENTS_DIR / "reports/figures"),
+    # "output_result_dir": str(EXPERIMENTS_DIR / "reports/models")
 }
