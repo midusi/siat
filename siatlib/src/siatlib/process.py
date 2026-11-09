@@ -322,86 +322,88 @@ class ObjectTracker:
         start_time = time.time()
         success = True
 
-        while cap.isOpened():
-            success, frame = cap.read()
-            if not success:
-                print("\nFin del video o error al leer frame.")
-                break
-
-            act_frame += 1
-            elapsed = time.time() - start_time
-            current_fps = act_frame / elapsed if elapsed > 0 else 0.0
-
-            # Notificar progreso vía callback si fue provisto
-            if progress_callback is not None:
-                progress_callback(act_frame, frames_to_process, current_fps)
-            elif progress_enabled:
-                current_percentage = int((act_frame / frames_to_process) * 100)
-                if current_percentage > last_reported_percentage or (
-                    act_frame % 50 == 0 and last_reported_percentage < 100
-                ):
-                    sys.stdout.write(
-                        f"\rProgreso: {current_percentage}% completado ({act_frame}/{frames_to_process} frames - {current_fps:.1f} FPS)"
-                    )
-                    sys.stdout.flush()
-                    last_reported_percentage = current_percentage
-            else:
-                if act_frame % 50 == 0:
-                    sys.stdout.write(".")
-                    sys.stdout.flush()
-
-            if max_frames is not None and act_frame > max_frames:
-                print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
-                break
-
-            masked_for_inference = apply_exclusion_mask(frame, self.excluded_polygons)
-            results = self.model.track(
-                masked_for_inference,
-                conf=0.3,
-                iou=0.6,
-                persist=True,
-                verbose=False,
-                agnostic_nms=True,
-                imgsz=infer_imgsz,
-                tracker=self.tracker_path,
-            )
-
-            masked_for_output = apply_exclusion_mask(frame, self.excluded_polygons)
-            processed_frame = self.process_frame(masked_for_output, results, act_frame)
-
-            if writer is not None:
-                if processed_frame.shape[:2] != (h, w):
-                    raise RuntimeError(
-                        f"El frame {act_frame} mide {processed_frame.shape[1]}x{processed_frame.shape[0]}, "
-                        f"se esperaba {w}x{h}."
-                    )
-                writer.stdin.write(processed_frame.tobytes())
-
-            if display_video:
-                cv2.imshow("Video", processed_frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    print("\nTecla 'q' presionada. Deteniendo.")
+        try:
+            while cap.isOpened():
+                success, frame = cap.read()
+                if not success:
+                    print("\nFin del video o error al leer frame.")
                     break
 
-        if progress_callback is None:
-            if progress_enabled:
-                sys.stdout.write(
-                    f"\rProgreso: 100% completado ({act_frame-1 if not success else act_frame}/{frames_to_process} frames)\n"
+                act_frame += 1
+                elapsed = time.time() - start_time
+                current_fps = act_frame / elapsed if elapsed > 0 else 0.0
+
+                # Notificar progreso vía callback si fue provisto
+                if progress_callback is not None:
+                    progress_callback(act_frame, frames_to_process, current_fps)
+                elif progress_enabled:
+                    current_percentage = int((act_frame / frames_to_process) * 100)
+                    if current_percentage > last_reported_percentage or (
+                        act_frame % 50 == 0 and last_reported_percentage < 100
+                    ):
+                        sys.stdout.write(
+                            f"\rProgreso: {current_percentage}% completado ({act_frame}/{frames_to_process} frames - {current_fps:.1f} FPS)"
+                        )
+                        sys.stdout.flush()
+                        last_reported_percentage = current_percentage
+                else:
+                    if act_frame % 50 == 0:
+                        sys.stdout.write(".")
+                        sys.stdout.flush()
+
+                if max_frames is not None and act_frame > max_frames:
+                    print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
+                    break
+
+                masked_for_inference = apply_exclusion_mask(frame, self.excluded_polygons)
+                results = self.model.track(
+                    masked_for_inference,
+                    conf=0.3,
+                    iou=0.6,
+                    persist=True,
+                    verbose=False,
+                    agnostic_nms=True,
+                    imgsz=infer_imgsz,
+                    tracker=self.tracker_path,
                 )
-                sys.stdout.flush()
-            else:
-                print("\n")
 
-        self.last_frame_index = act_frame
+                masked_for_output = apply_exclusion_mask(frame, self.excluded_polygons)
+                processed_frame = self.process_frame(masked_for_output, results, act_frame)
 
-        cap.release()
-        if writer is not None:
-            writer.stdin.close()
-            if writer.wait() != 0:
-                raise RuntimeError(f"ffmpeg terminó con código {writer.returncode} al escribir {output_video_path}.")
+                if writer is not None:
+                    if processed_frame.shape[:2] != (h, w):
+                        raise RuntimeError(
+                            f"El frame {act_frame} mide {processed_frame.shape[1]}x{processed_frame.shape[0]}, "
+                            f"se esperaba {w}x{h}."
+                        )
+                    writer.stdin.write(processed_frame.tobytes())
 
-        if display_video:
-            cv2.destroyAllWindows()
+                if display_video:
+                    cv2.imshow("Video", processed_frame)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        print("\nTecla 'q' presionada. Deteniendo.")
+                        break
+
+            if progress_callback is None:
+                if progress_enabled:
+                    sys.stdout.write(
+                        f"\rProgreso: 100% completado ({act_frame-1 if not success else act_frame}/{frames_to_process} frames)\n"
+                    )
+                    sys.stdout.flush()
+                else:
+                    print("\n")
+        finally:
+            self.last_frame_index = act_frame
+            cap.release()
+            if writer is not None:
+                try:
+                    writer.stdin.close()
+                    if writer.wait(timeout=10) != 0:
+                        print(f"Advertencia: ffmpeg terminó con código {writer.returncode}.")
+                except Exception:
+                    writer.kill()
+            if display_video:
+                cv2.destroyAllWindows()
 
         self._get_final_track_classifications()
         self._get_final_track_transitions()
