@@ -69,23 +69,10 @@ import json
 from siatlib import TrafficAnalyzer, ZoneDefinition, ZoneType
 
 # 1. Mapear las zonas de la BD a ZoneDefinition
-zones = []
-for road in roads:
-    if road.direction == "Entrada":
-        z_type = ZoneType.ENTRY
-    elif road.direction == "Salida":
-        z_type = ZoneType.EXIT
-    elif road.direction == "Excluida":
-        z_type = ZoneType.EXCLUDED
-    else:
-        continue
-    zones.append(
-        ZoneDefinition(
-            name=road.name,
-            polygon=road.polygon,
-            zone_type=z_type,
-        )
-    )
+zones = [
+    ZoneDefinition(name="Entrada Norte", polygon=[(816, 922), (905, 869), (1095, 908), (987, 990)], zone_type=ZoneType.ENTRY),
+    ZoneDefinition(name="Salida Sur", polygon=[(100, 200), (300, 400), (500, 600), (700, 800)], zone_type=ZoneType.EXIT),
+]
 
 # 2. Instanciar el analizador
 # Recomendado: configurar ruta de pesos desacoplada vía variables de entorno
