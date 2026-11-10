@@ -1,3 +1,9 @@
+"""
+Pruebas unitarias para analyzer.py (TrafficAnalyzer).
+Valida la inicialización de la fachada de alto nivel, resolución de modelos,
+configuración del tracker y la correcta delegación del pipeline hacia ObjectTracker.
+"""
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
@@ -7,6 +13,7 @@ from siatlib import AnalysisResult, TrafficAnalyzer, ZoneDefinition, ZoneType
 
 
 def test_traffic_analyzer_init_defaults():
+    """Valida la inicialización con configuración por defecto (dispositivo CPU y archivo botsort_custom.yaml integrado)."""
     mock_model = MagicMock(spec=YOLO)
     analyzer = TrafficAnalyzer(model_path=mock_model, device="cpu")
 
@@ -18,6 +25,7 @@ def test_traffic_analyzer_init_defaults():
 
 @patch("siatlib.analyzer.YOLO")
 def test_traffic_analyzer_init_with_path_str(mock_yolo_cls):
+    """Valida la carga del modelo pasando una ruta en string y su transferencia al dispositivo de inferencia."""
     mock_instance = MagicMock(spec=YOLO)
     mock_yolo_cls.return_value = mock_instance
 
@@ -29,6 +37,7 @@ def test_traffic_analyzer_init_with_path_str(mock_yolo_cls):
 
 
 def test_traffic_analyzer_custom_tracker_config():
+    """Valida que una ruta personalizada de configuración del tracker no sea sobrescrita por el default."""
     mock_model = MagicMock(spec=YOLO)
     custom_cfg = "/path/to/custom_tracker.yaml"
     analyzer = TrafficAnalyzer(model_path=mock_model, tracker_config=custom_cfg, device="cpu")
@@ -38,6 +47,7 @@ def test_traffic_analyzer_custom_tracker_config():
 
 @patch("siatlib.analyzer.ObjectTracker")
 def test_traffic_analyzer_process_video_delegation(mock_tracker_class):
+    """Valida que process_video() instancie ObjectTracker con las zonas provistas y delegue los argumentos a run()."""
     mock_tracker_instance = MagicMock()
     mock_result = AnalysisResult(
         transition_counts={},
@@ -69,7 +79,7 @@ def test_traffic_analyzer_process_video_delegation(mock_tracker_class):
         display_video=False,
     )
 
-    # Check ObjectTracker construction
+    # Verifica construcción del ObjectTracker
     mock_tracker_class.assert_called_once_with(
         model_path=mock_model,
         tracker_path=analyzer.tracker_config,
@@ -77,7 +87,7 @@ def test_traffic_analyzer_process_video_delegation(mock_tracker_class):
         device=str(analyzer.device),
     )
 
-    # Check tracker.run execution
+    # Verifica invocación y parámetros delegados a tracker.run
     mock_tracker_instance.run.assert_called_once_with(
         video_path="test_video.mp4",
         max_frames=50,
@@ -89,3 +99,4 @@ def test_traffic_analyzer_process_video_delegation(mock_tracker_class):
 
     assert result == mock_result
     assert result.total_frames_processed == 10
+
