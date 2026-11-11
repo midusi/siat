@@ -1,19 +1,29 @@
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
+from typing import NamedTuple
 import logging
 
-from app.auth.jwt import create_access_token, create_refresh_token
+from app.auth.jwt import create_access_token, create_refresh_token, decode_token
 from app.config import BCRYPT_ROUNDS, AUTH_LOGIN_FAIL_LIMIT, AUTH_LOGIN_LOCK_MINUTES
+from app.domain.entities import User
+from app.domain.exceptions import UnauthorizedError
 from app.observability.metrics import inc_login_attempt, inc_login_failed, inc_login_success
 from app.ports.uow import UnitOfWork
 
 logger = logging.getLogger("auth")
+audit = logging.getLogger("audit")
 
 _failed_attempts: dict[str, dict] = {}
 
 
 def _attempt_key(username: str) -> str:
     return username.lower().strip()
+
+
+class AuthSession(NamedTuple):
+    access_token: str
+    refresh_token: str
+    user: User
 
 
 class AuthService:
@@ -49,23 +59,25 @@ class AuthService:
         if k in _failed_attempts:
             _failed_attempts.pop(k, None)
 
-    def login(self, username: str, password: str):
+    def _login_failed(self, username: str) -> UnauthorizedError:
+        inc_login_failed()
+        audit.info(f"login failed username={username}")
+        return UnauthorizedError("Credenciales inválidas")
+
+    def login(self, username: str, password: str) -> AuthSession:
         inc_login_attempt()
         if self._is_locked(username):
             logger.warning(f"login attempt while locked user={username}")
-            inc_login_failed()
-            return None
+            raise self._login_failed(username)
         user = self.uow.users.get_by_username(username)
         if not user or not user.active:
             self._register_failure(username)
             logger.info(f"login failed user={username} reason=not_found_or_inactive")
-            inc_login_failed()
-            return None
+            raise self._login_failed(username)
         if not self.verify_password(password, user.password):
             self._register_failure(username)
             logger.info(f"login failed user={username} reason=bad_password")
-            inc_login_failed()
-            return None
+            raise self._login_failed(username)
         if self.pwd_context.needs_update(user.password):
             try:
                 user.password = self.pwd_context.hash(password)
@@ -78,16 +90,25 @@ class AuthService:
         access = create_access_token(payload, ver)
         refresh = create_refresh_token(payload, ver)
         logger.info(f"login success user={username}")
+        audit.info(f"login success user_id={user.id} username={user.username}")
         inc_login_success()
-        return access, refresh, user
+        return AuthSession(access, refresh, user)
 
-    def refresh(self, user_id: int, token_version: int):
+    def refresh_from_token(self, raw_refresh_token: str | None) -> AuthSession:
+        if not raw_refresh_token:
+            raise UnauthorizedError("No hay refresh token")
+        payload = decode_token(raw_refresh_token)
+        if not payload or payload.get("type") != "refresh":
+            raise UnauthorizedError("Refresh token inválido")
+        return self.refresh(int(payload.get("sub")), int(payload.get("ver", 0)))
+
+    def refresh(self, user_id: int, token_version: int) -> AuthSession:
         user = self.uow.users.get(user_id)
         if not user or not user.active:
-            return None
+            raise UnauthorizedError("Refresh inválido o expirado")
         current_ver = user.refresh_token_version or 0
         if current_ver != (token_version or 0):
-            return None
+            raise UnauthorizedError("Refresh inválido o expirado")
         user.refresh_token_version = current_ver + 1
         self.uow.commit()
         self.uow.refresh(user)
@@ -96,7 +117,24 @@ class AuthService:
         access = create_access_token(payload, ver)
         refresh = create_refresh_token(payload, ver)
         logger.info(f"refresh success user_id={user_id}")
-        return access, refresh, user
+        return AuthSession(access, refresh, user)
+
+    def logout_from_tokens(self, access_token: str | None, refresh_token: str | None) -> None:
+        user_id = self._user_id_from_token(access_token, "access")
+        if user_id is None:
+            user_id = self._user_id_from_token(refresh_token, "refresh")
+        if user_id is not None:
+            self.logout(user_id)
+            audit.info(f"logout user_id={user_id}")
+
+    @staticmethod
+    def _user_id_from_token(token: str | None, expected_type: str) -> int | None:
+        if not token:
+            return None
+        payload = decode_token(token)
+        if payload and payload.get("type") == expected_type:
+            return int(payload.get("sub"))
+        return None
 
     def logout(self, user_id: int):
         user = self.uow.users.get(user_id)

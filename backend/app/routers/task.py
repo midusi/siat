@@ -1,54 +1,23 @@
-from fastapi import APIRouter, Depends, UploadFile, Form, File, HTTPException
+from fastapi import APIRouter, Depends
+from app.api.dependencies import TaskCreateForm, get_task_create_form
 from app.services.task_service import TaskService
-from app.schemas.task import TaskCreateRequest, TaskConfigRequest, TaskUpdateData
+from app.schemas.task import TaskConfigRequest, TaskUpdateData
+from app.schemas.task_upload import (
+    MultipartAbortRequest,
+    MultipartCompleteRequest,
+    MultipartInitRequest,
+    MultipartInitResponse,
+    MultipartPartRequest,
+    MultipartPartResponse,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
+)
 from app.services.dependencies import get_task_service
-from datetime import datetime
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from app.auth.dependencies import get_current_user, require_role
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/task", tags=["task"], dependencies=[Depends(get_current_user)])
 
-
-class PresignedUploadRequest(BaseModel):
-    filename: str
-    content_type: str
-
-class PresignedUploadResponse(BaseModel):
-    upload_url: str
-    object_key: str
-    expires_in: int
-
-class MultipartInitRequest(BaseModel):
-    filename: str
-    content_type: str = "video/mp4"
-    file_size: int
-
-class MultipartInitResponse(BaseModel):
-    object_key: str
-    upload_id: str
-    part_size: int
-    part_count: int
-    expires_in: int
-
-class MultipartPartRequest(BaseModel):
-    object_key: str
-    upload_id: str
-    part_number: int
-
-class MultipartPartResponse(BaseModel):
-    upload_url: str
-    part_number: int
-    expires_in: int
-
-class MultipartCompleteRequest(BaseModel):
-    object_key: str
-    upload_id: str
-    part_count: int
-
-class MultipartAbortRequest(BaseModel):
-    object_key: str
-    upload_id: str
 
 @router.post("/upload/presigned-url", response_model=PresignedUploadResponse)
 async def get_presigned_upload_url(
@@ -120,16 +89,11 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
     Devuelve el path público del video y, si existen, las URLs públicas
     a los archivos JSON de rutas e indeterminados generados por la inferencia.
     """
-    print(f"Backend: Solicitud recibida para la tarea con ID: {task_id}")
     return service.get_task(task_id)
 
 @router.post("", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 async def create(
-    name: str = Form(...),
-    locality_id: int = Form(...),
-    date: datetime = Form(...),
-    file: UploadFile = File(None),
-    object_key: str = Form(None),
+    form: TaskCreateForm = Depends(get_task_create_form),
     service: TaskService = Depends(get_task_service),
 ):
     """
@@ -139,24 +103,8 @@ async def create(
     2. Upload directo: primero usar POST /task/upload/presigned-url,
        subir el archivo con la URL presignada, luego llamar este endpoint con 'object_key'
     """
-    task_request = TaskCreateRequest(
-        name=name,
-        locality_id=locality_id,
-        date=date
-    )
-
-    if object_key:
-        task = service.create_from_object_key(task_request, object_key)
-        return {"task": task}
-
-    if file and file.filename:
-        task = service.create(task_request, file)
-        return {"task": task}
-
-    raise HTTPException(
-        status_code=400,
-        detail="Debe proporcionar 'file' o 'object_key'"
-    )
+    task = service.create_task(form.request, object_key=form.object_key, file=form.file)
+    return {"task": task}
 
 @router.post("/{task_id}/config", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))])
 async def config(
@@ -164,7 +112,6 @@ async def config(
     task_config_request: TaskConfigRequest,
     service: TaskService = Depends(get_task_service),
 ):
-    print(f"Configurar tarea {task_id} con datos:", task_config_request)
     task = service.config(task_config_request, task_id)
     return {"task": task}
 
@@ -178,21 +125,12 @@ async def update_data(
     Recibe los datos actualizados de `rutas` e `indeterminados` desde el frontend y
     actualiza los archivos correspondientes en el bucket para mantener consistencia.
     """
-    print(f"Backend: Actualización recibida para la tarea con ID: {task_id}")
     result = service.update_data(task_id, updated_data)
     return {"status": "success", **result}
 
 @router.get("/{task_id}/get-first-frame-info")
 async def get_first_frame_info(task_id: int, service: TaskService = Depends(get_task_service)):
-    first_frame_b64 = service.get_first_frame(task_id)
-    video_info = service.get_video_dimensions(task_id)
-
-    return JSONResponse(content={
-        "width": video_info.get("width"),
-        "height": video_info.get("height"),
-        "image_b64": first_frame_b64,
-        "mimetype": "image/jpeg"
-    })
+    return service.get_first_frame_info(task_id)
 
 @router.delete("/{task_id}", dependencies=[Depends(require_role("ROLE_ADMIN", "ROLE_OPERADOR"))], status_code=204)
 def delete_task(task_id: int, service: TaskService = Depends(get_task_service)):
@@ -203,9 +141,8 @@ def delete_task(task_id: int, service: TaskService = Depends(get_task_service)):
 def download_video(task_id: int, service: TaskService = Depends(get_task_service)):
     """Devuelve el video asociado a la tarea como descarga (streaming completo).
     Si existe un video procesado se prioriza. (No implementa Range)."""
-    video_key, filename = service.get_video_download_info(task_id)
-    gen, content_type, content_length = service.video_service.get_video_stream(video_key)
-    headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
-    if content_length:
-        headers['Content-Length'] = str(content_length)
-    return StreamingResponse(gen, media_type=content_type, headers=headers)
+    video = service.get_video_download(task_id)
+    headers = {'Content-Disposition': f'attachment; filename="{video.filename}"'}
+    if video.content_length:
+        headers['Content-Length'] = str(video.content_length)
+    return StreamingResponse(video.chunks, media_type=video.content_type, headers=headers)
