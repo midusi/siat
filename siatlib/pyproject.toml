@@ -18,6 +18,7 @@ dependencies = [
     "numpy>=1.24.0",
     "supervision>=0.18.0",
     "imageio-ffmpeg",
+    "lap>=0.5.12",  # requerido por el tracker de ultralytics; si falta, lo instala solo en tiempo de ejecución
 ]
 
 [project.optional-dependencies]
@@ -25,6 +26,13 @@ dev = [
     "ruff>=0.11.0",
     "pytest>=7.0.0",
     "jupytext>=1.16.0",
+    "httpx>=0.27.0",  # TestClient de FastAPI
+    "fastapi>=0.110.0",
+]
+# Modo servicio (API HTTP + cola de inferencia): pip install "siatlib[service]"
+service = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
 ]
 
 # ── Punto de entrada CLI ───────────────────────────────────────────────────────
@@ -36,6 +44,11 @@ dev = [
 #
 [project.scripts]
 siat-process = "siatlib.process:main"
+siat-service = "siatlib.service.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Archivos no-Python que deben ir dentro del paquete instalado (p. ej. en Docker).
+[tool.setuptools.package-data]
+siatlib = ["*.yaml"]

@@ -1,0 +1,46 @@
+# Ejemplo mínimo para sumar el servicio de inferencia de siatlib a un proyecto.
+# Copiá el servicio `siat-inference` a tu docker-compose.yaml.
+#
+#   mkdir -p models data/input && cp /ruta/a/model-v5.pt models/model.pt
+#   docker compose -f docker-compose.example.yaml up --build
+#   curl localhost:8000/health
+#
+# Contrato de la API: docs/SIATLIB_SERVICE_API.md
+
+services:
+  siat-inference:
+    build:
+      context: .
+      # Sin GPU, descomentá para construir la variante CPU:
+      # args:
+      #   BASE_IMAGE: python:3.12-slim
+      #   TORCH_INDEX_URL: https://download.pytorch.org/whl/cpu
+    image: siatlib/inference:latest
+    environment:
+      SIAT_DEFAULT_MODEL: model.pt
+      SIAT_DEVICE: auto            # auto | cpu | cuda | 0
+    # En hosts con SELinux (Fedora, RHEL) agregá ",Z" / ":Z" a cada volumen, p. ej. ./data:/data:Z
+    volumes:
+      - ./models:/models:ro        # pesos .pt
+      - ./data:/data               # data/input (videos), data/output (resultados), base SQLite
+    ports:
+      - "8000:8000"                # opcional: dentro de la red de compose alcanza con http://siat-inference:8000
+    restart: unless-stopped
+    # GPU NVIDIA (requiere nvidia-container-toolkit en el host). Comentalo si no hay GPU.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Ejemplo de consumidor: el backend de SIATv2 comparte el volumen de datos
+  # para dejar los videos en /data/input y habla con la API por la red interna.
+  #
+  # backend-api:
+  #   ...
+  #   environment:
+  #     SIAT_INFERENCE_URL: http://siat-inference:8000
+  #   volumes:
+  #     - ./data:/siat-data      # escribe en /siat-data/input/<video>.mp4
