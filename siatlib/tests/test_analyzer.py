@@ -85,6 +85,7 @@ def test_traffic_analyzer_process_video_delegation(mock_tracker_class):
         tracker_path=analyzer.tracker_config,
         zones=zones,
         device=str(analyzer.device),
+        motion_compensation=None,
     )
 
     # Verifica invocación y parámetros delegados a tracker.run

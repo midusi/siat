@@ -22,10 +22,10 @@ from .analytics import (
     classify_track,
     compute_transitions,
 )
-from .models import AnalysisResult, VehicleTrajectory, ZoneDefinition, ZoneType
-from .spatial import get_center_bb, get_zone_index
+from .models import AnalysisResult, MotionCompensationConfig, VehicleTrajectory, ZoneDefinition, ZoneType
+from .spatial import MotionCompensator, get_center_bb, get_zone_index
 from .tracking import get_torch_device
-from .visualization import ZONE_COLORS, apply_exclusion_mask, draw_polygon
+from .visualization import ZONE_COLORS, apply_exclusion_mask, draw_polygon, warp_polygon
 
 # --- Constantes por defecto ---
 SIMPLIFIED_CLASS_DISPLAY_NAMES = DEFAULT_SIMPLIFIED_CLASS_NAMES
@@ -53,6 +53,7 @@ class ObjectTracker:
         names_polygons_out: Optional[List[str]] = None,
         excluded_polygons: Optional[List[np.ndarray]] = None,
         zones: Optional[List[ZoneDefinition]] = None,
+        motion_compensation: Optional[MotionCompensationConfig] = None,
     ):
         self.device = get_torch_device(device)
 
@@ -125,6 +126,19 @@ class ObjectTracker:
         self.last_frame_index: Optional[int] = None
         self.excluded_undetermined_ids: Set[int] = set()
 
+        # --- Compensación de movimiento de cámara ---
+        # Los polígonos de zonas están en coordenadas del frame de referencia (frame 1).
+        self.motion_config = motion_compensation or MotionCompensationConfig()
+        self.compensation_enabled: bool = self.motion_config.enabled
+        # Se completa en run() con una primera pasada sobre el video (sin YOLO).
+        self._compensator: Optional[MotionCompensator] = None
+        # Homografía frame actual → referencia (para pertenencia a zonas).
+        self._current_motion_transform: np.ndarray = np.eye(3, dtype=np.float64)
+        # Homografía referencia → frame actual (para dibujar zonas y la máscara de exclusión).
+        self._current_ref_to_cur_transform: np.ndarray = np.eye(3, dtype=np.float64)
+        # Métricas de movimiento por frame (se exponen en AnalysisResult.camera_motion).
+        self.motion_log: List[Dict[str, Any]] = []
+
     # --- Métodos delegados a submódulos (compatibilidad hacia atrás) ---
 
     def _get_torch_device(self, preferred_device: Optional[str]):
@@ -134,10 +148,12 @@ class ObjectTracker:
         return get_center_bb(box)
 
     def _apply_exclusion_mask(self, frame: np.ndarray) -> np.ndarray:
-        return apply_exclusion_mask(frame, self.excluded_polygons)
+        return apply_exclusion_mask(frame, self.excluded_polygons, self._current_ref_to_cur_transform)
 
-    def _get_zone_index(self, box: np.ndarray, polygons: List[np.ndarray]) -> int:
-        return get_zone_index(box, polygons)
+    def _get_zone_index(
+        self, box: np.ndarray, polygons: List[np.ndarray], motion_transform: Optional[np.ndarray] = None
+    ) -> int:
+        return get_zone_index(box, polygons, motion_transform)
 
     def _draw_polygon(
         self, annotated_frame: np.ndarray, polygon: np.ndarray, name_polygon: str, zone_type: ZoneType, thickness: int
@@ -145,22 +161,36 @@ class ObjectTracker:
         return draw_polygon(annotated_frame, polygon, name_polygon, zone_type, thickness)
 
     def _draw_zones_in_out(self, annotated_frame: np.ndarray, thickness: int = 2) -> np.ndarray:
-        """Dibuja todos los polígonos de entrada y salida en el frame."""
+        """
+        Dibuja todos los polígonos de entrada y salida en el frame.
+
+        Si hay compensación de movimiento activa, cada polígono se deforma de
+        coordenadas de referencia a coordenadas del frame actual.
+        """
+        ref_to_cur = self._current_ref_to_cur_transform
         for zone_in in self.zone_in_polygons:
-            draw_polygon(annotated_frame, zone_in["polygon"], zone_in["name"], ZoneType.ENTRY, thickness)
+            poly = warp_polygon(zone_in["polygon"], ref_to_cur)
+            draw_polygon(annotated_frame, poly, zone_in["name"], ZoneType.ENTRY, thickness)
         for zone_out in self.zone_out_polygons:
-            draw_polygon(annotated_frame, zone_out["polygon"], zone_out["name"], ZoneType.EXIT, thickness)
+            poly = warp_polygon(zone_out["polygon"], ref_to_cur)
+            draw_polygon(annotated_frame, poly, zone_out["name"], ZoneType.EXIT, thickness)
         return annotated_frame
 
     def _register_zone_entry_exit(self, box: np.ndarray, track_id: int):
-        """Registra la primera zona de entrada y/o salida que un objeto visita."""
+        """
+        Registra la primera zona de entrada y/o salida que un objeto visita.
+
+        Con compensación activa, el centro del bounding box se lleva a
+        coordenadas de referencia antes del test punto-en-polígono.
+        """
+        motion = self._current_motion_transform
         if track_id not in self.track_first_in_zone:
-            zone_in_idx = get_zone_index(box, [zone["polygon"] for zone in self.zone_in_polygons])
+            zone_in_idx = get_zone_index(box, [zone["polygon"] for zone in self.zone_in_polygons], motion)
             if zone_in_idx >= 0:
                 self.track_first_in_zone[track_id] = zone_in_idx
 
         if track_id not in self.track_first_out_zone:
-            zone_out_idx = get_zone_index(box, [zone["polygon"] for zone in self.zone_out_polygons])
+            zone_out_idx = get_zone_index(box, [zone["polygon"] for zone in self.zone_out_polygons], motion)
             if zone_out_idx >= 0:
                 self.track_first_out_zone[track_id] = zone_out_idx
 
@@ -255,6 +285,8 @@ class ObjectTracker:
         Returns:
             AnalysisResult con las matrices de transición y trayectorias en memoria.
         """
+        self._precompute_camera_motion(video_path, max_frames)
+
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print(f"Error: No se pudo abrir el video en {video_path}")
@@ -265,6 +297,7 @@ class ObjectTracker:
                 trajectories={},
                 total_frames_processed=0,
                 output_video_path=None,
+                camera_motion=self.camera_motion_report(),
             )
 
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -355,7 +388,9 @@ class ObjectTracker:
                     print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
                     break
 
-                masked_for_inference = apply_exclusion_mask(frame, self.excluded_polygons)
+                self._update_motion_transforms(act_frame)
+
+                masked_for_inference = self._apply_exclusion_mask(frame)
                 results = self.model.track(
                     masked_for_inference,
                     conf=0.3,
@@ -367,7 +402,7 @@ class ObjectTracker:
                     tracker=self.tracker_path,
                 )
 
-                masked_for_output = apply_exclusion_mask(frame, self.excluded_polygons)
+                masked_for_output = self._apply_exclusion_mask(frame)
                 processed_frame = self.process_frame(masked_for_output, results, act_frame)
 
                 if writer is not None:
@@ -446,7 +481,85 @@ class ObjectTracker:
             trajectories=trajectories,
             total_frames_processed=act_frame,
             output_video_path=output_video_path,
+            camera_motion=self.camera_motion_report(),
         )
+
+    # --- Compensación de movimiento de cámara ---
+
+    def _precompute_camera_motion(self, video_path: str, max_frames: Optional[int]) -> None:
+        """
+        Primera pasada sobre el video (sin YOLO): estima y suaviza una homografía
+        por frame. Si falla, se desactiva la compensación y se sigue sin ella.
+        """
+        if not self.compensation_enabled:
+            return
+        cfg = self.motion_config
+        try:
+            print("Compensación de movimiento: iniciando primera pasada sobre el video…")
+            self._compensator = MotionCompensator.pre_compute(
+                video_path,
+                scale=cfg.scale,
+                smooth_sigma=cfg.smooth_sigma,
+                anchor_interval=cfg.anchor_interval,
+                max_frames=max_frames,
+            )
+            n = len(self._compensator._homographies or {})
+            print(
+                f"Compensación de movimiento: lista ({n} frames, scale={cfg.scale}, "
+                f"smooth_sigma={cfg.smooth_sigma}, anchor_interval={cfg.anchor_interval})"
+            )
+        except Exception as e:
+            print(f"Advertencia: falló la estimación de movimiento ({e}). Compensación desactivada.")
+            self._compensator = None
+            self.compensation_enabled = False
+
+    def _update_motion_transforms(self, act_frame: int) -> None:
+        """Actualiza las homografías del frame actual (debe llamarse antes de procesar el frame)."""
+        if self._compensator is None:
+            return
+        H_ref_to_cur, metrics = self._compensator.get_transform(act_frame)
+        self._current_ref_to_cur_transform = H_ref_to_cur
+        try:
+            self._current_motion_transform = np.linalg.inv(H_ref_to_cur)
+        except np.linalg.LinAlgError:
+            self._current_motion_transform = np.eye(3, dtype=np.float64)
+        self.motion_log.append({
+            "frame": act_frame,
+            **metrics,
+            # Convención: p_actual = H @ [px_ref, py_ref, 1]^T
+            "matrix_ref_to_cur": H_ref_to_cur.tolist(),
+        })
+
+    def camera_motion_report(self) -> Dict[str, Any]:
+        """Reporte de movimiento de cámara con el mismo formato que camera_motion.json del backend."""
+        cfg = self.motion_config
+        return {
+            "compensation_enabled": self.compensation_enabled,
+            "scale": cfg.scale,
+            "smooth_sigma": cfg.smooth_sigma,
+            "anchor_interval": cfg.anchor_interval,
+            "matrix_format": "homography_3x3",
+            "convention": (
+                "matrix_ref_to_cur is a 3x3 projective homography mapping "
+                "reference-frame coordinates to current-frame coordinates. "
+                "Apply it to zone polygon vertices (defined on frame 1) to draw "
+                "them correctly on each video frame. "
+                "p_current = H @ [px_ref, py_ref, 1]^T (divide by third component). "
+                "Identity when motion estimation produced no valid result."
+            ),
+            "frames": self.motion_log,
+        }
+
+
+def _motion_config_from_env(disabled_by_flag: bool = False) -> MotionCompensationConfig:
+    """Config de compensación desde variables de entorno (compatibles con el backend)."""
+    enabled = os.getenv("CAMERA_MOTION_COMPENSATION", "true").lower() not in ("0", "false", "no")
+    return MotionCompensationConfig(
+        enabled=enabled and not disabled_by_flag,
+        scale=float(os.getenv("CAMERA_MOTION_SCALE", "0.5")),
+        smooth_sigma=float(os.getenv("CAMERA_MOTION_SMOOTH_SIGMA", "1.5")),
+        anchor_interval=int(os.getenv("CAMERA_MOTION_ANCHOR_INTERVAL", "30")),
+    )
 
 
 def main():
@@ -467,6 +580,11 @@ def main():
     parser.add_argument("--imgsz", type=int, default=None, help="Resolución de inferencia.")
     parser.add_argument("--max_frames", "-f", type=int, default=None, help="Máximo frames a procesar.")
     parser.add_argument("--no_display", action="store_true", help="No mostrar ventana.")
+    parser.add_argument(
+        "--no_motion_compensation",
+        action="store_true",
+        help="Desactiva la compensación de movimiento de cámara (también vía CAMERA_MOTION_COMPENSATION=false).",
+    )
 
     args = parser.parse_args()
 
@@ -494,6 +612,7 @@ def main():
         names_polygons_in=args.names_polygons_in,
         names_polygons_out=args.names_polygons_out,
         excluded_polygons=excluded,
+        motion_compensation=_motion_config_from_env(args.no_motion_compensation),
     )
 
     results = tracker.run(
@@ -521,6 +640,9 @@ def main():
 
     with open(f"{output_dir}/transition_counts.json", "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in tracker.transition_counts.items()}, f, ensure_ascii=False, indent=2)
+
+    with open(f"{output_dir}/camera_motion.json", "w", encoding="utf-8") as f:
+        json.dump(results.camera_motion, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":

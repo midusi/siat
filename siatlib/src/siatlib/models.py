@@ -27,6 +27,20 @@ class VehicleTrajectory:
     history: List[Dict[str, Any]]
 
 @dataclass
+class MotionCompensationConfig:
+    """
+    Parámetros de la compensación de movimiento de cámara.
+
+    Las zonas se definen sobre el primer frame (referencia). Si la cámara se
+    mueve (p. ej. un dron), se estima una homografía por frame para mantener
+    las zonas alineadas con la calle.
+    """
+    enabled: bool = True
+    scale: float = 0.5           # Factor de reducción para el flujo óptico (0 < scale <= 1)
+    smooth_sigma: float = 1.5    # Sigma (en frames) del suavizado gaussiano de fase cero
+    anchor_interval: int = 30    # Cada cuántos frames se re-ancla al frame de referencia (ORB)
+
+@dataclass
 class AnalysisResult:
     transition_counts: Dict[str, Dict[str, Dict[str, int]]]
     determined_transitions: Dict[str, Any]
@@ -34,6 +48,7 @@ class AnalysisResult:
     trajectories: Dict[int, VehicleTrajectory]
     total_frames_processed: int
     output_video_path: Optional[str] = None
+    camera_motion: Optional[Dict[str, Any]] = None
 
     def __getitem__(self, item: str) -> Any:
         if item == "total_frames":
@@ -65,5 +80,6 @@ class AnalysisResult:
             },
             "total_frames_processed": self.total_frames_processed,
             "output_video_path": self.output_video_path,
+            "camera_motion": self.camera_motion,
         }
 

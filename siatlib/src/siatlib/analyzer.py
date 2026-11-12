@@ -3,7 +3,7 @@ from typing import Callable, List, Optional, Union
 
 from ultralytics import YOLO
 
-from .models import AnalysisResult, ZoneDefinition
+from .models import AnalysisResult, MotionCompensationConfig, ZoneDefinition
 from .process import ObjectTracker
 from .tracking import get_torch_device
 
@@ -55,6 +55,7 @@ class TrafficAnalyzer:
         progress_callback: Optional[Callable[[int, int, float], None]] = None,
         imgsz: Optional[int] = None,
         display_video: bool = False,
+        motion_compensation: Optional[MotionCompensationConfig] = None,
     ) -> AnalysisResult:
         """
         Ejecuta el pipeline completo de análisis sobre un archivo de video.
@@ -68,6 +69,9 @@ class TrafficAnalyzer:
                                (frame_actual, total_frames, fps_actuales).
             imgsz: Tamaño de imagen para inferencia YOLO (opcional).
             display_video: Si es True, muestra la ventana de OpenCV durante el procesamiento.
+            motion_compensation: Configuración de la compensación de movimiento de cámara.
+                                 None = activada con valores por defecto.
+                                 MotionCompensationConfig(enabled=False) para desactivarla.
 
         Returns:
             AnalysisResult con las matrices de transición (O/D), trayectorias y métricas en memoria.
@@ -77,6 +81,7 @@ class TrafficAnalyzer:
             tracker_path=self.tracker_config,
             zones=zones,
             device=str(self.device),
+            motion_compensation=motion_compensation,
         )
 
         return tracker.run(

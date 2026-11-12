@@ -8,7 +8,7 @@ Uso básico:
 """
 
 from .analyzer import TrafficAnalyzer
-from .models import AnalysisResult, VehicleTrajectory, ZoneDefinition, ZoneType
+from .models import AnalysisResult, MotionCompensationConfig, VehicleTrajectory, ZoneDefinition, ZoneType
 from .process import ObjectTracker, main
 
 __all__ = [
@@ -19,4 +19,5 @@ __all__ = [
     "ZoneType",
     "VehicleTrajectory",
     "AnalysisResult",
+    "MotionCompensationConfig",
 ]
