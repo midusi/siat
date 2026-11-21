@@ -324,6 +324,12 @@ class ObjectTracker:
 
         try:
             while cap.isOpened():
+                # El límite se chequea antes de leer: así act_frame queda igual a la
+                # cantidad de frames procesados y coincide con el último frame registrado.
+                if max_frames is not None and act_frame >= max_frames:
+                    print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
+                    break
+
                 success, frame = cap.read()
                 if not success:
                     print("\nFin del video o error al leer frame.")
@@ -351,13 +357,10 @@ class ObjectTracker:
                         sys.stdout.write(".")
                         sys.stdout.flush()
 
-                if max_frames is not None and act_frame > max_frames:
-                    print(f"\nAlcanzado el número máximo de frames ({max_frames}). Deteniendo.")
-                    break
-
-                masked_for_inference = apply_exclusion_mask(frame, self.excluded_polygons)
+                # La misma máscara sirve para la inferencia y para el video de salida.
+                masked_frame = apply_exclusion_mask(frame, self.excluded_polygons)
                 results = self.model.track(
-                    masked_for_inference,
+                    masked_frame,
                     conf=0.3,
                     iou=0.6,
                     persist=True,
@@ -367,8 +370,7 @@ class ObjectTracker:
                     tracker=self.tracker_path,
                 )
 
-                masked_for_output = apply_exclusion_mask(frame, self.excluded_polygons)
-                processed_frame = self.process_frame(masked_for_output, results, act_frame)
+                processed_frame = self.process_frame(masked_frame, results, act_frame)
 
                 if writer is not None:
                     if processed_frame.shape[:2] != (h, w):
@@ -387,7 +389,7 @@ class ObjectTracker:
             if progress_callback is None:
                 if progress_enabled:
                     sys.stdout.write(
-                        f"\rProgreso: 100% completado ({act_frame-1 if not success else act_frame}/{frames_to_process} frames)\n"
+                        f"\rProgreso: 100% completado ({act_frame}/{frames_to_process} frames)\n"
                     )
                     sys.stdout.flush()
                 else:
