@@ -15,18 +15,13 @@ uv sync                      # instala dependencias desde pyproject.toml
 ```
 
 
-### Docker (ver sección completa en `docs/SIATLIB_GUIDE.md`)
-La biblioteca puede ejecutarse dentro de un contenedor Docker que incluya todas las dependencias nativas (FFmpeg, OpenCV, pesos YOLO, etc.). Un Dockerfile genérico:
-```Dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY . /app
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-RUN python -m venv .venv && . .venv/bin/activate && uv sync
-ENV PATH="/app/.venv/bin:${PATH}"
-CMD ["python", "-m", "siatlib"]
+### Como servicio (Docker)
+siatlib también se distribuye como un servicio HTTP con cola de inferencia, listo para sumar a un `docker compose`. Ver [Usar como servicio](#-usar-como-servicio-docker--api-http).
+
+### Extra del servicio (sin Docker)
+```bash
+uv sync --extra service      # o: pip install "siatlib[service]"
 ```
-Para una imagen lista, consulta la sección *Docker* de la guía.
 
 ---
 
@@ -93,6 +88,73 @@ source .venv/bin/activate
 pytest siatlib/tests/
 ```
 Se espera que todas pasen en un entorno con Python 3.11+, `opencv-python` y `ffmpeg` instalados. Para CI ver la configuración en `.github/workflows/`.
+
+---
+
+## 🐳 Usar como servicio (Docker + API HTTP)
+
+Además de `import siatlib`, la librería trae un **servicio de inferencia**: una API HTTP con una **cola de trabajos** persistente (SQLite) y **estados** (`PENDING → PROCESSING → DONE | FAILED`, más `CANCELLED`). Los trabajos se procesan de a uno, en orden de llegada. El contrato completo está en [`docs/SIATLIB_SERVICE_API.md`](../docs/SIATLIB_SERVICE_API.md).
+
+### Levantarlo con Docker Compose
+```bash
+cd siatlib
+mkdir -p models data/input
+cp /ruta/a/model-v5.pt models/model.pt
+docker compose -f docker-compose.example.yaml up --build
+curl localhost:8000/health
+```
+Sin GPU, descomentá en `docker-compose.example.yaml` los `args` de la variante CPU y comentá el bloque `deploy`.
+
+Para sumarlo a otro proyecto (p. ej. SIATv2) copiá el servicio `siat-inference` de `docker-compose.example.yaml` a su `docker-compose.yaml`; dentro de la red de compose queda accesible en `http://siat-inference:8000`.
+
+### Encolar un video
+El video se deja en el volumen compartido (`data/input/`) y se pide por su ruta relativa:
+```bash
+cp mi_video.mp4 data/input/
+curl -X POST localhost:8000/jobs -H 'Content-Type: application/json' -d '{
+  "video": "mi_video.mp4",
+  "zones": [
+    {"name": "Entrada Sur", "type": "entry", "polygon": [[544,913],[617,1005],[824,939],[705,839]]},
+    {"name": "Salida Sur",  "type": "exit",  "polygon": [[516,890],[433,837],[497,735],[625,773]]}
+  ],
+  "metadata": {"task_id": 123}
+}'
+# -> {"id": "<job_id>", "status": "PENDING", ...}
+
+curl localhost:8000/jobs/<job_id>          # estado y progreso (%)
+curl localhost:8000/jobs/<job_id>/result   # JSON de resultados (cuando está DONE)
+curl -o out.mp4 localhost:8000/jobs/<job_id>/video
+```
+Documentación interactiva (Swagger): `http://localhost:8000/docs`.
+
+### Sin Docker
+```bash
+uv sync --extra service
+uv run siat-service --data-dir ./data --models-dir ./models --port 8000
+```
+
+### Desde Python, sin HTTP
+```python
+from pathlib import Path
+from siatlib.service import JobRequest, JobStore, ServiceSettings, Worker
+
+settings = ServiceSettings(data_dir=Path("data"), models_dir=Path("models"))
+settings.ensure_dirs()
+store = JobStore(settings.db_path)
+job = store.create(JobRequest.from_dict({"video": "mi_video.mp4", "zones": [...]}))
+Worker(store, settings).run_once()      # o .start() para procesar en un hilo
+print(store.get(job.id).status)          # JobStatus.DONE
+```
+
+### Configuración
+| Variable | Default | Descripción |
+|---|---|---|
+| `SIAT_DATA_DIR` | `/data` | `input/`, `output/` y la base SQLite |
+| `SIAT_MODELS_DIR` | `/models` | Pesos `.pt` |
+| `SIAT_DEFAULT_MODEL` | `model.pt` | Modelo si el pedido no indica uno |
+| `SIAT_DEVICE` | `auto` | `auto`, `cpu`, `cuda`, `0`, … |
+| `SIAT_TRACKER_CONFIG` | incluido | YAML de BoT-SORT |
+| `SIAT_HOST` / `SIAT_PORT` | `0.0.0.0` / `8000` | Dónde escucha la API |
 
 ---
 

@@ -1,0 +1,15 @@
+# Solo se necesitan pyproject.toml, README.md y src/ para construir la imagen.
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+tests/
+*.ipynb
+*.pt
+runs/
+data/
+models/
+uv.lock
+docker-compose*.yaml
+Dockerfile
